@@ -1,0 +1,676 @@
+class CollisionCheckToolWindow(QtWidgets.QDialog):
+
+    def __init__(self, parent=None):
+        if parent is None and MAYA_AVAILABLE:
+            try:
+                ptr    = omui.MQtUtil.mainWindow()
+                if PY2:
+                    parent = wrapInstance(long(ptr), QtWidgets.QWidget)  # noqa: F821
+                else:
+                    parent = wrapInstance(int(ptr), QtWidgets.QWidget)
+            except Exception:
+                pass
+
+        super(CollisionCheckToolWindow, self).__init__(parent)
+        self.setWindowTitle(tr("window_title"))
+        self.setMinimumWidth(440)
+        self.setMinimumHeight(320)
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
+        self.setStyleSheet(_MAIN_SS)
+
+        self._check_instances = []   # list of CheckItem instances
+        self._check_widgets   = []   # list of CheckItemWidget
+        self._result_window   = None
+        self._anim_result_window = None
+        self._anim_scanning   = False
+        self._anim_cancelled  = False
+        self._anim_results    = []
+
+        self._build()
+
+        if _saved_geometry:
+            x, y, w, h = _saved_geometry
+            self.setGeometry(x, y, w, h)
+        else:
+            self.adjustSize()
+
+    # ------------------------------------------------------------------
+    def _build(self):
+        main_lo = QtWidgets.QVBoxLayout(self)
+        main_lo.setContentsMargins(8, 8, 8, 8)
+        main_lo.setSpacing(4)
+
+        # ---- Header bar ----
+        header = QtWidgets.QHBoxLayout()
+        header.setSpacing(4)
+
+        self._title_lbl = QtWidgets.QLabel(
+            "<b>{0}</b> <span style='color:#888;font-size:10px'>v{1}</span>".format(
+                tr("window_title"), VERSION))
+        self._title_lbl.setStyleSheet(
+            "color:#EEE;font-size:14px;padding:4px")
+        header.addWidget(self._title_lbl)
+        header.addStretch()
+
+        # Reload button
+        reload_btn = QtWidgets.QPushButton(u"\u21BB")
+        reload_btn.setFixedSize(28, 24)
+        reload_btn.setToolTip(tr("btn_reload"))
+        reload_btn.setStyleSheet(
+            "QPushButton{background-color:#555;color:#EEE;"
+            "border:1px solid #777;border-radius:3px;font-size:14px}"
+            "QPushButton:hover{background-color:#4CAF50}")
+        reload_btn.clicked.connect(self._on_reload)
+        header.addWidget(reload_btn)
+
+        # Update button
+        update_btn = QtWidgets.QPushButton(u"\u2B07")  # down arrow
+        update_btn.setFixedSize(28, 24)
+        update_btn.setToolTip(tr("btn_update"))
+        update_btn.setStyleSheet(
+            "QPushButton{background-color:#555;color:#EEE;"
+            "border:1px solid #777;border-radius:3px;font-size:12px}"
+            "QPushButton:hover{background-color:#9C27B0}")
+        update_btn.clicked.connect(self._on_check_update)
+        header.addWidget(update_btn)
+
+        # Help button
+        help_btn = QtWidgets.QPushButton("?")
+        help_btn.setFixedSize(24, 24)
+        help_btn.setStyleSheet(
+            "QPushButton{background-color:#555;color:#EEE;"
+            "border:1px solid #777;border-radius:3px;font-size:12px;font-weight:bold}"
+            "QPushButton:hover{background-color:#2196F3}")
+        help_btn.clicked.connect(self._open_help)
+        header.addWidget(help_btn)
+
+        # Language toggle
+        self._lang_btn = QtWidgets.QPushButton(tr("btn_lang"))
+        self._lang_btn.setFixedSize(36, 24)
+        self._lang_btn.setStyleSheet(
+            "QPushButton{background-color:#555;color:#EEE;"
+            "border:1px solid #777;border-radius:3px;font-size:10px;font-weight:bold}"
+            "QPushButton:hover{background-color:#607D8B}")
+        self._lang_btn.clicked.connect(self._toggle_lang)
+        header.addWidget(self._lang_btn)
+
+        # Static Results button
+        self._btn_static_results = QtWidgets.QPushButton(tr("btn_static_results"))
+        self._btn_static_results.setFixedHeight(24)
+        self._btn_static_results.setEnabled(False)
+        self._btn_static_results.setStyleSheet(
+            "QPushButton{background-color:#2196F3;color:white;border:none;"
+            "border-radius:4px;font-size:10px;font-weight:bold;padding:0 8px}"
+            "QPushButton:hover{background-color:#1976D2}"
+            "QPushButton:disabled{background-color:#444;color:#666}")
+        self._btn_static_results.clicked.connect(self._show_static_results)
+        header.addWidget(self._btn_static_results)
+
+        # Anim Results button
+        self._btn_anim_results = QtWidgets.QPushButton(tr("btn_anim_results"))
+        self._btn_anim_results.setFixedHeight(24)
+        self._btn_anim_results.setEnabled(False)
+        self._btn_anim_results.setStyleSheet(
+            "QPushButton{background-color:#FF9800;color:white;border:none;"
+            "border-radius:4px;font-size:10px;font-weight:bold;padding:0 8px}"
+            "QPushButton:hover{background-color:#F57C00}"
+            "QPushButton:disabled{background-color:#444;color:#666}")
+        self._btn_anim_results.clicked.connect(self._show_anim_results)
+        header.addWidget(self._btn_anim_results)
+
+        main_lo.addLayout(header)
+
+        # ---- Selection mode row ----
+        sel_row = QtWidgets.QHBoxLayout()
+        sel_row.setContentsMargins(4, 0, 4, 0)
+        self._cb_selected_only = QtWidgets.QCheckBox(tr("chk_selected_only"))
+        self._cb_selected_only.setChecked(_use_selected_only[0])
+        self._cb_selected_only.setStyleSheet(
+            "QCheckBox{color:#AAA;font-size:10px}"
+            "QCheckBox::indicator{width:12px;height:12px}")
+        self._cb_selected_only.toggled.connect(self._on_selected_only_toggled)
+        sel_row.addWidget(self._cb_selected_only)
+
+        self._cb_self_intersect = QtWidgets.QCheckBox(tr("chk_self_intersect"))
+        self._cb_self_intersect.setChecked(_self_intersect[0])
+        self._cb_self_intersect.setStyleSheet(
+            "QCheckBox{color:#AAA;font-size:10px}"
+            "QCheckBox::indicator{width:12px;height:12px}")
+        self._cb_self_intersect.toggled.connect(self._on_self_intersect_toggled)
+        sel_row.addWidget(self._cb_self_intersect)
+
+        sel_row.addStretch()
+        main_lo.addLayout(sel_row)
+
+        # ---- Scroll area ----
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_w = QtWidgets.QWidget()
+        scroll_lo = QtWidgets.QVBoxLayout(scroll_w)
+        scroll_lo.setContentsMargins(0, 2, 0, 2)
+        scroll_lo.setSpacing(8)
+
+        # ---- Static Check Group (blue border) ----
+        static_grp = QtWidgets.QGroupBox()
+        static_grp.setStyleSheet(
+            "QGroupBox{border:1px solid #2196F3;border-radius:6px;"
+            "background-color:#2E2E2E;margin-top:6px}"
+            "QGroupBox::title{subcontrol-origin:margin;left:10px;"
+            "color:#EEE;font-size:11px;font-weight:bold}")
+
+        static_lo = QtWidgets.QVBoxLayout(static_grp)
+        static_lo.setContentsMargins(6, 10, 6, 6)
+        static_lo.setSpacing(4)
+
+        # Group header row
+        grp_header = QtWidgets.QHBoxLayout()
+        self._static_grp_lbl = QtWidgets.QLabel(
+            u"\u25A0 " + tr("grp_static"))
+        self._static_grp_lbl.setStyleSheet(
+            "color:#2196F3;font-size:11px;font-weight:bold")
+        grp_header.addWidget(self._static_grp_lbl)
+        grp_header.addStretch()
+
+        self._btn_run_all = _mkbtn(tr("run_static"), 24, "#2196F3", "#1976D2")
+        self._btn_run_all.clicked.connect(self._run_all_static)
+        grp_header.addWidget(self._btn_run_all)
+        static_lo.addLayout(grp_header)
+
+        # CheckItem widgets
+        for cls in STATIC_CHECKS:
+            inst = cls()
+            widget = CheckItemWidget(inst, has_settings=True)
+            widget.check_requested.connect(self._on_check_done)
+            self._check_instances.append(inst)
+            self._check_widgets.append(widget)
+            static_lo.addWidget(widget)
+
+        # Depth threshold row (inline)
+        thresh_row = QtWidgets.QHBoxLayout()
+        self._lbl_depth_thresh = QtWidgets.QLabel(tr("lbl_depth_threshold"))
+        self._lbl_depth_thresh.setStyleSheet("color:#AAA;font-size:10px")
+        thresh_row.addWidget(self._lbl_depth_thresh)
+        self._spin_depth = QtWidgets.QDoubleSpinBox()
+        self._spin_depth.setRange(0.0, 10.0)
+        self._spin_depth.setDecimals(3)
+        self._spin_depth.setSingleStep(0.005)
+        self._spin_depth.setValue(_depth_threshold[0])
+        self._spin_depth.setFixedWidth(75)
+        self._spin_depth.setStyleSheet(
+            "QDoubleSpinBox{background-color:#2B2B2B;color:#EEE;"
+            "border:1px solid #555;border-radius:3px;padding:1px;font-size:10px}")
+        self._spin_depth.valueChanged.connect(self._on_depth_threshold_changed)
+        thresh_row.addWidget(self._spin_depth)
+        thresh_row.addStretch()
+        static_lo.addLayout(thresh_row)
+
+        scroll_lo.addWidget(static_grp)
+
+        # ---- Animation Scan Group (amber border) ----
+        anim_grp = QtWidgets.QGroupBox()
+        anim_grp.setStyleSheet(
+            "QGroupBox{border:1px solid #FF9800;border-radius:6px;"
+            "background-color:#2E2E2E;margin-top:6px}"
+            "QGroupBox::title{subcontrol-origin:margin;left:10px;"
+            "color:#EEE;font-size:11px;font-weight:bold}")
+
+        anim_lo = QtWidgets.QVBoxLayout(anim_grp)
+        anim_lo.setContentsMargins(6, 10, 6, 6)
+        anim_lo.setSpacing(4)
+
+        # Group header row
+        anim_header = QtWidgets.QHBoxLayout()
+        self._anim_grp_lbl = QtWidgets.QLabel(
+            u"\u25A0 " + tr("grp_anim"))
+        self._anim_grp_lbl.setStyleSheet(
+            "color:#FF9800;font-size:11px;font-weight:bold")
+        anim_header.addWidget(self._anim_grp_lbl)
+        anim_header.addStretch()
+
+        # Run button
+        self._btn_run_anim = _mkbtn(
+            tr("run_anim"), 24, "#FF9800", "#F57C00")
+        self._btn_run_anim.clicked.connect(self._run_anim_scan)
+        anim_header.addWidget(self._btn_run_anim)
+
+        # Stop button (hidden by default)
+        self._btn_stop_anim = _mkbtn(
+            tr("btn_stop_anim"), 24, "#F44336", "#C62828")
+        self._btn_stop_anim.setVisible(False)
+        self._btn_stop_anim.clicked.connect(self._stop_anim_scan)
+        anim_header.addWidget(self._btn_stop_anim)
+
+        anim_lo.addLayout(anim_header)
+
+        # ---- Inline anim settings ----
+        _ss_small = "color:#AAA;font-size:10px"
+        _ss_spin = ("QSpinBox{background-color:#2B2B2B;color:#EEE;"
+                    "border:1px solid #555;border-radius:3px;"
+                    "padding:1px;font-size:10px}")
+        _ss_cb = ("QCheckBox{color:#AAA;font-size:10px}"
+                  "QCheckBox::indicator{width:12px;height:12px}")
+
+        # Frame range row
+        fr_row = QtWidgets.QHBoxLayout()
+        self._cb_use_timeline = QtWidgets.QCheckBox(tr("chk_use_timeline"))
+        self._cb_use_timeline.setChecked(_anim_use_timeline[0])
+        self._cb_use_timeline.setStyleSheet(_ss_cb)
+        self._cb_use_timeline.toggled.connect(self._on_use_timeline_toggled)
+        fr_row.addWidget(self._cb_use_timeline)
+
+        self._lbl_fr = QtWidgets.QLabel(tr("lbl_frame_range"))
+        self._lbl_fr.setStyleSheet(_ss_small)
+        fr_row.addWidget(self._lbl_fr)
+        self._spin_anim_start = QtWidgets.QSpinBox()
+        self._spin_anim_start.setRange(-100000, 100000)
+        self._spin_anim_start.setFixedWidth(55)
+        self._spin_anim_start.setStyleSheet(_ss_spin)
+        fr_row.addWidget(self._spin_anim_start)
+        fr_row.addWidget(QtWidgets.QLabel("-"))
+        self._spin_anim_end = QtWidgets.QSpinBox()
+        self._spin_anim_end.setRange(-100000, 100000)
+        self._spin_anim_end.setFixedWidth(55)
+        self._spin_anim_end.setStyleSheet(_ss_spin)
+        fr_row.addWidget(self._spin_anim_end)
+
+        self._lbl_step = QtWidgets.QLabel(tr("lbl_frame_step"))
+        self._lbl_step.setStyleSheet(_ss_small)
+        fr_row.addWidget(self._lbl_step)
+        self._spin_anim_step = QtWidgets.QSpinBox()
+        self._spin_anim_step.setRange(1, 100)
+        self._spin_anim_step.setFixedWidth(40)
+        self._spin_anim_step.setStyleSheet(_ss_spin)
+        fr_row.addWidget(self._spin_anim_step)
+        fr_row.addStretch()
+        anim_lo.addLayout(fr_row)
+
+        # Ignore static checkbox + baseline frame
+        ig_row = QtWidgets.QHBoxLayout()
+        self._cb_ignore_static = QtWidgets.QCheckBox(tr("chk_ignore_static"))
+        self._cb_ignore_static.setChecked(_anim_ignore_static[0])
+        self._cb_ignore_static.setStyleSheet(_ss_cb)
+        self._cb_ignore_static.toggled.connect(self._on_ignore_static_toggled)
+        ig_row.addWidget(self._cb_ignore_static)
+
+        self._lbl_baseline = QtWidgets.QLabel(tr("lbl_baseline_frame"))
+        self._lbl_baseline.setStyleSheet(_ss_small)
+        ig_row.addWidget(self._lbl_baseline)
+        self._spin_baseline = QtWidgets.QSpinBox()
+        self._spin_baseline.setRange(-100000, 100000)
+        self._spin_baseline.setValue(_anim_baseline_frame[0])
+        self._spin_baseline.setFixedWidth(55)
+        self._spin_baseline.setStyleSheet(_ss_spin)
+        self._spin_baseline.setEnabled(_anim_ignore_static[0])
+        ig_row.addWidget(self._spin_baseline)
+        ig_row.addStretch()
+        anim_lo.addLayout(ig_row)
+
+        # Load initial values
+        self._load_anim_settings()
+
+        # Progress bar
+        self._anim_progress = QtWidgets.QProgressBar()
+        self._anim_progress.setFixedHeight(16)
+        self._anim_progress.setVisible(False)
+        self._anim_progress.setStyleSheet(
+            "QProgressBar{border:1px solid #555;border-radius:3px;"
+            "background-color:#2B2B2B;text-align:center;color:#EEE;font-size:9px}"
+            "QProgressBar::chunk{background-color:#FF9800;border-radius:2px}")
+        anim_lo.addWidget(self._anim_progress)
+
+        # Anim status label
+        self._anim_status_lbl = QtWidgets.QLabel("")
+        self._anim_status_lbl.setStyleSheet(
+            "color:#AAA;font-size:10px;padding:2px")
+        anim_lo.addWidget(self._anim_status_lbl)
+
+        scroll_lo.addWidget(anim_grp)
+
+        scroll_lo.addStretch()
+
+        scroll.setWidget(scroll_w)
+        main_lo.addWidget(scroll)
+
+        # ---- Status bar ----
+        self._status_bar = QtWidgets.QLabel(tr("status_ready"))
+        self._status_bar.setStyleSheet(
+            "color:#AAA;font-size:10px;padding:4px")
+
+        # Progress bar for static checks (hidden until running)
+        self._static_progress = QtWidgets.QProgressBar()
+        self._static_progress.setFixedHeight(14)
+        self._static_progress.setVisible(False)
+        self._static_progress.setTextVisible(True)
+        self._static_progress.setStyleSheet(
+            "QProgressBar{border:1px solid #555;border-radius:3px;"
+            "background-color:#2B2B2B;text-align:center;color:#EEE;font-size:9px}"
+            "QProgressBar::chunk{background-color:#2196F3;border-radius:2px}")
+
+        status_row = QtWidgets.QHBoxLayout()
+        status_row.setContentsMargins(0, 0, 0, 0)
+        status_row.addWidget(self._status_bar, 1)
+        status_row.addWidget(self._static_progress, 1)
+        main_lo.addLayout(status_row)
+
+    # ------------------------------------------------------------------
+    def _on_selected_only_toggled(self, checked):
+        _use_selected_only[0] = checked
+
+    def _on_self_intersect_toggled(self, checked):
+        _self_intersect[0] = checked
+
+    def _run_all_static(self):
+        self._status_bar.setText(tr("status_checking"))
+        self._btn_run_all.setEnabled(False)
+
+        # Clear caches to ensure fresh topology data
+        MayaBridge.clear_caches()
+
+        enabled_widgets = [w for w in self._check_widgets
+                            if w.check_item.enabled]
+        n_checks = len(enabled_widgets)
+
+        # Show progress bar
+        self._static_progress.setVisible(True)
+        self._static_progress.setMaximum(max(1, n_checks))
+        self._static_progress.setValue(0)
+        self._status_bar.setVisible(False)
+        QtWidgets.QApplication.processEvents()
+
+        total = 0
+        for idx, widget in enumerate(enabled_widgets):
+            self._static_progress.setFormat(
+                "{0} ({1}/{2})".format(widget.check_item.label, idx + 1, n_checks))
+            QtWidgets.QApplication.processEvents()
+            widget.check_item.run_check()
+            widget._update_ui()
+            total += len(widget.check_item.issues)
+            self._static_progress.setValue(idx + 1)
+            QtWidgets.QApplication.processEvents()
+
+        # Hide progress bar
+        self._static_progress.setVisible(False)
+        self._status_bar.setVisible(True)
+
+        self._btn_run_all.setEnabled(True)
+        total_elapsed = sum(
+            getattr(w.check_item, "elapsed_sec", 0.0)
+            for w in self._check_widgets if w.check_item.enabled)
+        self._status_bar.setText(
+            tr("status_done", count=total)
+            + "  |  {0:.2f}s".format(total_elapsed))
+        self._btn_static_results.setEnabled(True)
+        self._refresh_result_window()
+
+        # Auto-show results window if any issues were found
+        if total > 0:
+            self._show_static_results()
+
+    def _on_check_done(self, check_item):
+        any_results = any(len(ci.issues) > 0 for ci in self._check_instances)
+        any_run = any(ci.status != "unchecked" for ci in self._check_instances)
+        self._btn_static_results.setEnabled(any_run)
+        total = sum(len(ci.issues) for ci in self._check_instances)
+        elapsed = getattr(check_item, "elapsed_sec", 0.0)
+        self._status_bar.setText(
+            tr("status_done", count=total)
+            + "  |  {0:.2f}s".format(elapsed))
+        self._refresh_result_window()
+
+        # Auto-show results window if any issues were found
+        if len(check_item.issues) > 0:
+            self._show_static_results()
+
+    def _refresh_result_window(self):
+        if self._result_window and not self._result_window.isHidden():
+            self._result_window.populate(self._check_instances)
+
+    def _show_static_results(self):
+        if self._result_window is None:
+            self._result_window = StaticResultWindow(
+                self._check_instances, parent=self)
+        else:
+            self._result_window.populate(self._check_instances)
+        self._result_window.show()
+        self._result_window.raise_()
+
+    # ------------------------------------------------------------------
+    # Animation Scan
+    # ------------------------------------------------------------------
+    def _load_anim_settings(self):
+        """Load anim settings into inline widgets."""
+        if MAYA_AVAILABLE and _anim_use_timeline[0]:
+            try:
+                self._spin_anim_start.setValue(
+                    int(cmds.playbackOptions(query=True, minTime=True)))
+                self._spin_anim_end.setValue(
+                    int(cmds.playbackOptions(query=True, maxTime=True)))
+            except Exception:
+                self._spin_anim_start.setValue(_anim_start_frame[0])
+                self._spin_anim_end.setValue(_anim_end_frame[0])
+        else:
+            self._spin_anim_start.setValue(_anim_start_frame[0])
+            self._spin_anim_end.setValue(_anim_end_frame[0])
+        self._spin_anim_step.setValue(_anim_step[0])
+
+    def _on_depth_threshold_changed(self, val):
+        _depth_threshold[0] = val
+
+    def _on_use_timeline_toggled(self, checked):
+        _anim_use_timeline[0] = checked
+        if checked and MAYA_AVAILABLE:
+            try:
+                self._spin_anim_start.setValue(
+                    int(cmds.playbackOptions(query=True, minTime=True)))
+                self._spin_anim_end.setValue(
+                    int(cmds.playbackOptions(query=True, maxTime=True)))
+            except Exception:
+                pass
+
+    def _on_ignore_static_toggled(self, checked):
+        _anim_ignore_static[0] = checked
+        self._spin_baseline.setEnabled(checked)
+
+    def _save_anim_settings(self):
+        """Save inline anim settings to globals before scan."""
+        _anim_use_timeline[0] = self._cb_use_timeline.isChecked()
+        _anim_ignore_static[0] = self._cb_ignore_static.isChecked()
+        _anim_baseline_frame[0] = self._spin_baseline.value()
+        _anim_start_frame[0] = self._spin_anim_start.value()
+        _anim_end_frame[0] = self._spin_anim_end.value()
+        _anim_step[0] = self._spin_anim_step.value()
+
+    def _run_anim_scan(self):
+        if self._anim_scanning:
+            return
+
+        self._save_anim_settings()
+
+        # Early check: bail out if no mesh pairs available
+        pairs_preview = _get_pairs_to_check()
+        if not pairs_preview:
+            self._anim_status_lbl.setText(
+                tr("status_no_meshes") if MAYA_AVAILABLE else "")
+            return
+
+        # Collect unique meshes from pairs and check if any has animation
+        unique_meshes = set()
+        for a, b in pairs_preview:
+            unique_meshes.add(a)
+            unique_meshes.add(b)
+        if MAYA_AVAILABLE and not MayaBridge.any_has_animation(unique_meshes):
+            self._anim_status_lbl.setText(tr("status_no_anim"))
+            return
+
+        self._anim_scanning  = True
+        self._anim_cancelled = False
+        self._anim_results   = []
+
+        # UI state
+        self._btn_run_anim.setVisible(False)
+        self._btn_stop_anim.setVisible(True)
+        self._btn_run_all.setEnabled(False)
+        self._anim_progress.setVisible(True)
+        self._anim_progress.setValue(0)
+
+        # Determine total frames for progress bar
+        start = _anim_start_frame[0]
+        end   = _anim_end_frame[0]
+        step  = max(1, _anim_step[0])
+        total_frames = len(range(start, end + 1, step))
+        self._anim_progress.setMaximum(total_frames)
+        self._anim_frame_idx = 0
+
+        def on_progress(frame, total, issues):
+            self._anim_frame_idx += 1
+            self._anim_progress.setValue(
+                min(self._anim_frame_idx, total_frames))
+            self._anim_status_lbl.setText(
+                tr("anim_scanning",
+                   frame=self._anim_frame_idx, total=total_frames))
+            QtWidgets.QApplication.processEvents()
+
+        def is_cancelled():
+            QtWidgets.QApplication.processEvents()
+            return self._anim_cancelled
+
+        scanner = AnimationScanner(
+            progress_cb=on_progress, cancelled_cb=is_cancelled)
+        results = scanner.scan()
+
+        # Scan finished
+        self._anim_scanning = False
+        self._anim_results  = results
+        self._btn_run_anim.setVisible(True)
+        self._btn_stop_anim.setVisible(False)
+        self._btn_run_all.setEnabled(True)
+        self._anim_progress.setVisible(False)
+
+        if self._anim_cancelled:
+            self._anim_status_lbl.setText(tr("anim_cancelled"))
+        else:
+            frames_with_issues = len(results)
+            msg = tr("anim_done", count=frames_with_issues)
+            if _anim_ignore_static[0]:
+                msg += "  (baseline filtered)"
+            msg += "  |  {0:.2f}s".format(getattr(scanner, "elapsed_sec", 0.0))
+            self._anim_status_lbl.setText(msg)
+
+        if results:
+            self._btn_anim_results.setEnabled(True)
+            self._show_anim_results()
+
+    def _stop_anim_scan(self):
+        self._anim_cancelled = True
+
+    def _show_anim_results(self):
+        if self._anim_result_window is None:
+            self._anim_result_window = AnimResultWindow(parent=self)
+        self._anim_result_window.populate(self._anim_results)
+        self._anim_result_window.show()
+        self._anim_result_window.raise_()
+
+    # ------------------------------------------------------------------
+    def _toggle_lang(self):
+        global _current_lang
+        _current_lang = LANG_JP if _current_lang == LANG_EN else LANG_EN
+        self._refresh_labels()
+
+    def _refresh_labels(self):
+        self._title_lbl.setText(
+            "<b>{0}</b> <span style='color:#888;font-size:10px'>v{1}</span>".format(
+                tr("window_title"), VERSION))
+        self.setWindowTitle(tr("window_title"))
+        self._lang_btn.setText(tr("btn_lang"))
+        self._btn_static_results.setText(tr("btn_static_results"))
+        self._btn_anim_results.setText(tr("btn_anim_results"))
+        self._btn_run_all.setText(tr("run_static"))
+        self._static_grp_lbl.setText(u"\u25A0 " + tr("grp_static"))
+        self._anim_grp_lbl.setText(u"\u25A0 " + tr("grp_anim"))
+        self._btn_run_anim.setText(tr("run_anim"))
+        self._btn_stop_anim.setText(tr("btn_stop_anim"))
+        self._status_bar.setText(tr("status_ready"))
+        self._cb_selected_only.setText(tr("chk_selected_only"))
+        self._cb_self_intersect.setText(tr("chk_self_intersect"))
+        self._lbl_depth_thresh.setText(tr("lbl_depth_threshold"))
+        self._cb_use_timeline.setText(tr("chk_use_timeline"))
+        self._lbl_fr.setText(tr("lbl_frame_range"))
+        self._lbl_step.setText(tr("lbl_frame_step"))
+        self._cb_ignore_static.setText(tr("chk_ignore_static"))
+        self._lbl_baseline.setText(tr("lbl_baseline_frame"))
+        for w in self._check_widgets:
+            w.refresh_labels()
+        if self._result_window:
+            self._result_window.refresh_labels()
+            self._result_window.populate(self._check_instances)
+        if self._anim_result_window:
+            self._anim_result_window.refresh_labels()
+
+    # ------------------------------------------------------------------
+    def _open_help(self):
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("Help")
+        dlg.setWindowFlags(dlg.windowFlags() | QtCore.Qt.Tool)
+        dlg.setMinimumSize(400, 300)
+        dlg.setStyleSheet("QDialog{background-color:#333} QTextBrowser{background-color:#2B2B2B;color:#EEE;border:none}")
+        lo = QtWidgets.QVBoxLayout(dlg)
+        tb = QtWidgets.QTextBrowser()
+        tb.setHtml(tr("help_text"))
+        lo.addWidget(tb)
+        btn_lo = QtWidgets.QHBoxLayout()
+        btn_lo.addStretch()
+        close = _mkbtn("Close", 26, "#555", "#444")
+        close.clicked.connect(dlg.accept)
+        btn_lo.addWidget(close)
+        lo.addLayout(btn_lo)
+        dlg.exec_()
+
+    # ------------------------------------------------------------------
+    def _on_reload(self):
+        global _saved_geometry, _saved_lang
+        geo = self.geometry()
+        _saved_geometry = (geo.x(), geo.y(), geo.width(), geo.height())
+        _saved_lang = _current_lang
+        self.close()
+
+        # Find the module that contains this class.
+        # __module__ may be '__main__' when run from Script Editor,
+        # so fall back to searching sys.modules by filename or known name.
+        mn = self.__class__.__module__
+        mod = sys.modules.get(mn)
+
+        if mod is None or mn == "__main__":
+            # Search sys.modules for the module containing this file
+            for name, m in list(sys.modules.items()):
+                if name == "__main__":
+                    continue
+                f = getattr(m, "__file__", None)
+                if f and "DW_CollisionCheck" in f:
+                    mn = name
+                    mod = m
+                    break
+
+        if mod is not None and mn != "__main__":
+            _reload(mod)
+            mod._saved_geometry = _saved_geometry
+            mod._saved_lang = _saved_lang
+            mod.show()
+        else:
+            # Fallback: try the known module name directly
+            if "DW_CollisionCheck" in sys.modules:
+                mod = sys.modules["DW_CollisionCheck"]
+                _reload(mod)
+                mod._saved_geometry = _saved_geometry
+                mod._saved_lang = _saved_lang
+                mod.show()
+
+    def _on_check_update(self):
+        """Trigger the auto-update workflow."""
+        check_for_updates()
+
+
+
+# ---------------------------------------------------------------------------
+# Auto-update from GitHub
+# ---------------------------------------------------------------------------

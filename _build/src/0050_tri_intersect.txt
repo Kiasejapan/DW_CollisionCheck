@@ -1,0 +1,263 @@
+# ---------------------------------------------------------------------------
+# Triangle-Triangle intersection  (Moller 1997, corrected)
+# ---------------------------------------------------------------------------
+def _sgn(x):
+    if x > _EPSILON:  return  1
+    if x < -_EPSILON: return -1
+    return 0
+
+
+def _coplanar_2d_sat(t1, t2, n):
+    """Strict 2D SAT for coplanar triangles. Touching edges return True."""
+    nx, ny, nz = abs(n[0]), abs(n[1]), abs(n[2])
+    if nx <= ny and nx <= nz: u = _norm((0.0, n[2], -n[1]))
+    elif ny <= nz:             u = _norm((n[2], 0.0, -n[0]))
+    else:                      u = _norm((n[1], -n[0], 0.0))
+    v = _norm(_cross(n, u))
+
+    def p2(pt): return (_dot(pt, u), _dot(pt, v))
+    p1 = [p2(p) for p in t1]
+    p2_ = [p2(p) for p in t2]
+
+    for pts_a, pts_b in [(p1, p2_), (p2_, p1)]:
+        for i in range(3):
+            j = (i + 1) % 3
+            ex = pts_a[j][0] - pts_a[i][0]
+            ey = pts_a[j][1] - pts_a[i][1]
+            al = math.sqrt(ex*ex + ey*ey)
+            if al < 1e-12: continue
+            ax = -ey / al;  ay = ex / al
+            a_d = [pt[0]*ax + pt[1]*ay for pt in pts_a]
+            b_d = [pt[0]*ax + pt[1]*ay for pt in pts_b]
+            if max(b_d) < min(a_d) - _EPSILON or max(a_d) < min(b_d) - _EPSILON:
+                return False
+    return True
+
+
+def _moller_interval(coords, dists):
+    """
+    Compute [t_min, t_max] scalar interval on the intersection line
+    for one triangle, given projected coords and plane distances.
+
+    Correctly handles all cases:
+      - Normal case: one isolated vertex (opposite sign from the other two)
+      - Vertex-on-plane: one dist == 0 (vertex lies exactly on opposite plane)
+    """
+    d0, d1, d2 = dists[0], dists[1], dists[2]
+    p0, p1, p2 = coords[0], coords[1], coords[2]
+
+    s = (_sgn(d0), _sgn(d1), _sgn(d2))
+    pos = [i for i in range(3) if s[i] > 0]
+    neg = [i for i in range(3) if s[i] < 0]
+    zer = [i for i in range(3) if s[i] == 0]
+
+    c = [(p0, d0), (p1, d1), (p2, d2)]
+
+    if len(zer) == 2:
+        # Two vertices on plane
+        pts = [c[i][0] for i in zer]
+        return min(pts), max(pts)
+
+    if len(zer) == 1:
+        # One vertex on plane — it is an endpoint
+        on = c[zer[0]][0]
+        oth = [i for i in range(3) if i != zer[0]]
+        ia, ib = oth[0], oth[1]
+        if s[ia] != 0 and s[ib] != 0 and s[ia] != s[ib]:
+            den = c[ia][1] - c[ib][1]
+            if abs(den) > 1e-15:
+                t = c[ia][0] + (c[ib][0] - c[ia][0]) * c[ia][1] / den
+            else:
+                t = on
+            return (min(on, t), max(on, t))
+        return on, on
+
+    # Normal case: one isolated vertex
+    if len(pos) == 1 and len(neg) == 2:
+        iso = pos[0]; oth = neg
+    elif len(neg) == 1 and len(pos) == 2:
+        iso = neg[0]; oth = pos
+    else:
+        vals = [p0, p1, p2]; return min(vals), max(vals)
+
+    pi_ = c[iso][0]; di_ = c[iso][1]
+    j,  k  = oth[0], oth[1]
+    pj = c[j][0];  dj = c[j][1]
+    pk = c[k][0];  dk = c[k][1]
+
+    den_j = di_ - dj;  den_k = di_ - dk
+    tj = (pi_ + (pj - pi_) * di_ / den_j) if abs(den_j) > 1e-15 else pi_
+    tk = (pi_ + (pk - pi_) * di_ / den_k) if abs(den_k) > 1e-15 else pi_
+
+    return min(tj, tk), max(tj, tk)
+
+
+def _tri_tri_intersect(t1, t2):
+    """
+    Robust Moller (1997) triangle-triangle intersection.
+    Returns (hit: bool, depth: float, point: tuple|None,
+             n1: tuple|None, n2: tuple|None).
+    """
+    EPS = 1e-6
+
+    # Compute plane of t2 (normalized)
+    e1 = _sub(t2[1], t2[0])
+    e2 = _sub(t2[2], t2[0])
+    n2_raw = _cross(e1, e2)
+    n2_len = _len(n2_raw)
+    if n2_len < 1e-12:
+        return False, 0.0, None, None, None
+    n2 = (n2_raw[0]/n2_len, n2_raw[1]/n2_len, n2_raw[2]/n2_len)
+    d2 = -_dot(n2, t2[0])
+
+    # Signed distances of t1 vertices to plane of t2
+    dv = [_dot(n2, t1[i]) + d2 for i in range(3)]
+    # Clamp tiny values to zero
+    dv = [0.0 if abs(d) < EPS else d for d in dv]
+
+    # Early reject: all on same side
+    if (dv[0] > 0 and dv[1] > 0 and dv[2] > 0) or \
+       (dv[0] < 0 and dv[1] < 0 and dv[2] < 0):
+        return False, 0.0, None, None, None
+
+    # Compute plane of t1 (normalized)
+    e1 = _sub(t1[1], t1[0])
+    e2 = _sub(t1[2], t1[0])
+    n1_raw = _cross(e1, e2)
+    n1_len = _len(n1_raw)
+    if n1_len < 1e-12:
+        return False, 0.0, None, None, None
+    n1 = (n1_raw[0]/n1_len, n1_raw[1]/n1_len, n1_raw[2]/n1_len)
+    d1 = -_dot(n1, t1[0])
+
+    # Signed distances of t2 vertices to plane of t1
+    du = [_dot(n1, t2[i]) + d1 for i in range(3)]
+    du = [0.0 if abs(d) < EPS else d for d in du]
+
+    if (du[0] > 0 and du[1] > 0 and du[2] > 0) or \
+       (du[0] < 0 and du[1] < 0 and du[2] < 0):
+        return False, 0.0, None, None, None
+
+    # Intersection line direction = cross of normals
+    D = _cross(n1, n2)
+    d_len = _len(D)
+
+    # Coplanar / near-parallel case
+    # n1 and n2 are both unit vectors, so |n1 × n2| = sin(angle between planes).
+    # If d_len < 0.01, the planes are within ~0.57 degrees of parallel —
+    # treat as coplanar to avoid numerical instability.
+    if d_len < 0.01:
+        hit = _coplanar_2d_sat(t1, t2, n1)
+        cx = (t1[0][0]+t1[1][0]+t1[2][0]) / 3.0
+        cy = (t1[0][1]+t1[1][1]+t1[2][1]) / 3.0
+        cz = (t1[0][2]+t1[1][2]+t1[2][2]) / 3.0
+        return hit, 0.0, (cx, cy, cz), n1, n2
+
+    # Normalized intersection line direction
+    Dn = (D[0]/d_len, D[1]/d_len, D[2]/d_len)
+
+    # Compute scalar intervals using 3D edge-plane intersections
+    t1_lo, t1_hi = _compute_interval_3d(t1, dv, Dn)
+    if t1_lo is None:
+        return False, 0.0, None, None, None
+    t2_lo, t2_hi = _compute_interval_3d(t2, du, Dn)
+    if t2_lo is None:
+        return False, 0.0, None, None, None
+
+    # Check overlap of the two intervals
+    ov_lo = max(t1_lo, t2_lo)
+    ov_hi = min(t1_hi, t2_hi)
+
+    if ov_lo > ov_hi + EPS:
+        return False, 0.0, None, None, None
+
+    # Overlap length in world units along the intersection line
+    overlap_len = max(0.0, ov_hi - ov_lo)
+
+    cx = (t1[0][0]+t1[1][0]+t1[2][0]) / 3.0
+    cy = (t1[0][1]+t1[1][1]+t1[2][1]) / 3.0
+    cz = (t1[0][2]+t1[1][2]+t1[2][2]) / 3.0
+    return True, overlap_len, (cx, cy, cz), n1, n2
+
+
+def _compute_interval_3d(verts, dists, Dn):
+    """
+    Given triangle vertices, signed distances to the opposite plane,
+    and the unit direction of the intersection line Dn,
+    compute the scalar interval [t_lo, t_hi] along Dn where the
+    triangle crosses the opposite plane (i.e. the 3D points where
+    edges pierce the plane, projected onto Dn).
+    Returns (t_lo, t_hi) or (None, None) if no crossing.
+    """
+    signs = []
+    for d in dists:
+        if d > 0: signs.append(1)
+        elif d < 0: signs.append(-1)
+        else: signs.append(0)
+
+    pos = [i for i in range(3) if signs[i] > 0]
+    neg = [i for i in range(3) if signs[i] < 0]
+    zer = [i for i in range(3) if signs[i] == 0]
+
+    # Helper: project 3D point onto Dn
+    def proj(pt):
+        return _dot(Dn, pt)
+
+    # All zero: shouldn't happen here (coplanar handled separately)
+    if len(zer) == 3:
+        return None, None
+
+    # Two zero: the edge between them lies on the plane
+    if len(zer) == 2:
+        t_a = proj(verts[zer[0]])
+        t_b = proj(verts[zer[1]])
+        return min(t_a, t_b), max(t_a, t_b)
+
+    # One zero: vertex on plane + possibly an edge crossing
+    if len(zer) == 1:
+        z = zer[0]
+        others = [i for i in range(3) if i != z]
+        a, b = others[0], others[1]
+        t_z = proj(verts[z])
+        if signs[a] * signs[b] < 0:
+            # Edge a-b pierces the plane in 3D
+            t_param = dists[a] / (dists[a] - dists[b])
+            pt = (verts[a][0] + (verts[b][0] - verts[a][0]) * t_param,
+                  verts[a][1] + (verts[b][1] - verts[a][1]) * t_param,
+                  verts[a][2] + (verts[b][2] - verts[a][2]) * t_param)
+            t_cross = proj(pt)
+            return min(t_z, t_cross), max(t_z, t_cross)
+        else:
+            return t_z, t_z
+
+    # Normal case: one isolated vertex, two on the other side
+    if len(pos) == 1 and len(neg) == 2:
+        iso = pos[0]
+        others = neg
+    elif len(neg) == 1 and len(pos) == 2:
+        iso = neg[0]
+        others = pos
+    else:
+        return None, None
+
+    a, b = others[0], others[1]
+    # Edge iso-a pierces the plane at:
+    t_param_a = dists[iso] / (dists[iso] - dists[a])
+    pt_a = (verts[iso][0] + (verts[a][0] - verts[iso][0]) * t_param_a,
+            verts[iso][1] + (verts[a][1] - verts[iso][1]) * t_param_a,
+            verts[iso][2] + (verts[a][2] - verts[iso][2]) * t_param_a)
+    # Edge iso-b pierces at:
+    t_param_b = dists[iso] / (dists[iso] - dists[b])
+    pt_b = (verts[iso][0] + (verts[b][0] - verts[iso][0]) * t_param_b,
+            verts[iso][1] + (verts[b][1] - verts[iso][1]) * t_param_b,
+            verts[iso][2] + (verts[b][2] - verts[iso][2]) * t_param_b)
+
+    t_a = proj(pt_a)
+    t_b = proj(pt_b)
+    return min(t_a, t_b), max(t_a, t_b)
+
+
+def _compute_interval(proj, dists):
+    """Legacy wrapper — kept for backward compat but not used."""
+    return None, None
+

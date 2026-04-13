@@ -1,0 +1,35 @@
+def _group_connected_faces(face_ids, neighbors):
+    """
+    Given a set of face IDs and their adjacency, returns a list of
+    connected groups (each group is a set of face IDs).
+    Uses BFS flood-fill.
+    """
+    remaining = set(face_ids)
+    groups = []
+    while remaining:
+        seed = next(iter(remaining))
+        group = set()
+        queue = [seed]
+        while queue:
+            f = queue.pop(0)
+            if f in group:
+                continue
+            group.add(f)
+            remaining.discard(f)
+            for n in neighbors.get(f, ()):
+                if n in remaining:
+                    queue.append(n)
+        groups.append(group)
+    return groups
+
+
+
+# ---------------------------------------------------------------------------
+# CheckItem  (base + concrete implementations)
+# ---------------------------------------------------------------------------
+SCOPE_SCENE = "scene"
+SCOPE_MESH  = "mesh"
+
+_ICON        = {"unchecked": u"\u25CB", "pass": u"\u2714", "fail": u"\u2718"}
+_ICON_COLOR  = {"unchecked": "#888", "pass": "#4CAF50", "fail": "#F44336"}
+

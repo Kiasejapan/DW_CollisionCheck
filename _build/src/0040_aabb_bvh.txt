@@ -1,0 +1,105 @@
+
+# ---------------------------------------------------------------------------
+# AABB
+# ---------------------------------------------------------------------------
+class _AABB(object):
+    __slots__ = ("mn", "mx")
+
+    def __init__(self, mn, mx):
+        self.mn = mn
+        self.mx = mx
+
+    def intersects(self, o):
+        return (self.mn[0] <= o.mx[0] and self.mx[0] >= o.mn[0] and
+                self.mn[1] <= o.mx[1] and self.mx[1] >= o.mn[1] and
+                self.mn[2] <= o.mx[2] and self.mx[2] >= o.mn[2])
+
+    @staticmethod
+    def from_tri(tri):
+        xs = (tri[0][0], tri[1][0], tri[2][0])
+        ys = (tri[0][1], tri[1][1], tri[2][1])
+        zs = (tri[0][2], tri[1][2], tri[2][2])
+        return _AABB((min(xs), min(ys), min(zs)),
+                     (max(xs), max(ys), max(zs)))
+
+    def merge(self, o):
+        return _AABB(
+            (min(self.mn[0], o.mn[0]), min(self.mn[1], o.mn[1]), min(self.mn[2], o.mn[2])),
+            (max(self.mx[0], o.mx[0]), max(self.mx[1], o.mx[1]), max(self.mx[2], o.mx[2])))
+
+    def surface_area(self):
+        dx = self.mx[0] - self.mn[0]
+        dy = self.mx[1] - self.mn[1]
+        dz = self.mx[2] - self.mn[2]
+        return 2.0 * (dx*dy + dy*dz + dz*dx)
+
+
+# ---------------------------------------------------------------------------
+# BVH
+# ---------------------------------------------------------------------------
+class _BVHNode(object):
+    __slots__ = ("aabb", "left", "right", "tri_idx")
+    def __init__(self):
+        self.aabb    = None
+        self.left    = None
+        self.right   = None
+        self.tri_idx = -1   # >= 0: leaf node
+
+
+def _centroid_ax(tri, axis):
+    return (tri[0][axis] + tri[1][axis] + tri[2][axis]) / 3.0
+
+
+def _build_bvh(tris, indices):
+    node = _BVHNode()
+    box = _AABB.from_tri(tris[indices[0]])
+    for i in indices[1:]:
+        box = box.merge(_AABB.from_tri(tris[i]))
+    node.aabb = box
+
+    if len(indices) == 1:
+        node.tri_idx = indices[0]
+        return node
+
+    if len(indices) == 2:
+        l = _BVHNode(); l.aabb = _AABB.from_tri(tris[indices[0]]); l.tri_idx = indices[0]
+        r = _BVHNode(); r.aabb = _AABB.from_tri(tris[indices[1]]); r.tri_idx = indices[1]
+        node.left = l; node.right = r
+        return node
+
+    c = [(_centroid_ax(tris[i], 0), _centroid_ax(tris[i], 1), _centroid_ax(tris[i], 2))
+         for i in indices]
+    spans = [max(v[ax] for v in c) - min(v[ax] for v in c) for ax in range(3)]
+    axis = spans.index(max(spans))
+
+    sorted_idx = sorted(indices, key=lambda i: _centroid_ax(tris[i], axis))
+    mid = len(sorted_idx) // 2
+    node.left  = _build_bvh(tris, sorted_idx[:mid])
+    node.right = _build_bvh(tris, sorted_idx[mid:])
+    return node
+
+
+def _refit_bvh(node, tris):
+    """
+    Recursively update AABBs in an existing BVH using new triangle positions.
+    The tree structure (left/right/tri_idx) is preserved — only AABBs change.
+    This is much faster than rebuilding the BVH from scratch, since the
+    topology doesn't change between animation frames.
+    """
+    if node is None:
+        return None
+    if node.tri_idx >= 0:
+        # Leaf: rebuild AABB from the current triangle position
+        node.aabb = _AABB.from_tri(tris[node.tri_idx])
+        return node.aabb
+    left_aabb = _refit_bvh(node.left, tris)
+    right_aabb = _refit_bvh(node.right, tris)
+    if left_aabb is None:
+        node.aabb = right_aabb
+    elif right_aabb is None:
+        node.aabb = left_aabb
+    else:
+        node.aabb = left_aabb.merge(right_aabb)
+    return node.aabb
+
+

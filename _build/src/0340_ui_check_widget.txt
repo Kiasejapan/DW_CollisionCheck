@@ -1,0 +1,152 @@
+class CheckItemWidget(QtWidgets.QFrame):
+    check_requested = QtCore.Signal(object)   # emits the CheckItem instance
+
+    def __init__(self, check_item, has_settings=False, parent=None):
+        super(CheckItemWidget, self).__init__(parent)
+        self.check_item   = check_item
+        self.has_settings = has_settings
+        self._build()
+
+    def _build(self):
+        self.setStyleSheet(
+            "QFrame{background-color:#3C3C3C;border:1px solid #555;"
+            "border-radius:4px;margin:1px 0px}")
+        lo = QtWidgets.QVBoxLayout(self)
+        lo.setContentsMargins(8, 5, 8, 5)
+        lo.setSpacing(3)
+
+        # Header row
+        hl = QtWidgets.QHBoxLayout()
+        hl.setSpacing(4)
+
+        # Enable checkbox (for optional checks)
+        self._cb_enabled = QtWidgets.QCheckBox()
+        self._cb_enabled.setChecked(self.check_item.enabled)
+        self._cb_enabled.setFixedSize(16, 16)
+        self._cb_enabled.setStyleSheet(
+            "QCheckBox{color:#EEE}"
+            "QCheckBox::indicator{width:12px;height:12px}")
+        self._cb_enabled.toggled.connect(self._on_enabled_toggled)
+        hl.addWidget(self._cb_enabled)
+
+        self._icon = QtWidgets.QLabel(_ICON["unchecked"])
+        self._icon.setFixedWidth(18)
+        self._icon.setAlignment(QtCore.Qt.AlignCenter)
+        self._icon.setStyleSheet("color:#888;font-size:13px;font-weight:bold")
+        hl.addWidget(self._icon)
+
+        self._title = QtWidgets.QLabel(
+            "<b>{0}</b>".format(self.check_item.label))
+        self._title.setStyleSheet("color:#EEE;font-size:11px")
+        hl.addWidget(self._title)
+        hl.addStretch()
+
+        self._badge = QtWidgets.QLabel("")
+        self._badge.setStyleSheet(
+            "color:#F44336;font-size:10px;font-weight:bold;margin-right:4px")
+        self._badge.setVisible(False)
+        hl.addWidget(self._badge)
+
+        if self.has_settings:
+            self._btn_settings = QtWidgets.QPushButton(u"\u2699")
+            self._btn_settings.setFixedSize(22, 22)
+            self._btn_settings.setStyleSheet(
+                "QPushButton{background-color:#555;color:#EEE;"
+                "border:1px solid #777;border-radius:3px;font-size:12px}"
+                "QPushButton:hover{background-color:#607D8B;border-color:#90A4AE}")
+            self._btn_settings.clicked.connect(self._open_settings)
+            hl.addWidget(self._btn_settings)
+
+        self._btn_check = QtWidgets.QPushButton(tr("btn_check"))
+        self._btn_check.setFixedSize(60, 22)
+        self._btn_check.setStyleSheet(
+            "QPushButton{background-color:#2196F3;color:white;border:none;"
+            "border-radius:3px;font-size:10px;font-weight:bold}"
+            "QPushButton:hover{background-color:#1976D2}"
+            "QPushButton:disabled{background-color:#444;color:#666}")
+        self._btn_check.clicked.connect(self._on_check)
+        hl.addWidget(self._btn_check)
+
+        lo.addLayout(hl)
+
+        self._desc = QtWidgets.QLabel(self.check_item.description)
+        self._desc.setStyleSheet("color:#AAA;font-size:9px;padding-left:20px")
+        self._desc.setWordWrap(True)
+        lo.addWidget(self._desc)
+
+        # Apply initial enabled state
+        self._apply_enabled_state()
+
+    def _on_enabled_toggled(self, checked):
+        self.check_item.enabled = checked
+        self._apply_enabled_state()
+
+    def _apply_enabled_state(self):
+        enabled = self.check_item.enabled
+        self._btn_check.setEnabled(enabled)
+        opacity = "1.0" if enabled else "0.4"
+        self._title.setStyleSheet(
+            "color:#EEE;font-size:11px;opacity:{0}".format(opacity))
+        self._desc.setStyleSheet(
+            "color:{0};font-size:9px;padding-left:20px".format(
+                "#AAA" if enabled else "#666"))
+        self._icon.setStyleSheet(
+            "color:{0};font-size:13px;font-weight:bold".format(
+                "#888" if enabled else "#555"))
+
+    def _on_check(self):
+        self._btn_check.setEnabled(False)
+        self._icon.setText(u"\u29D7")  # hourglass-like placeholder
+        self._icon.setStyleSheet("color:#FF9800;font-size:13px;font-weight:bold")
+        QtWidgets.QApplication.processEvents()
+
+        self.check_item.run_check()
+        self._update_ui()
+        self._btn_check.setEnabled(True)
+        self.check_requested.emit(self.check_item)
+
+    def _open_settings(self):
+        dlg = StaticCheckSettingsDialog(parent=self)
+        dlg.exec_()
+
+    def _update_ui(self):
+        s = self.check_item.status
+        self._icon.setText(_ICON.get(s, _ICON["unchecked"]))
+        self._icon.setStyleSheet(
+            "color:{c};font-size:13px;font-weight:bold".format(
+                c=_ICON_COLOR.get(s, "#888")))
+        n = len(self.check_item.issues)
+        if n:
+            self._badge.setText("({0})".format(n))
+            self._badge.setVisible(True)
+        else:
+            self._badge.setVisible(False)
+
+    def refresh_labels(self):
+        self._title.setText("<b>{0}</b>".format(self.check_item.label))
+        self._desc.setText(self.check_item.description)
+        self._btn_check.setText(tr("btn_check"))
+
+    def reset(self):
+        self.check_item.status = "unchecked"
+        self.check_item.issues = []
+        self._icon.setText(_ICON["unchecked"])
+        self._icon.setStyleSheet("color:#888;font-size:13px;font-weight:bold")
+        self._badge.setVisible(False)
+
+
+
+# ---------------------------------------------------------------------------
+# CollisionCheckToolWindow  (Main UI — reference architecture compliant)
+# ---------------------------------------------------------------------------
+_MAIN_SS = (
+    "QDialog{background-color:#333}"
+    "QScrollArea{border:none;background-color:transparent}"
+    "QScrollBar:vertical{background:#2B2B2B;width:10px}"
+    "QScrollBar::handle:vertical{background:#555;border-radius:4px}"
+    "QGroupBox{border-radius:6px;background-color:#2E2E2E;margin-top:6px}"
+    "QGroupBox::title{subcontrol-origin:margin;left:10px;"
+    "color:#EEE;font-size:11px;font-weight:bold}"
+    "QLabel{color:#EEE}"
+)
+

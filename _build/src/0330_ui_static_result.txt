@@ -1,0 +1,191 @@
+class StaticResultWindow(QtWidgets.QDialog):
+    """
+    Displays intersection / proximity issues in a table.
+    Row selection → auto-selects faces in Maya viewport.
+    """
+    def __init__(self, all_check_items, parent=None):
+        super(StaticResultWindow, self).__init__(parent)
+        self.setWindowTitle(tr("result_title_static"))
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose, False)
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
+        self.setMinimumSize(680, 400)
+        self.setStyleSheet(
+            "QDialog{background-color:#333;color:#EEE}"
+            "QLabel{color:#EEE}"
+        )
+        self._check_items = all_check_items
+        self._rows = []   # list of {issue, check_item}
+        self._build()
+        self.populate(all_check_items)
+
+    def _build(self):
+        lo = QtWidgets.QVBoxLayout(self)
+        lo.setContentsMargins(8, 8, 8, 8)
+        lo.setSpacing(6)
+
+        # Scope label
+        self._scope_label = QtWidgets.QLabel("")
+        self._scope_label.setStyleSheet(
+            "color:#8BC34A;background-color:#2B2B2B;"
+            "padding:4px 8px;border-radius:3px;font-size:10px")
+        self._scope_label.setWordWrap(True)
+        lo.addWidget(self._scope_label)
+
+        # Table: Status | Check | Mesh A | Mesh B | Detail
+        self._table = QtWidgets.QTableWidget(0, 5)
+        self._table.setStyleSheet(_TABLE_SS)
+        self._table.setHorizontalHeaderLabels([
+            tr("col_status"), tr("col_check"),
+            tr("col_mesh_a"), tr("col_mesh_b"), tr("col_detail"),
+        ])
+        self._table.horizontalHeader().setStretchLastSection(True)
+        self._table.setColumnWidth(0, 60)
+        self._table.setColumnWidth(1, 100)
+        self._table.setColumnWidth(2, 130)
+        self._table.setColumnWidth(3, 130)
+        self._table.setWordWrap(True)
+        self._table.verticalHeader().setDefaultSectionSize(28)
+        self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._table.setAlternatingRowColors(True)
+        self._table.setStyleSheet(
+            _TABLE_SS + "QTableWidget{alternate-background-color:#323232}")
+        self._table.verticalHeader().setVisible(False)
+        self._table.currentCellChanged.connect(self._on_row_changed)
+        lo.addWidget(self._table)
+
+        # Bottom bar
+        bottom = QtWidgets.QHBoxLayout()
+        bottom.addStretch()
+        self._btn_select = _mkbtn(tr("btn_select_faces"), 26, "#2196F3", "#1976D2")
+        self._btn_select.clicked.connect(self._select_current_faces)
+        bottom.addWidget(self._btn_select)
+
+        btn_close = _mkbtn(tr("btn_close"), 26, "#555", "#444")
+        btn_close.clicked.connect(self.hide)
+        bottom.addWidget(btn_close)
+        lo.addLayout(bottom)
+
+    def populate(self, check_items):
+        """Rebuild the table from the current issues of all check items."""
+        self._table.setRowCount(0)
+        self._rows = []
+
+        total_issues = 0
+        scope_parts  = set()
+
+        for ci in check_items:
+            if ci.status == "unchecked":
+                continue
+            for issue in ci.issues:
+                row = self._table.rowCount()
+                self._table.insertRow(row)
+
+                # Status
+                if issue.get("face_a", -1) == -1:
+                    status_text  = "ERROR"
+                    status_color = "#FF9800"
+                else:
+                    status_text  = tr("fail_label")
+                    status_color = "#F44336"
+
+                st_item = QtWidgets.QTableWidgetItem(status_text)
+                st_item.setTextAlignment(QtCore.Qt.AlignCenter)
+                st_item.setForeground(QtGui.QColor(status_color))
+                font = st_item.font(); font.setBold(True); st_item.setFont(font)
+                self._table.setItem(row, 0, st_item)
+
+                # Check name
+                self._table.setItem(row, 1,
+                    QtWidgets.QTableWidgetItem(ci.label))
+
+                # Mesh A
+                short_a = MayaBridge.get_short_name(
+                    issue.get("mesh_a", ""))
+                self._table.setItem(row, 2,
+                    QtWidgets.QTableWidgetItem(short_a))
+
+                # Mesh B
+                short_b = MayaBridge.get_short_name(
+                    issue.get("mesh_b", ""))
+                self._table.setItem(row, 3,
+                    QtWidgets.QTableWidgetItem(short_b))
+
+                # Detail
+                self._table.setItem(row, 4,
+                    QtWidgets.QTableWidgetItem(issue.get("detail", "")))
+
+                self._rows.append({"issue": issue, "check_item": ci})
+                total_issues += 1
+
+                if issue.get("mesh_a"):
+                    scope_parts.add(MayaBridge.get_short_name(issue["mesh_a"]))
+                if issue.get("mesh_b"):
+                    scope_parts.add(MayaBridge.get_short_name(issue["mesh_b"]))
+
+        scope_str = ", ".join(sorted(scope_parts)) if scope_parts else "—"
+        # Compute total elapsed time across all checks
+        total_elapsed = sum(
+            getattr(ci, "elapsed_sec", 0.0) for ci in check_items)
+        elapsed_str = "  |  {0:.2f}s".format(total_elapsed) if total_elapsed > 0 else ""
+        self._scope_label.setText(
+            tr("scope_label", scope=scope_str)
+            + "  |  {0} issue(s)".format(total_issues)
+            + elapsed_str)
+
+    def _on_row_changed(self, row, col, prev_row, prev_col):
+        if row < 0 or row >= len(self._rows):
+            return
+        self._highlight_row(row)
+
+    def _highlight_row(self, row):
+        """Select the grouped faces stored in the issue."""
+        if not MAYA_AVAILABLE:
+            return
+        data = self._rows[row]
+        issue = data["issue"]
+        mesh_a = issue.get("mesh_a", "")
+        mesh_b = issue.get("mesh_b", "")
+
+        # Use pre-grouped faces if available, fall back to single face
+        faces_a = issue.get("faces_a", [])
+        faces_b = issue.get("faces_b", [])
+        if not faces_a:
+            fa = issue.get("face_a", -1)
+            if fa >= 0:
+                faces_a = [fa]
+        if not faces_b:
+            fb = issue.get("face_b", -1)
+            if fb >= 0:
+                faces_b = [fb]
+
+        if faces_a and mesh_a:
+            MayaBridge.select_faces(mesh_a, faces_a)
+        if faces_b and mesh_b:
+            for fb in faces_b:
+                try:
+                    cmds.select(
+                        "{0}.f[{1}]".format(mesh_b, fb), add=True)
+                except Exception:
+                    pass
+
+    def _select_current_faces(self):
+        row = self._table.currentRow()
+        if row >= 0:
+            self._highlight_row(row)
+
+    def refresh_labels(self):
+        """Re-apply localized strings (called on language toggle)."""
+        self.setWindowTitle(tr("result_title_static"))
+        headers = [tr("col_status"), tr("col_check"),
+                   tr("col_mesh_a"), tr("col_mesh_b"), tr("col_detail")]
+        for i, h in enumerate(headers):
+            self._table.horizontalHeaderItem(i).setText(h)
+        self._btn_select.setText(tr("btn_select_faces"))
+
+
+
+# ---------------------------------------------------------------------------
+# CheckItemWidget  (reusable row widget — matches reference architecture)
+# ---------------------------------------------------------------------------

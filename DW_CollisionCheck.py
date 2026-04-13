@@ -11,6 +11,13 @@ import math
 import time
 import csv
 
+# Version is rewritten by build.bat at every build
+# Format: YYYY.MM.DD.HHMM
+VERSION = "2026.04.13.1537"
+
+# GitHub raw file URL for auto-update
+_GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
+
 PY2 = sys.version_info[0] == 2
 
 # Python 2/3 compatible reload
@@ -40,7 +47,6 @@ except ImportError:
         from shiboken import wrapInstance
 
 
-
 # ---------------------------------------------------------------------------
 # Localization
 # ---------------------------------------------------------------------------
@@ -57,6 +63,7 @@ _STRINGS = {
     "run_static":           {"en": "Run Static Checks",             "jp": u"\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u5b9f\u884c"},
     "btn_check":            {"en": "Check",                         "jp": u"\u30c1\u30a7\u30c3\u30af"},
     "btn_reload":           {"en": "Reload",                        "jp": u"\u30ea\u30ed\u30fc\u30c9"},
+    "btn_update":           {"en": "Check for Updates",              "jp": u"\u66f4\u65b0\u3092\u78ba\u8a8d"},
     "btn_help":             {"en": "?",                             "jp": u"?"},
     "btn_lang":             {"en": "JP",                            "jp": u"EN"},
     "btn_static_results":   {"en": "Static Results",                "jp": u"\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u7d50\u679c"},
@@ -151,7 +158,6 @@ def tr(key, **kw):
     return t.format(**kw) if kw else t
 
 
-
 # ---------------------------------------------------------------------------
 # CollisionDetector  (Pure Python — no Maya dependency)
 # ---------------------------------------------------------------------------
@@ -165,7 +171,6 @@ def _len(a):      return math.sqrt(a[0]*a[0] + a[1]*a[1] + a[2]*a[2])
 def _norm(a):
     l = _len(a)
     return (a[0]/l, a[1]/l, a[2]/l) if l > 1e-15 else (0.0, 0.0, 0.0)
-
 
 # ---------------------------------------------------------------------------
 # AABB
@@ -269,7 +274,6 @@ def _refit_bvh(node, tris):
     else:
         node.aabb = left_aabb.merge(right_aabb)
     return node.aabb
-
 
 
 # ---------------------------------------------------------------------------
@@ -535,7 +539,6 @@ def _compute_interval(proj, dists):
     """Legacy wrapper — kept for backward compat but not used."""
     return None, None
 
-
 # ---------------------------------------------------------------------------
 # Dual-BVH traversal
 # ---------------------------------------------------------------------------
@@ -621,7 +624,6 @@ def _build_tri_adjacency(tri_vert_ids):
                 adj[tri_list[j]].add(tri_list[i])
     return adj
 
-
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -676,7 +678,6 @@ def _build_cross_mesh_shared_verts(tris_a, tris_b, precision=3):
             if common >= 1:
                 shared.add((ti_a, ti_b))
     return shared
-
 
 class CollisionDetector(object):
     """
@@ -1152,7 +1153,6 @@ class MayaBridge(object):
             result[fid] = full_adj.get(fid, set()) & face_set
         return result
 
-
 def _group_connected_faces(face_ids, neighbors):
     """
     Given a set of face IDs and their adjacency, returns a list of
@@ -1187,7 +1187,6 @@ SCOPE_MESH  = "mesh"
 
 _ICON        = {"unchecked": u"\u25CB", "pass": u"\u2714", "fail": u"\u2718"}
 _ICON_COLOR  = {"unchecked": "#888", "pass": "#4CAF50", "fail": "#F44336"}
-
 
 class CheckItem(object):
     """Abstract base for all collision checks. Python 2.7 compatible."""
@@ -1312,7 +1311,6 @@ def _get_pairs_to_check():
         for j in range(i + 1, len(meshes)):
             pairs.append((meshes[i], meshes[j]))
     return pairs
-
 
 # ---------------------------------------------------------------------------
 class IntersectionCheck(CheckItem):
@@ -1599,7 +1597,6 @@ class ProximityCheck(CheckItem):
 
 # Registry for Static group
 STATIC_CHECKS = [IntersectionCheck, OverlapCheck]
-
 
 # ---------------------------------------------------------------------------
 # Shared UI helpers & stylesheets
@@ -2684,7 +2681,6 @@ _MAIN_SS = (
     "QLabel{color:#EEE}"
 )
 
-
 class CollisionCheckToolWindow(QtWidgets.QDialog):
 
     def __init__(self, parent=None):
@@ -2733,7 +2729,8 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         header.setSpacing(4)
 
         self._title_lbl = QtWidgets.QLabel(
-            "<b>{0}</b>".format(tr("window_title")))
+            "<b>{0}</b> <span style='color:#888;font-size:10px'>v{1}</span>".format(
+                tr("window_title"), VERSION))
         self._title_lbl.setStyleSheet(
             "color:#EEE;font-size:14px;padding:4px")
         header.addWidget(self._title_lbl)
@@ -2749,6 +2746,17 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
             "QPushButton:hover{background-color:#4CAF50}")
         reload_btn.clicked.connect(self._on_reload)
         header.addWidget(reload_btn)
+
+        # Update button
+        update_btn = QtWidgets.QPushButton(u"\u2B07")  # down arrow
+        update_btn.setFixedSize(28, 24)
+        update_btn.setToolTip(tr("btn_update"))
+        update_btn.setStyleSheet(
+            "QPushButton{background-color:#555;color:#EEE;"
+            "border:1px solid #777;border-radius:3px;font-size:12px}"
+            "QPushButton:hover{background-color:#9C27B0}")
+        update_btn.clicked.connect(self._on_check_update)
+        header.addWidget(update_btn)
 
         # Help button
         help_btn = QtWidgets.QPushButton("?")
@@ -3253,7 +3261,9 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         self._refresh_labels()
 
     def _refresh_labels(self):
-        self._title_lbl.setText("<b>{0}</b>".format(tr("window_title")))
+        self._title_lbl.setText(
+            "<b>{0}</b> <span style='color:#888;font-size:10px'>v{1}</span>".format(
+                tr("window_title"), VERSION))
         self.setWindowTitle(tr("window_title"))
         self._lang_btn.setText(tr("btn_lang"))
         self._btn_static_results.setText(tr("btn_static_results"))
@@ -3338,6 +3348,133 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
                 mod._saved_lang = _saved_lang
                 mod.show()
 
+    def _on_check_update(self):
+        """Trigger the auto-update workflow."""
+        check_for_updates()
+
+
+
+# ---------------------------------------------------------------------------
+# Auto-update from GitHub
+# ---------------------------------------------------------------------------
+def _url_read(url, timeout=10):
+    """Read a URL and return the decoded string. Py2/3 compatible."""
+    if PY2:
+        import urllib2
+        resp = urllib2.urlopen(url, timeout=timeout)
+        data = resp.read()
+    else:
+        import urllib.request
+        resp = urllib.request.urlopen(url, timeout=timeout)
+        data = resp.read()
+    if isinstance(data, bytes):
+        try:
+            return data.decode("utf-8")
+        except UnicodeDecodeError:
+            return data.decode("utf-8", errors="replace")
+    return data
+
+
+def _extract_remote_version(source_text):
+    """Extract 'VERSION = "..."' line from source code."""
+    import re
+    m = re.search(r'^VERSION\s*=\s*"([^"]+)"', source_text, re.MULTILINE)
+    return m.group(1) if m else None
+
+
+def check_for_updates():
+    """
+    Check GitHub for a newer version. If found, offer to download and
+    install it into the user's Maya scripts folder.
+    """
+    if not MAYA_AVAILABLE:
+        return
+
+    # Use Qt dialog for cleaner UI (matches tool styling)
+    try:
+        source = _url_read(_GITHUB_RAW_URL)
+    except Exception as e:
+        QtWidgets.QMessageBox.warning(
+            None, "Update Check",
+            "Failed to connect to GitHub.\n{0}".format(str(e)))
+        return
+
+    remote_ver = _extract_remote_version(source)
+    if not remote_ver:
+        QtWidgets.QMessageBox.warning(
+            None, "Update Check",
+            "Could not read remote version.")
+        return
+
+    local_ver = VERSION
+    if remote_ver == local_ver:
+        QtWidgets.QMessageBox.information(
+            None, "Update Check",
+            u"\u6700\u65b0\u7248\u3067\u3059\u3002\n"
+            u"Version: {0}".format(local_ver))
+        return
+
+    # Compare timestamps (YYYY.MM.DD.HHMM format — lexical compare works)
+    is_newer = remote_ver > local_ver
+
+    if not is_newer:
+        msg = (u"\u30ed\u30fc\u30ab\u30eb\u7248\u306e\u65b9\u304c\u65b0\u3057"
+               u"\u3044\u3088\u3046\u3067\u3059\u3002\n\n"
+               u"Local:  {0}\nRemote: {1}").format(local_ver, remote_ver)
+        QtWidgets.QMessageBox.information(None, "Update Check", msg)
+        return
+
+    # Newer version available — ask to download
+    msg = (u"\u65b0\u3057\u3044\u30d0\u30fc\u30b8\u30e7\u30f3\u304c\u3042"
+           u"\u308a\u307e\u3059\u3002\n\n"
+           u"Local:  {0}\nRemote: {1}\n\n"
+           u"\u30c0\u30a6\u30f3\u30ed\u30fc\u30c9\u3057\u3066\u66f4\u65b0"
+           u"\u3057\u307e\u3059\u304b\uff1f").format(local_ver, remote_ver)
+    reply = QtWidgets.QMessageBox.question(
+        None, "Update Check", msg,
+        QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+    if reply != QtWidgets.QMessageBox.Yes:
+        return
+
+    # Save to Maya scripts folder
+    try:
+        scripts_dir = cmds.internalVar(userScriptDir=True)
+        if scripts_dir.endswith("/") or scripts_dir.endswith("\\"):
+            scripts_dir = scripts_dir[:-1]
+        dest = os.path.join(scripts_dir, "DW_CollisionCheck.py")
+
+        # Backup existing
+        if os.path.exists(dest):
+            bak = dest + ".bak"
+            if os.path.exists(bak):
+                try:
+                    os.remove(bak)
+                except Exception:
+                    pass
+            try:
+                os.rename(dest, bak)
+            except Exception:
+                pass
+
+        if PY2:
+            with open(dest, "wb") as f:
+                f.write(source.encode("utf-8"))
+        else:
+            with open(dest, "w", encoding="utf-8") as f:
+                f.write(source)
+
+        done_msg = (u"v{0} \u306b\u66f4\u65b0\u3057\u307e\u3057\u305f\u3002\n\n"
+                    u"\u4fdd\u5b58\u5148: {1}\n\n"
+                    u"\u30c4\u30fc\u30eb\u3092\u518d\u8d77\u52d5\u3057\u3066"
+                    u"\u304f\u3060\u3055\u3044\u3002\n"
+                    u"(\u30e1\u30a4\u30f3\u30a6\u30a3\u30f3\u30c9\u30a6\u306e"
+                    u"\u30ea\u30ed\u30fc\u30c9\u30dc\u30bf\u30f3\u3092\u30af"
+                    u"\u30ea\u30c3\u30af)").format(remote_ver, dest)
+        QtWidgets.QMessageBox.information(None, "Update Check", done_msg)
+    except Exception as e:
+        QtWidgets.QMessageBox.warning(
+            None, "Update Check",
+            "Failed to save update.\n{0}".format(str(e)))
 
 
 # ---------------------------------------------------------------------------
@@ -3366,5 +3503,4 @@ if __name__ == "__main__":
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
     win = show()
     app.exec_()
-
 

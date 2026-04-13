@@ -1,0 +1,44 @@
+# ---------------------------------------------------------------------------
+# Shared UI helpers & stylesheets
+# ---------------------------------------------------------------------------
+def _mkbtn(text, h, bg, hv, fs=11, parent=None):
+    b = QtWidgets.QPushButton(text, parent)
+    b.setFixedHeight(h)
+    b.setStyleSheet(
+        "QPushButton{{background-color:{bg};color:white;border:none;"
+        "border-radius:4px;font-size:{fs}px;font-weight:bold;padding:0 10px}}"
+        "QPushButton:hover{{background-color:{hv}}}"
+        "QPushButton:disabled{{background-color:#444;color:#666}}"
+        .format(bg=bg, hv=hv, fs=fs))
+    return b
+
+
+_DIALOG_SS = (
+    "QDialog{background-color:#333;color:#EEE}"
+    "QGroupBox{border:1px solid #555;border-radius:6px;"
+    "background-color:#2E2E2E;color:#EEE;margin-top:8px;padding-top:8px}"
+    "QGroupBox::title{subcontrol-origin:margin;left:8px}"
+    "QLabel{color:#EEE}"
+    "QCheckBox{color:#EEE}"
+    "QDoubleSpinBox,QSpinBox,QLineEdit{"
+    "background-color:#2B2B2B;color:#EEE;border:1px solid #555;"
+    "border-radius:3px;padding:2px}"
+    "QListWidget{background-color:#2B2B2B;color:#EEE;"
+    "border:1px solid #555;border-radius:3px}"
+    "QListWidget::item:selected{background-color:#1565C0}"
+)
+
+_TABLE_SS = (
+    "QTableWidget{background-color:#2B2B2B;color:#EEE;"
+    "gridline-color:#444;border:none}"
+    "QTableWidget::item{padding:2px}"
+    "QTableWidget::item:selected{background-color:#1565C0}"
+    "QHeaderView::section{background-color:#3C3C3C;color:#EEE;"
+    "border:1px solid #555;padding:4px;font-size:10px;font-weight:bold}"
+    "QScrollBar:vertical{background:#2B2B2B;width:10px}"
+    "QScrollBar::handle:vertical{background:#555;border-radius:4px}"
+)
+
+
+# ---------------------------------------------------------------------------
+# Animation Scan  (global settings + scanner)

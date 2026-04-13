@@ -1,0 +1,194 @@
+class AnimResultWindow(QtWidgets.QDialog):
+    """
+    Displays per-frame intersection results.
+    Row click -> go to that frame + select the faces.
+    """
+
+    def __init__(self, parent=None):
+        super(AnimResultWindow, self).__init__(parent)
+        self.setWindowTitle(tr("result_title_anim"))
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose, False)
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
+        self.setMinimumSize(720, 450)
+        self.setStyleSheet(
+            "QDialog{background-color:#333;color:#EEE}"
+            "QLabel{color:#EEE}")
+        self._rows = []
+        self._build()
+
+    def _build(self):
+        lo = QtWidgets.QVBoxLayout(self)
+        lo.setContentsMargins(8, 8, 8, 8)
+        lo.setSpacing(6)
+
+        # Summary label
+        self._summary_label = QtWidgets.QLabel("")
+        self._summary_label.setStyleSheet(
+            "color:#FF9800;background-color:#2B2B2B;"
+            "padding:4px 8px;border-radius:3px;font-size:10px")
+        self._summary_label.setWordWrap(True)
+        lo.addWidget(self._summary_label)
+
+        # Table: Frame | Status | Mesh A | Mesh B | Detail
+        self._table = QtWidgets.QTableWidget(0, 5)
+        self._table.setStyleSheet(
+            _TABLE_SS + "QTableWidget{alternate-background-color:#323232}")
+        self._table.setHorizontalHeaderLabels([
+            tr("col_frame"), tr("col_status"),
+            tr("col_mesh_a"), tr("col_mesh_b"), tr("col_detail"),
+        ])
+        self._table.horizontalHeader().setStretchLastSection(True)
+        self._table.setColumnWidth(0, 50)
+        self._table.setColumnWidth(1, 55)
+        self._table.setColumnWidth(2, 130)
+        self._table.setColumnWidth(3, 130)
+        self._table.setWordWrap(True)
+        self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._table.setAlternatingRowColors(True)
+        self._table.verticalHeader().setVisible(False)
+        self._table.currentCellChanged.connect(self._on_row_changed)
+        lo.addWidget(self._table)
+
+        # Bottom bar
+        bottom = QtWidgets.QHBoxLayout()
+        bottom.addStretch()
+        self._btn_goto = _mkbtn(tr("btn_goto_frame"), 26, "#FF9800", "#F57C00")
+        self._btn_goto.clicked.connect(self._goto_current_frame)
+        bottom.addWidget(self._btn_goto)
+        self._btn_select = _mkbtn(tr("btn_select_faces"), 26, "#2196F3", "#1976D2")
+        self._btn_select.clicked.connect(self._select_current_faces)
+        bottom.addWidget(self._btn_select)
+        btn_close = _mkbtn(tr("btn_close"), 26, "#555", "#444")
+        btn_close.clicked.connect(self.hide)
+        bottom.addWidget(btn_close)
+        lo.addLayout(bottom)
+
+    def populate(self, scan_results):
+        """
+        scan_results: list of {frame: int, issues: [issue_dict, ...]}
+        """
+        self._table.setRowCount(0)
+        self._rows = []
+
+        total_issues = 0
+        frames_with_issues = 0
+
+        for fr_data in scan_results:
+            frame = fr_data["frame"]
+            issues = fr_data["issues"]
+            if not issues:
+                continue
+            frames_with_issues += 1
+
+            for issue in issues:
+                row = self._table.rowCount()
+                self._table.insertRow(row)
+
+                # Frame
+                f_item = QtWidgets.QTableWidgetItem(str(frame))
+                f_item.setTextAlignment(QtCore.Qt.AlignCenter)
+                self._table.setItem(row, 0, f_item)
+
+                # Status
+                st_item = QtWidgets.QTableWidgetItem(tr("fail_label"))
+                st_item.setTextAlignment(QtCore.Qt.AlignCenter)
+                st_item.setForeground(QtGui.QColor("#F44336"))
+                font = st_item.font()
+                font.setBold(True)
+                st_item.setFont(font)
+                self._table.setItem(row, 1, st_item)
+
+                # Mesh A
+                short_a = MayaBridge.get_short_name(
+                    issue.get("mesh_a", ""))
+                self._table.setItem(row, 2,
+                    QtWidgets.QTableWidgetItem(short_a))
+
+                # Mesh B
+                short_b = MayaBridge.get_short_name(
+                    issue.get("mesh_b", ""))
+                self._table.setItem(row, 3,
+                    QtWidgets.QTableWidgetItem(short_b))
+
+                # Detail
+                self._table.setItem(row, 4,
+                    QtWidgets.QTableWidgetItem(issue.get("detail", "")))
+
+                self._rows.append({
+                    "frame": frame, "issue": issue})
+                total_issues += 1
+
+        self._summary_label.setText(
+            tr("lbl_anim_summary",
+               total=total_issues, frames=frames_with_issues))
+
+    def _on_row_changed(self, row, col, prev_row, prev_col):
+        if row < 0 or row >= len(self._rows):
+            return
+        self._goto_and_select(row)
+
+    def _goto_and_select(self, row):
+        """Go to frame and select the grouped faces stored in the issue."""
+        if not MAYA_AVAILABLE:
+            return
+        data  = self._rows[row]
+        frame = data["frame"]
+        issue = data["issue"]
+
+        cmds.currentTime(frame, edit=True)
+
+        mesh_a = issue.get("mesh_a", "")
+        mesh_b = issue.get("mesh_b", "")
+
+        # Use pre-grouped faces if available, fall back to single face
+        faces_a = issue.get("faces_a", [])
+        faces_b = issue.get("faces_b", [])
+        if not faces_a:
+            fa = issue.get("face_a", -1)
+            if fa >= 0:
+                faces_a = [fa]
+        if not faces_b:
+            fb = issue.get("face_b", -1)
+            if fb >= 0:
+                faces_b = [fb]
+
+        if faces_a and mesh_a:
+            MayaBridge.select_faces(mesh_a, faces_a)
+        if faces_b and mesh_b:
+            for fb in faces_b:
+                try:
+                    cmds.select(
+                        "{0}.f[{1}]".format(mesh_b, fb), add=True)
+                except Exception:
+                    pass
+
+    def _goto_current_frame(self):
+        row = self._table.currentRow()
+        if row >= 0 and row < len(self._rows):
+            if MAYA_AVAILABLE:
+                cmds.currentTime(
+                    self._rows[row]["frame"], edit=True)
+
+    def _select_current_faces(self):
+        row = self._table.currentRow()
+        if row >= 0:
+            self._goto_and_select(row)
+
+    def refresh_labels(self):
+        self.setWindowTitle(tr("result_title_anim"))
+        headers = [tr("col_frame"), tr("col_status"),
+                   tr("col_mesh_a"), tr("col_mesh_b"), tr("col_detail")]
+        for i, h in enumerate(headers):
+            item = self._table.horizontalHeaderItem(i)
+            if item:
+                item.setText(h)
+        self._btn_goto.setText(tr("btn_goto_frame"))
+        self._btn_select.setText(tr("btn_select_faces"))
+
+
+
+# ---------------------------------------------------------------------------
+# Settings Dialogs
+# ---------------------------------------------------------------------------

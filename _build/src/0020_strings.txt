@@ -1,0 +1,111 @@
+# ---------------------------------------------------------------------------
+# Localization
+# ---------------------------------------------------------------------------
+LANG_EN = "en"
+LANG_JP = "jp"
+_current_lang = LANG_EN
+_saved_geometry = None
+_saved_lang = None
+
+_STRINGS = {
+    "window_title":         {"en": "DW Collision Check",            "jp": u"DW \u5e72\u6e09\u30c1\u30a7\u30c3\u30af"},
+    "grp_static":           {"en": "Static Checks",                 "jp": u"\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u30c1\u30a7\u30c3\u30af"},
+    "grp_anim":             {"en": "Animation Scan",                "jp": u"\u30a2\u30cb\u30e1\u30fc\u30b7\u30e7\u30f3\u30b9\u30ad\u30e3\u30f3"},
+    "run_static":           {"en": "Run Static Checks",             "jp": u"\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u5b9f\u884c"},
+    "btn_check":            {"en": "Check",                         "jp": u"\u30c1\u30a7\u30c3\u30af"},
+    "btn_reload":           {"en": "Reload",                        "jp": u"\u30ea\u30ed\u30fc\u30c9"},
+    "btn_update":           {"en": "Check for Updates",              "jp": u"\u66f4\u65b0\u3092\u78ba\u8a8d"},
+    "btn_help":             {"en": "?",                             "jp": u"?"},
+    "btn_lang":             {"en": "JP",                            "jp": u"EN"},
+    "btn_static_results":   {"en": "Static Results",                "jp": u"\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u7d50\u679c"},
+    "chk_intersection":     {"en": "Intersection Check",            "jp": u"\u4ea4\u5dee\u30c1\u30a7\u30c3\u30af"},
+    "desc_intersection":    {"en": "Detects polygon faces penetrating each other at the current frame.",
+                             "jp": u"\u73fe\u5728\u30d5\u30ec\u30fc\u30e0\u3067\u30dd\u30ea\u30b4\u30f3\u30d5\u30a7\u30fc\u30b9\u304c\u8cab\u901a\u3057\u3066\u3044\u308b\u7b87\u6240\u3092\u691c\u51fa\u3057\u307e\u3059\u3002"},
+    "chk_overlap":          {"en": "Overlap Check",                 "jp": u"\u91cd\u306a\u308a\u30c1\u30a7\u30c3\u30af"},
+    "desc_overlap":         {"en": "Detects coplanar overlapping faces (z-fighting / double faces).",
+                             "jp": u"\u540c\u4e00\u5e73\u9762\u4e0a\u3067\u91cd\u306a\u3063\u3066\u3044\u308b\u30d5\u30a7\u30fc\u30b9\u3092\u691c\u51fa\u3057\u307e\u3059\u3002"},
+    "chk_proximity":        {"en": "Proximity Check",               "jp": u"\u8fd1\u63a5\u30c1\u30a7\u30c3\u30af"},
+    "desc_proximity":       {"en": "Detects faces closer than threshold without intersecting.",
+                             "jp": u"\u95be\u5024\u4ee5\u5185\u306b\u8fd1\u63a5\u3057\u3066\u3044\u308b\u30d5\u30a7\u30fc\u30b9\u3092\u691c\u51fa\u3057\u307e\u3059\u3002"},
+    "settings_title_static":{"en": "Static Check Settings",         "jp": u"\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u8a2d\u5b9a"},
+    "settings_detection":   {"en": "Detection",                     "jp": u"\u691c\u51fa\u8a2d\u5b9a"},
+    "settings_mesh_pairs":  {"en": "Mesh Pairs",                    "jp": u"\u30e1\u30c3\u30b7\u30e5\u30da\u30a2"},
+    "chk_selected_only":    {"en": "Check selected meshes only",    "jp": u"\u9078\u629e\u30e1\u30c3\u30b7\u30e5\u306e\u307f\u30c1\u30a7\u30c3\u30af"},
+    "chk_self_intersect":   {"en": "Include self-intersection",     "jp": u"\u81ea\u5df1\u4ea4\u5dee\u3082\u691c\u51fa"},
+    "chk_self_intersect":   {"en": "Include self-intersection",     "jp": u"\u81ea\u5df1\u4ea4\u5dee\u3082\u691c\u51fa"},
+    "lbl_proximity_thresh":  {"en": "Proximity threshold (mm):",    "jp": u"\u8fd1\u63a5\u95be\u5024 (mm):"},
+    "lbl_add_pair":         {"en": "Add selected pair",             "jp": u"\u9078\u629e\u30da\u30a2\u3092\u8ffd\u52a0"},
+    "lbl_remove_pair":      {"en": "Remove",                        "jp": u"\u524a\u9664"},
+    "lbl_depth_threshold":  {"en": "Depth threshold:",              "jp": u"\u6df1\u5ea6\u95be\u5024:"},
+    "result_title_static":  {"en": "Static Check Results",          "jp": u"\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u7d50\u679c"},
+    "col_status":           {"en": "Status",                        "jp": u"\u30b9\u30c6\u30fc\u30bf\u30b9"},
+    "col_check":            {"en": "Check",                         "jp": u"\u30c1\u30a7\u30c3\u30af"},
+    "col_mesh_a":           {"en": "Mesh A",                        "jp": u"\u30e1\u30c3\u30b7\u30e5 A"},
+    "col_mesh_b":           {"en": "Mesh B",                        "jp": u"\u30e1\u30c3\u30b7\u30e5 B"},
+    "col_detail":           {"en": "Detail",                        "jp": u"\u8a73\u7d30"},
+    "btn_select_faces":     {"en": "Select Faces",                  "jp": u"\u30d5\u30a7\u30fc\u30b9\u9078\u629e"},
+    "btn_close":            {"en": "Close",                         "jp": u"\u9589\u3058\u308b"},
+    "status_ready":         {"en": "Ready",                         "jp": u"\u6e96\u5099\u5b8c\u4e86"},
+    "status_no_meshes":     {"en": "No meshes selected or available.", "jp": u"\u30e1\u30c3\u30b7\u30e5\u304c\u9078\u629e\u3055\u308c\u3066\u3044\u307e\u305b\u3093\u3002"},
+    "status_no_anim":       {"en": "Selected meshes have no animation.", "jp": u"\u9078\u629e\u30e1\u30c3\u30b7\u30e5\u306b\u30a2\u30cb\u30e1\u30fc\u30b7\u30e7\u30f3\u304c\u3042\u308a\u307e\u305b\u3093\u3002"},
+    "status_checking":      {"en": "Running checks...",             "jp": u"\u30c1\u30a7\u30c3\u30af\u5b9f\u884c\u4e2d..."},
+    "status_done":          {"en": "Done: {count} issue(s) found.", "jp": u"\u5b8c\u4e86: {count} \u4ef6\u306e\u554f\u984c\u3092\u691c\u51fa\u3057\u307e\u3057\u305f\u3002"},
+    "scope_label":          {"en": "Target: {scope}",               "jp": u"\u5bfe\u8c61: {scope}"},
+    "no_mesh_selected":     {"en": "No mesh selected. Using all scene meshes.",
+                             "jp": u"\u30e1\u30c3\u30b7\u30e5\u304c\u9078\u629e\u3055\u308c\u3066\u3044\u307e\u305b\u3093\u3002\u30b7\u30fc\u30f3\u5168\u4f53\u3092\u4f7f\u7528\u3057\u307e\u3059\u3002"},
+    "no_pairs":             {"en": "No mesh pairs defined. Add pairs in settings.",
+                             "jp": u"\u30e1\u30c3\u30b7\u30e5\u30da\u30a2\u304c\u672a\u8a2d\u5b9a\u3067\u3059\u3002\u8a2d\u5b9a\u304b\u3089\u30da\u30a2\u3092\u8ffd\u52a0\u3057\u3066\u304f\u3060\u3055\u3044\u3002"},
+    "err_triangulate":      {"en": "Failed to triangulate: {mesh}", "jp": u"\u4e09\u89d2\u5316\u5931\u6557: {mesh}"},
+    "pass_label":           {"en": "PASS",                          "jp": u"PASS"},
+    "fail_label":           {"en": "FAIL",                          "jp": u"FAIL"},
+    "run_anim":             {"en": "Run Animation Scan",            "jp": u"\u30a2\u30cb\u30e1\u30fc\u30b7\u30e7\u30f3\u30b9\u30ad\u30e3\u30f3\u5b9f\u884c"},
+    "btn_stop_anim":        {"en": "Stop",                          "jp": u"\u505c\u6b62"},
+    "btn_anim_results":     {"en": "Anim Results",                  "jp": u"\u30a2\u30cb\u30e1\u7d50\u679c"},
+    "anim_settings_title":  {"en": "Animation Scan Settings",       "jp": u"\u30a2\u30cb\u30e1\u30b9\u30ad\u30e3\u30f3\u8a2d\u5b9a"},
+    "lbl_frame_range":      {"en": "Frame range:",                  "jp": u"\u30d5\u30ec\u30fc\u30e0\u7bc4\u56f2:"},
+    "lbl_frame_step":       {"en": "Step:",                         "jp": u"\u30b9\u30c6\u30c3\u30d7:"},
+    "chk_use_timeline":     {"en": "Use timeline range",            "jp": u"\u30bf\u30a4\u30e0\u30e9\u30a4\u30f3\u7bc4\u56f2\u3092\u4f7f\u7528"},
+    "chk_ignore_static":    {"en": "Ignore baseline frame collisions",
+                             "jp": u"\u30d9\u30fc\u30b9\u30e9\u30a4\u30f3\u30d5\u30ec\u30fc\u30e0\u306e\u5e72\u6e09\u3092\u7121\u8996"},
+    "lbl_baseline_frame":   {"en": "Baseline frame:",               "jp": u"\u30d9\u30fc\u30b9\u30e9\u30a4\u30f3:"},
+    "anim_scanning":        {"en": "Scanning frame {frame}/{total}...",
+                             "jp": u"\u30d5\u30ec\u30fc\u30e0 {frame}/{total} \u3092\u30b9\u30ad\u30e3\u30f3\u4e2d..."},
+    "anim_done":            {"en": "Animation scan done: {count} frame(s) with issues.",
+                             "jp": u"\u30a2\u30cb\u30e1\u30b9\u30ad\u30e3\u30f3\u5b8c\u4e86: {count} \u30d5\u30ec\u30fc\u30e0\u3067\u554f\u984c\u691c\u51fa\u3002"},
+    "anim_cancelled":       {"en": "Animation scan cancelled.",     "jp": u"\u30a2\u30cb\u30e1\u30b9\u30ad\u30e3\u30f3\u304c\u30ad\u30e3\u30f3\u30bb\u30eb\u3055\u308c\u307e\u3057\u305f\u3002"},
+    "result_title_anim":    {"en": "Animation Scan Results",        "jp": u"\u30a2\u30cb\u30e1\u30b9\u30ad\u30e3\u30f3\u7d50\u679c"},
+    "col_frame":            {"en": "Frame",                         "jp": u"\u30d5\u30ec\u30fc\u30e0"},
+    "btn_goto_frame":       {"en": "Go to Frame",                   "jp": u"\u30d5\u30ec\u30fc\u30e0\u3078\u79fb\u52d5"},
+    "lbl_anim_summary":     {"en": "{total} issues across {frames} frame(s)",
+                             "jp": u"{frames} \u30d5\u30ec\u30fc\u30e0\u3067 {total} \u4ef6\u306e\u554f\u984c"},
+    "help_text": {
+        "en": "<h3>DW Collision Check</h3>"
+              "<p>Detects polygon intersections (hair/cloth collisions) in the current frame or across an animation range.</p>"
+              "<h4>Static Checks</h4>"
+              "<ul><li><b>Intersection Check</b>: Finds faces that physically penetrate each other.</li>"
+              "<li><b>Proximity Check</b>: Finds faces within the threshold distance.</li></ul>"
+              "<h4>Usage</h4>"
+              "<ol><li>Select meshes or define pairs in settings (⚙).</li>"
+              "<li>Click [Check] per item or [Run Static Checks] for all.</li>"
+              "<li>Click a result row to select the faces in the viewport.</li></ol>",
+        "jp": u"<h3>DW \u5e72\u6e09\u30c1\u30a7\u30c3\u30af</h3>"
+              u"<p>\u73fe\u5728\u30d5\u30ec\u30fc\u30e0\u307e\u305f\u306f\u30a2\u30cb\u30e1\u30fc\u30b7\u30e7\u30f3\u7bc4\u56f2\u5185\u3067\u30dd\u30ea\u30b4\u30f3\u306e\u5e72\u6e09\uff08\u9aea\u30fb\u5e03\u306e\u523a\u3055\u308a\uff09\u3092\u691c\u51fa\u3057\u307e\u3059\u3002</p>"
+              u"<h4>\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u30c1\u30a7\u30c3\u30af</h4>"
+              u"<ul><li><b>\u4ea4\u5dee\u30c1\u30a7\u30c3\u30af</b>: \u5b9f\u969b\u306b\u8cab\u901a\u3057\u3066\u3044\u308b\u30d5\u30a7\u30fc\u30b9\u3092\u691c\u51fa\u3002</li>"
+              u"<li><b>\u8fd1\u63a5\u30c1\u30a7\u30c3\u30af</b>: \u95be\u5024\u8ddd\u96e2\u4ee5\u5185\u306e\u30d5\u30a7\u30fc\u30b9\u3092\u691c\u51fa\u3002</li></ul>"
+              u"<h4>\u4f7f\u3044\u65b9</h4>"
+              u"<ol><li>\u30e1\u30c3\u30b7\u30e5\u3092\u9078\u629e\u3059\u308b\u304b\u3001\u8a2d\u5b9a(\u2699)\u3067\u30da\u30a2\u3092\u767b\u9332\u3002</li>"
+              u"<li>[Check] \u307e\u305f\u306f [\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u5b9f\u884c] \u3092\u30af\u30ea\u30c3\u30af\u3002</li>"
+              u"<li>\u7d50\u679c\u884c\u3092\u30af\u30ea\u30c3\u30af\u3059\u308b\u3068\u30d3\u30e5\u30fc\u30dd\u30fc\u30c8\u3067\u30d5\u30a7\u30fc\u30b9\u3092\u9078\u629e\u3002</li></ol>",
+    },
+}
+
+def tr(key, **kw):
+    e = _STRINGS.get(key, {})
+    if isinstance(e, dict) and ("en" in e or "jp" in e):
+        t = e.get(_current_lang, e.get("en", key))
+    else:
+        t = key
+    return t.format(**kw) if kw else t
+
+

@@ -1,0 +1,105 @@
+# ---------------------------------------------------------------------------
+class AnimScanSettingsDialog(QtWidgets.QDialog):
+    """Settings dialog for animation scan: frame range and step."""
+
+    def __init__(self, parent=None):
+        super(AnimScanSettingsDialog, self).__init__(parent)
+        self.setWindowTitle(tr("anim_settings_title"))
+        self.setFixedWidth(320)
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
+        self.setStyleSheet(_DIALOG_SS)
+        self._build()
+        self._load_state()
+
+    def _build(self):
+        lo = QtWidgets.QVBoxLayout(self)
+        lo.setContentsMargins(10, 10, 10, 10)
+        lo.setSpacing(8)
+
+        grp = QtWidgets.QGroupBox(tr("lbl_frame_range"))
+        glo = QtWidgets.QVBoxLayout(grp)
+
+        # Use timeline checkbox
+        self.cb_timeline = QtWidgets.QCheckBox(tr("chk_use_timeline"))
+        self.cb_timeline.toggled.connect(self._on_timeline_toggled)
+        glo.addWidget(self.cb_timeline)
+
+        # Frame range row
+        range_row = QtWidgets.QHBoxLayout()
+        range_row.addWidget(QtWidgets.QLabel(tr("lbl_frame_range")))
+        self.spin_start = QtWidgets.QSpinBox()
+        self.spin_start.setRange(-100000, 100000)
+        self.spin_start.setFixedWidth(70)
+        range_row.addWidget(self.spin_start)
+        range_row.addWidget(QtWidgets.QLabel(" - "))
+        self.spin_end = QtWidgets.QSpinBox()
+        self.spin_end.setRange(-100000, 100000)
+        self.spin_end.setFixedWidth(70)
+        range_row.addWidget(self.spin_end)
+        range_row.addStretch()
+        glo.addLayout(range_row)
+
+        # Step row
+        step_row = QtWidgets.QHBoxLayout()
+        step_row.addWidget(QtWidgets.QLabel(tr("lbl_frame_step")))
+        self.spin_step = QtWidgets.QSpinBox()
+        self.spin_step.setRange(1, 100)
+        self.spin_step.setFixedWidth(60)
+        step_row.addWidget(self.spin_step)
+        step_row.addStretch()
+        glo.addLayout(step_row)
+
+        # Ignore static intersections
+        self.cb_ignore_static = QtWidgets.QCheckBox(tr("chk_ignore_static"))
+        glo.addWidget(self.cb_ignore_static)
+
+        lo.addWidget(grp)
+
+        # OK / Cancel
+        bottom = QtWidgets.QHBoxLayout()
+        bottom.addStretch()
+        ok = _mkbtn("OK", 26, "#FF9800", "#F57C00")
+        ok.clicked.connect(self._save_and_close)
+        cancel = _mkbtn("Cancel", 26, "#555", "#444")
+        cancel.clicked.connect(self.reject)
+        bottom.addWidget(ok)
+        bottom.addWidget(cancel)
+        lo.addLayout(bottom)
+
+    def _load_state(self):
+        self.cb_timeline.setChecked(_anim_use_timeline[0])
+        self.cb_ignore_static.setChecked(_anim_ignore_static[0])
+        self.spin_start.setValue(_anim_start_frame[0])
+        self.spin_end.setValue(_anim_end_frame[0])
+        self.spin_step.setValue(_anim_step[0])
+
+        if MAYA_AVAILABLE and _anim_use_timeline[0]:
+            self.spin_start.setValue(
+                int(cmds.playbackOptions(query=True, minTime=True)))
+            self.spin_end.setValue(
+                int(cmds.playbackOptions(query=True, maxTime=True)))
+
+        self._on_timeline_toggled(self.cb_timeline.isChecked())
+
+    def _on_timeline_toggled(self, checked):
+        self.spin_start.setEnabled(not checked)
+        self.spin_end.setEnabled(not checked)
+        if checked and MAYA_AVAILABLE:
+            self.spin_start.setValue(
+                int(cmds.playbackOptions(query=True, minTime=True)))
+            self.spin_end.setValue(
+                int(cmds.playbackOptions(query=True, maxTime=True)))
+
+    def _save_and_close(self):
+        _anim_use_timeline[0] = self.cb_timeline.isChecked()
+        _anim_ignore_static[0] = self.cb_ignore_static.isChecked()
+        _anim_start_frame[0]  = self.spin_start.value()
+        _anim_end_frame[0]    = self.spin_end.value()
+        _anim_step[0]         = self.spin_step.value()
+        self.accept()
+
+
+# ---------------------------------------------------------------------------
+# AnimResultWindow
+# ---------------------------------------------------------------------------

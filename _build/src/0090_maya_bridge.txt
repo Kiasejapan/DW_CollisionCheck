@@ -1,0 +1,403 @@
+# ---------------------------------------------------------------------------
+class MayaBridge(object):
+    """
+    Extracts triangle data from Maya meshes and provides scene utilities.
+    All methods are static and call Maya API only when MAYA_AVAILABLE.
+    """
+
+    @staticmethod
+    def get_mesh_shapes():
+        """Returns all visible mesh shapes in the scene."""
+        if not MAYA_AVAILABLE:
+            return []
+        shapes = cmds.ls(type="mesh", long=True) or []
+        visible = []
+        for s in shapes:
+            try:
+                if not cmds.getAttr(s + ".visibility"):
+                    continue
+                if cmds.getAttr(s + ".intermediateObject"):
+                    continue
+                visible.append(s)
+            except Exception:
+                pass
+        return visible
+
+    @staticmethod
+    def get_selected_meshes():
+        """Returns mesh shapes from current selection, including all descendants."""
+        if not MAYA_AVAILABLE:
+            return []
+        sel = cmds.ls(selection=True, long=True) or []
+        shapes = []
+        seen = set()
+        for node in sel:
+            node_type = cmds.nodeType(node)
+            if node_type == "mesh":
+                if node not in seen:
+                    if not cmds.getAttr(node + ".intermediateObject"):
+                        shapes.append(node)
+                        seen.add(node)
+            elif node_type == "transform":
+                # Get all descendant mesh shapes recursively
+                all_descendants = cmds.listRelatives(
+                    node, allDescendents=True,
+                    type="mesh", fullPath=True) or []
+                for ch in all_descendants:
+                    if ch not in seen:
+                        try:
+                            if not cmds.getAttr(ch + ".intermediateObject"):
+                                shapes.append(ch)
+                                seen.add(ch)
+                        except Exception:
+                            pass
+        return shapes
+
+    @staticmethod
+    def get_triangles(mesh_shape):
+        """
+        Converts a Maya mesh shape to a list of world-space triangles.
+        Returns: (triangles, tri_to_poly, tri_vert_ids)
+            triangles    : list of ( (x,y,z), (x,y,z), (x,y,z) )
+            tri_to_poly  : list of int — tri_to_poly[tri_idx] = polygon face index
+            tri_vert_ids : list of (v0, v1, v2) — vertex indices per triangle
+        Raises:  RuntimeError on failure.
+        """
+        if not MAYA_AVAILABLE:
+            raise RuntimeError("Maya not available")
+
+        try:
+            sel = om.MSelectionList()
+            sel.add(mesh_shape)
+            dag_path = om.MDagPath()
+            sel.getDagPath(0, dag_path)
+
+            # If transform was passed, extend to shape
+            try:
+                dag_path.extendToShape()
+            except Exception:
+                pass
+
+            fn_mesh = om.MFnMesh(dag_path)
+
+            # Get world-space points (deformed positions)
+            pts = om.MPointArray()
+            fn_mesh.getPoints(pts, om.MSpace.kWorld)
+
+            # Get triangle counts and vertex indices per polygon
+            tri_counts  = om.MIntArray()
+            tri_verts   = om.MIntArray()
+            fn_mesh.getTriangles(tri_counts, tri_verts)
+
+            triangles = []
+            tri_to_poly = []
+            tri_vert_ids = []
+            idx = 0
+            for poly_idx in range(fn_mesh.numPolygons()):
+                n_tris = tri_counts[poly_idx]
+                for _ in range(n_tris):
+                    i0 = tri_verts[idx];     idx += 1
+                    i1 = tri_verts[idx];     idx += 1
+                    i2 = tri_verts[idx];     idx += 1
+                    p0 = pts[i0]; p1 = pts[i1]; p2 = pts[i2]
+                    triangles.append((
+                        (p0.x, p0.y, p0.z),
+                        (p1.x, p1.y, p1.z),
+                        (p2.x, p2.y, p2.z),
+                    ))
+                    tri_to_poly.append(poly_idx)
+                    tri_vert_ids.append((i0, i1, i2))
+            return triangles, tri_to_poly, tri_vert_ids
+
+        except Exception as e:
+            raise RuntimeError(
+                tr("err_triangulate", mesh=mesh_shape) + " : " + str(e))
+
+    @staticmethod
+    def select_faces(mesh_shape, face_ids):
+        """Select specific face IDs on a mesh in the Maya viewport."""
+        if not MAYA_AVAILABLE or not face_ids:
+            return
+        cmds.select(clear=True)
+        components = ["{0}.f[{1}]".format(mesh_shape, f) for f in face_ids]
+        cmds.select(components, add=True)
+
+    @staticmethod
+    def get_short_name(long_name):
+        """Returns the shortest unique name for display."""
+        parts = long_name.split("|")
+        return parts[-1] if parts else long_name
+
+    @staticmethod
+    def mesh_exists(name):
+        if not MAYA_AVAILABLE:
+            return False
+        return cmds.objExists(name) and cmds.nodeType(name) in ("mesh", "transform")
+
+    @staticmethod
+    def get_transform(shape_name):
+        """Returns the parent transform of a shape."""
+        if not MAYA_AVAILABLE:
+            return shape_name
+        parents = cmds.listRelatives(shape_name, parent=True, fullPath=True) or []
+        return parents[0] if parents else shape_name
+
+    @staticmethod
+    def has_animation(mesh_shape):
+        """
+        Returns True if the mesh is actually animated — its geometry or
+        world transform can change between frames.
+
+        A skinCluster / blendShape / etc. alone is NOT animation. The
+        deformer's drivers (joints, target weights, controllers) must
+        themselves be animated for the mesh to move.
+
+        We check:
+          1. animCurve connections on the mesh's transform chain (walking up)
+          2. constraint / expression / motionPath inputs on the transform chain
+          3. If a skinCluster is present: whether ANY driver joint in its
+             influence list is animated (transitively via transform chain
+             animCurves)
+          4. If a blendShape is present: whether its weight attrs are
+             driven by animCurves or expressions
+        Returns False if no actual time-varying driver is found.
+        """
+        if not MAYA_AVAILABLE:
+            return False
+
+        visited_nodes = set()
+
+        def _transform_has_anim(tr_node):
+            """Walk the transform chain upward; True if any node is animated."""
+            node = tr_node
+            safety = 0
+            while node and safety < 64:
+                safety += 1
+                if node in visited_nodes:
+                    return False
+                visited_nodes.add(node)
+                try:
+                    conns = cmds.listConnections(
+                        node, source=True, destination=False,
+                        type="animCurve") or []
+                    if conns:
+                        return True
+                    # Check constraints on this transform
+                    constraints = cmds.listConnections(
+                        node, source=True, destination=False,
+                        type="constraint") or []
+                    if constraints:
+                        return True
+                    exprs = cmds.listConnections(
+                        node, source=True, destination=False,
+                        type="expression") or []
+                    if exprs:
+                        return True
+                    motion = cmds.listConnections(
+                        node, source=True, destination=False,
+                        type="motionPath") or []
+                    if motion:
+                        return True
+                    parents = cmds.listRelatives(
+                        node, parent=True, fullPath=True) or []
+                except Exception:
+                    return False
+                if not parents:
+                    break
+                node = parents[0]
+            return False
+
+        try:
+            # 1. Check the mesh's own transform chain
+            tr = MayaBridge.get_transform(mesh_shape)
+            if _transform_has_anim(tr):
+                return True
+
+            # 2. Check deformers. For each deformer, verify that its
+            #    drivers are actually animated.
+            hist = cmds.listHistory(mesh_shape, pruneDagObjects=True) or []
+            for node in hist:
+                try:
+                    nt = cmds.nodeType(node)
+                except Exception:
+                    continue
+
+                if nt == "skinCluster":
+                    # Get influence joints / drivers
+                    try:
+                        inflist = cmds.skinCluster(
+                            node, query=True, influence=True) or []
+                    except Exception:
+                        inflist = []
+                    for inf in inflist:
+                        if _transform_has_anim(inf):
+                            return True
+
+                elif nt == "blendShape":
+                    # Check weight-attr animation
+                    try:
+                        weight_conns = cmds.listConnections(
+                            node + ".weight", source=True, destination=False,
+                            type="animCurve") or []
+                        if weight_conns:
+                            return True
+                        weight_exprs = cmds.listConnections(
+                            node + ".weight", source=True, destination=False,
+                            type="expression") or []
+                        if weight_exprs:
+                            return True
+                    except Exception:
+                        pass
+
+                elif nt in ("cluster", "lattice", "nonLinear", "softMod",
+                            "wire", "ffd", "sculpt"):
+                    # These are driven by their handle transform —
+                    # check the handle's transform chain.
+                    try:
+                        handles = cmds.listConnections(
+                            node, source=True, destination=False,
+                            type="transform") or []
+                        for h in handles:
+                            if _transform_has_anim(h):
+                                return True
+                    except Exception:
+                        pass
+
+                elif nt.startswith("animCurve"):
+                    # Direct animation curve in the shape history
+                    return True
+        except Exception:
+            return False
+
+        return False
+
+    @staticmethod
+    def any_has_animation(mesh_shapes):
+        """Returns True if ANY of the given meshes has animation."""
+        for m in mesh_shapes:
+            if MayaBridge.has_animation(m):
+                return True
+        return False
+
+    # Cache: {mesh_shape: {face_id: set(neighbor_face_ids)}}
+    _face_adjacency_cache = {}
+    # Cache: {mesh_shape: bvh_root_node}
+    _bvh_cache = {}
+    # Cache: {mesh_shape: tri_adjacency_dict}
+    _tri_adj_cache = {}
+    # Cache: {(mesh_a, mesh_b): set_of_shared_tri_pairs}
+    _cross_shared_cache = {}
+
+    @staticmethod
+    def clear_caches():
+        """Clear all MayaBridge caches. Call when scene topology may have changed."""
+        MayaBridge._face_adjacency_cache = {}
+        MayaBridge._bvh_cache = {}
+        MayaBridge._tri_adj_cache = {}
+        MayaBridge._cross_shared_cache = {}
+
+    @staticmethod
+    def get_or_build_cross_shared(mesh_a, mesh_b, tris_a, tris_b):
+        """
+        Return cached cross-mesh shared-vertex triangle-pair set, or build.
+        Since welded seams stay welded through skinning (shared rig driver),
+        this set is stable across animation frames.
+        """
+        key = (mesh_a, mesh_b)
+        cached = MayaBridge._cross_shared_cache.get(key)
+        if cached is not None:
+            return cached
+        shared = _build_cross_mesh_shared_verts(tris_a, tris_b)
+        MayaBridge._cross_shared_cache[key] = shared
+        return shared
+
+    @staticmethod
+    def get_or_build_bvh(mesh_shape, tris):
+        """
+        Return a BVH for the given mesh. If cached, refits the existing
+        tree (much faster). Otherwise builds a new tree and caches it.
+        """
+        cached = MayaBridge._bvh_cache.get(mesh_shape)
+        if cached is not None:
+            # Refit: update AABBs in place, keep the tree structure
+            _refit_bvh(cached, tris)
+            return cached
+        # Build fresh
+        if not tris:
+            return None
+        root = _build_bvh(tris, list(range(len(tris))))
+        MayaBridge._bvh_cache[mesh_shape] = root
+        return root
+
+    @staticmethod
+    def get_or_build_tri_adj(mesh_shape, tri_vert_ids):
+        """Return cached vertex-share triangle adjacency, or build and cache."""
+        cached = MayaBridge._tri_adj_cache.get(mesh_shape)
+        if cached is not None:
+            return cached
+        adj = _build_tri_adjacency(tri_vert_ids) if tri_vert_ids else {}
+        MayaBridge._tri_adj_cache[mesh_shape] = adj
+        return adj
+
+    @staticmethod
+    def _build_full_adjacency(mesh_shape):
+        """
+        Build adjacency for ALL faces of the mesh in one shot and cache it.
+        Returns dict {face_id: set(neighbor_face_ids)}.
+        """
+        if mesh_shape in MayaBridge._face_adjacency_cache:
+            return MayaBridge._face_adjacency_cache[mesh_shape]
+
+        adj = {}
+        if not MAYA_AVAILABLE:
+            return adj
+        try:
+            # One polyInfo call for the entire mesh: edge -> faces
+            # This returns a list of lines like:
+            # "EDGE    0:    0    1"
+            edge_faces = cmds.polyInfo(mesh_shape, edgeToFace=True) or []
+            for line in edge_faces:
+                # Parse "EDGE    N:    fa fb ..."
+                try:
+                    parts = line.split(":")[1].strip().split()
+                    face_list = [int(p) for p in parts if p.lstrip("-").isdigit()]
+                except (IndexError, ValueError):
+                    continue
+                # All faces sharing this edge are mutual neighbors
+                n = len(face_list)
+                for i in range(n):
+                    fa = face_list[i]
+                    if fa < 0:
+                        continue
+                    if fa not in adj:
+                        adj[fa] = set()
+                    for j in range(n):
+                        if i == j:
+                            continue
+                        fb = face_list[j]
+                        if fb >= 0:
+                            adj[fa].add(fb)
+        except Exception:
+            pass
+
+        MayaBridge._face_adjacency_cache[mesh_shape] = adj
+        return adj
+
+    @staticmethod
+    def get_face_neighbors(mesh_shape, face_ids):
+        """
+        Returns a dict {face_id: set(neighbor_face_ids)} for the given faces.
+        Two faces are neighbors if they share at least one edge.
+        Uses cached full adjacency for speed.
+        """
+        if not MAYA_AVAILABLE or not face_ids:
+            return {}
+
+        full_adj = MayaBridge._build_full_adjacency(mesh_shape)
+        face_set = set(face_ids)
+        result = {}
+        for fid in face_ids:
+            # Only keep neighbors that are in the requested face set
+            result[fid] = full_adj.get(fid, set()) & face_set
+        return result
+

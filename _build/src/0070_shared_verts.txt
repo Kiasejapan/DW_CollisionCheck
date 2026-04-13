@@ -1,0 +1,55 @@
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+def _build_cross_mesh_shared_verts(tris_a, tris_b, precision=3):
+    """
+    For cross-mesh checks, build a set of triangle pairs that share an
+    edge or vertex at the boundary. Two triangles from different meshes
+    are considered 'adjacent' (boundary-touching) if they share 2 or
+    more vertex positions (rounded to *precision* decimal places).
+    Sharing a single vertex is also skipped since it often indicates
+    a seam where meshes meet at a point.
+    Returns: set of (tri_idx_a, tri_idx_b)
+    """
+    # Build rounded-position set for each triangle in B
+    b_vert_sets = []
+    for tri in tris_b:
+        s = set()
+        for v in tri:
+            s.add((round(v[0], precision),
+                   round(v[1], precision),
+                   round(v[2], precision)))
+        b_vert_sets.append(s)
+
+    # Map rounded vertex positions to triangle indices in B
+    pos_to_b = {}
+    for ti, tri in enumerate(tris_b):
+        for v in tri:
+            key = (round(v[0], precision),
+                   round(v[1], precision),
+                   round(v[2], precision))
+            if key not in pos_to_b:
+                pos_to_b[key] = set()
+            pos_to_b[key].add(ti)
+
+    shared = set()
+    for ti_a, tri in enumerate(tris_a):
+        verts_a = set()
+        for v in tri:
+            verts_a.add((round(v[0], precision),
+                         round(v[1], precision),
+                         round(v[2], precision)))
+
+        # Find candidate B-triangles that share at least one vertex
+        candidates = set()
+        for va in verts_a:
+            if va in pos_to_b:
+                candidates.update(pos_to_b[va])
+
+        for ti_b in candidates:
+            # Count how many vertex positions are shared
+            common = len(verts_a & b_vert_sets[ti_b])
+            if common >= 1:
+                shared.add((ti_a, ti_b))
+    return shared
+

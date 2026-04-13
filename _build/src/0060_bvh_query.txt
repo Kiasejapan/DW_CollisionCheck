@@ -1,0 +1,85 @@
+# ---------------------------------------------------------------------------
+# Dual-BVH traversal
+# ---------------------------------------------------------------------------
+def _query_bvh(na, tris_a, nb, tris_b, out, backface_cull=False,
+               self_test=False, tri_adj=None, cross_shared=None):
+    if not na.aabb.intersects(nb.aabb):
+        return
+
+    leaf_a = (na.tri_idx >= 0)
+    leaf_b = (nb.tri_idx >= 0)
+
+    if leaf_a and leaf_b:
+        # Self-intersection: skip same triangle and adjacent triangles
+        if self_test:
+            if na.tri_idx == nb.tri_idx:
+                return
+            if na.tri_idx <= nb.tri_idx:
+                return  # avoid duplicate pairs
+            if tri_adj and nb.tri_idx in tri_adj.get(na.tri_idx, ()):
+                return  # skip adjacent triangles (they share an edge)
+
+        # Cross-mesh: skip if triangles share a snapped vertex position
+        if cross_shared and (na.tri_idx, nb.tri_idx) in cross_shared:
+            return
+
+        hit, depth, pt, n1, n2 = _tri_tri_intersect(
+            tris_a[na.tri_idx], tris_b[nb.tri_idx])
+        if hit:
+            # Backface culling: skip if normals face opposite directions
+            if backface_cull and n1 is not None and n2 is not None:
+                if _dot(n1, n2) < -0.5:
+                    return
+            out.append({"face_a": na.tri_idx, "face_b": nb.tri_idx,
+                        "depth": depth, "point": pt})
+        return
+
+    if leaf_a:
+        _query_bvh(na, tris_a, nb.left,  tris_b, out, backface_cull,
+                   self_test, tri_adj, cross_shared)
+        _query_bvh(na, tris_a, nb.right, tris_b, out, backface_cull,
+                   self_test, tri_adj, cross_shared)
+    elif leaf_b:
+        _query_bvh(na.left,  tris_a, nb, tris_b, out, backface_cull,
+                   self_test, tri_adj, cross_shared)
+        _query_bvh(na.right, tris_a, nb, tris_b, out, backface_cull,
+                   self_test, tri_adj, cross_shared)
+    else:
+        if na.aabb.surface_area() >= nb.aabb.surface_area():
+            _query_bvh(na.left,  tris_a, nb, tris_b, out, backface_cull,
+                       self_test, tri_adj, cross_shared)
+            _query_bvh(na.right, tris_a, nb, tris_b, out, backface_cull,
+                       self_test, tri_adj, cross_shared)
+        else:
+            _query_bvh(na, tris_a, nb.left,  tris_b, out, backface_cull,
+                       self_test, tri_adj, cross_shared)
+            _query_bvh(na, tris_a, nb.right, tris_b, out, backface_cull,
+                       self_test, tri_adj, cross_shared)
+
+
+def _build_tri_adjacency(tri_vert_ids):
+    """
+    Build triangle adjacency based on shared vertices.
+    Two triangles are adjacent if they share ANY vertex.
+    This prevents false positives between neighboring faces in self-intersection.
+    Returns dict: {tri_idx: set(adjacent_tri_indices)}
+    """
+    # Build vertex -> triangle mapping
+    vert_to_tris = {}
+    for ti, (v0, v1, v2) in enumerate(tri_vert_ids):
+        for v in (v0, v1, v2):
+            if v not in vert_to_tris:
+                vert_to_tris[v] = []
+            vert_to_tris[v].append(ti)
+
+    # Two triangles sharing any vertex are adjacent
+    adj = {}
+    for ti in range(len(tri_vert_ids)):
+        adj[ti] = set()
+    for v, tri_list in vert_to_tris.items():
+        for i in range(len(tri_list)):
+            for j in range(i + 1, len(tri_list)):
+                adj[tri_list[i]].add(tri_list[j])
+                adj[tri_list[j]].add(tri_list[i])
+    return adj
+

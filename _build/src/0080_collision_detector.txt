@@ -1,0 +1,71 @@
+class CollisionDetector(object):
+    """
+    BVH-accelerated polygon collision detector.
+    Maya-independent. Input: world-space triangle lists.
+    triangles format: list of ( (x,y,z), (x,y,z), (x,y,z) )
+    """
+
+    def __init__(self, triangles_a, triangles_b, tri_vert_ids_a=None,
+                 bvh_a=None, bvh_b=None, tri_adj_a=None, cross_shared=None):
+        """
+        Optional bvh_a/bvh_b: pre-built BVH trees (e.g. refitted).
+            If provided, skips building from scratch. Must match triangles_a/b.
+        Optional tri_adj_a: pre-built vertex-share adjacency for self-test.
+        Optional cross_shared: pre-built cross-mesh shared-vertex pair set.
+        """
+        self._tris_a = triangles_a
+        self._tris_b = triangles_b
+        self._self_test = (triangles_a is triangles_b)
+        self._tri_vert_ids_a = tri_vert_ids_a
+        self._tri_adj_a = tri_adj_a
+        self._cross_shared = cross_shared
+        if bvh_a is not None:
+            self._bvh_a = bvh_a
+        else:
+            self._bvh_a = (_build_bvh(triangles_a, list(range(len(triangles_a))))
+                           if triangles_a else None)
+        if self._self_test:
+            self._bvh_b = self._bvh_a
+        elif bvh_b is not None:
+            self._bvh_b = bvh_b
+        else:
+            self._bvh_b = (_build_bvh(triangles_b, list(range(len(triangles_b))))
+                           if triangles_b else None)
+
+    def check(self, threshold=0.0, backface_cull=False):
+        """Returns list of {face_a, face_b, depth, point} for intersecting pairs.
+        backface_cull: if True, skip pairs where normals face opposite directions.
+        """
+        if self._bvh_a is None or self._bvh_b is None:
+            return []
+
+        # Build triangle adjacency for self-test to skip neighboring tris
+        tri_adj = self._tri_adj_a
+        if self._self_test and tri_adj is None and self._tri_vert_ids_a is not None:
+            tri_adj = _build_tri_adjacency(self._tri_vert_ids_a)
+
+        # For cross-mesh, build shared-vertex pair set (use cache if provided)
+        cross_shared = None
+        if not self._self_test:
+            if self._cross_shared is not None:
+                cross_shared = self._cross_shared
+            else:
+                cross_shared = _build_cross_mesh_shared_verts(
+                    self._tris_a, self._tris_b)
+
+        raw = []
+        _query_bvh(self._bvh_a, self._tris_a,
+                   self._bvh_b, self._tris_b, raw, backface_cull,
+                   self._self_test, tri_adj, cross_shared)
+        seen, unique = set(), []
+        for r in raw:
+            key = (r["face_a"], r["face_b"])
+            if key not in seen:
+                seen.add(key)
+                unique.append(r)
+        return unique
+
+
+
+# ---------------------------------------------------------------------------
+# MayaBridge  (Maya cmds / OpenMaya wrapper)

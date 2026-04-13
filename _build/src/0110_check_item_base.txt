@@ -1,0 +1,124 @@
+class CheckItem(object):
+    """Abstract base for all collision checks. Python 2.7 compatible."""
+    label_key       = ""
+    desc_key        = ""
+    can_auto_fix    = False
+    scope           = SCOPE_MESH
+    default_enabled = True
+
+    def __init__(self):
+        self.issues  = []
+        self.status  = "unchecked"
+        self.enabled = self.__class__.default_enabled
+        self.elapsed_sec = 0.0
+        # Settings shared across instances of same class
+        self._settings = {}
+
+    @property
+    def label(self):
+        return tr(self.label_key)
+
+    @property
+    def description(self):
+        return tr(self.desc_key)
+
+    def check(self):
+        """Detection only. Must NOT modify the Maya scene. Returns list[dict]."""
+        raise NotImplementedError
+
+    def fix(self, issues=None):
+        raise NotImplementedError
+
+    def run_check(self):
+        t_start = time.time()
+        try:
+            self.issues = self.check()
+            self.status = "fail" if self.issues else "pass"
+        except Exception as e:
+            self.issues = [{"mesh_a": "ERROR", "mesh_b": "", "face_a": -1,
+                            "face_b": -1, "depth": 0.0, "point": None,
+                            "detail": str(e)}]
+            self.status = "fail"
+        self.elapsed_sec = time.time() - t_start
+        return self.issues
+
+    # --- shared settings helpers ---
+    def get_setting(self, key, default=None):
+        return self._settings.get(key, default)
+
+    def set_setting(self, key, value):
+        self._settings[key] = value
+
+
+# ---- Shared state for mesh pairs (used by both checks) --------------------
+_mesh_pairs = []        # list of (mesh_a_long, mesh_b_long)
+_use_selected_only = [True]   # wrapped in list for Py2 closure mutability
+_self_intersect = [True]      # check self-intersection within a single mesh
+_depth_threshold = [0.011]     # minimum depth to report (filters boundary noise)
+_proximity_threshold = [2.0]   # mm
+
+
+def _compute_tris_aabb(tris):
+    """Compute AABB (min, max) from a list of triangles. Returns None if empty."""
+    if not tris:
+        return None
+    mn = [float("inf"), float("inf"), float("inf")]
+    mx = [float("-inf"), float("-inf"), float("-inf")]
+    for tri in tris:
+        for v in tri:
+            if v[0] < mn[0]: mn[0] = v[0]
+            if v[1] < mn[1]: mn[1] = v[1]
+            if v[2] < mn[2]: mn[2] = v[2]
+            if v[0] > mx[0]: mx[0] = v[0]
+            if v[1] > mx[1]: mx[1] = v[1]
+            if v[2] > mx[2]: mx[2] = v[2]
+    return (tuple(mn), tuple(mx))
+
+
+def _aabbs_overlap(a, b, margin=0.0):
+    """Return True if two AABB tuples (min, max) overlap."""
+    if a is None or b is None:
+        return False
+    amin, amax = a
+    bmin, bmax = b
+    if amax[0] + margin < bmin[0] or bmax[0] + margin < amin[0]:
+        return False
+    if amax[1] + margin < bmin[1] or bmax[1] + margin < amin[1]:
+        return False
+    if amax[2] + margin < bmin[2] or bmax[2] + margin < amin[2]:
+        return False
+    return True
+
+
+def _get_pairs_to_check():
+    """
+    Returns list of (mesh_a, mesh_b) tuples to check.
+    When mesh_a == mesh_b, it means self-intersection check.
+    If pairs are defined: use them.
+    If selected-only: use all combinations from selection.
+    Else: all pairs from scene.
+    """
+    if _mesh_pairs:
+        valid = []
+        for a, b in _mesh_pairs:
+            if MayaBridge.mesh_exists(a) and MayaBridge.mesh_exists(b):
+                valid.append((a, b))
+        return valid
+
+    if _use_selected_only[0]:
+        meshes = MayaBridge.get_selected_meshes()
+    else:
+        meshes = MayaBridge.get_mesh_shapes()
+
+    pairs = []
+    # Self-intersection pairs
+    if _self_intersect[0]:
+        for m in meshes:
+            pairs.append((m, m))
+
+    # Cross-mesh pairs
+    for i in range(len(meshes)):
+        for j in range(i + 1, len(meshes)):
+            pairs.append((meshes[i], meshes[j]))
+    return pairs
+

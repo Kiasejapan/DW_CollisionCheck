@@ -1,0 +1,284 @@
+# ---------------------------------------------------------------------------
+_anim_start_frame = [1]
+_anim_end_frame   = [100]
+_anim_step        = [1]
+_anim_use_timeline = [True]
+_anim_ignore_static = [True]   # ignore intersections from baseline frame
+_anim_baseline_frame = [0]    # specific frame to use as baseline
+
+
+class AnimationScanner(object):
+    """
+    Scans frame range for intersection issues.
+    Runs on the main thread (Maya API requirement), yields progress
+    via callback so the UI can update with processEvents().
+    """
+
+    def __init__(self, progress_cb=None, cancelled_cb=None):
+        """
+        progress_cb(frame, total_frames, issues_this_frame)
+        cancelled_cb() -> bool  (returns True if user pressed Stop)
+        """
+        self._progress_cb  = progress_cb
+        self._cancelled_cb = cancelled_cb
+        self.results = []    # list of {frame, issues: [...]}
+        self.elapsed_sec = 0.0
+
+    def _run_frame_check(self, pairs):
+        """
+        Run intersection check at the current frame (same logic as static).
+        Returns list of grouped issue dicts.
+        """
+        frame_issues = []
+        # Cache for mesh triangles and AABBs this frame
+        tri_cache = {}  # mesh -> (tris, map, vids, aabb)
+
+        def _get_cached(m):
+            if m in tri_cache:
+                return tri_cache[m]
+            try:
+                t, mp, v = MayaBridge.get_triangles(m)
+            except RuntimeError:
+                tri_cache[m] = None
+                return None
+            if not t:
+                tri_cache[m] = None
+                return None
+            ab = _compute_tris_aabb(t)
+            entry = (t, mp, v, ab)
+            tri_cache[m] = entry
+            return entry
+
+        for mesh_a, mesh_b in pairs:
+            is_self = (mesh_a == mesh_b)
+            ea = _get_cached(mesh_a)
+            if ea is None:
+                continue
+            tris_a, map_a, vids_a, aabb_a = ea
+            if is_self:
+                tris_b, map_b, aabb_b = tris_a, map_a, aabb_a
+            else:
+                eb = _get_cached(mesh_b)
+                if eb is None:
+                    continue
+                tris_b, map_b, _vb, aabb_b = eb
+                # Mesh-level AABB pre-check
+                if not _aabbs_overlap(aabb_a, aabb_b):
+                    continue
+
+            # Build fresh detector (no caching) to guarantee correctness.
+            # AABB cache (tri_cache) above still avoids redundant mesh fetches.
+            det = CollisionDetector(
+                tris_a, tris_b if not is_self else tris_a,
+                tri_vert_ids_a=vids_a if is_self else None)
+            hits = det.check(threshold=0.0, backface_cull=True)
+
+            all_faces_a = set()
+            all_faces_b = set()
+            seen = set()
+            hit_list = []
+            for h in hits:
+                poly_a = map_a[h["face_a"]]
+                poly_b = map_b[h["face_b"]]
+                key = (poly_a, poly_b)
+                if key in seen:
+                    continue
+                seen.add(key)
+                if h["depth"] < _depth_threshold[0]:
+                    continue
+                hit_list.append({
+                    "poly_a": poly_a, "poly_b": poly_b,
+                    "depth": h["depth"],
+                })
+                all_faces_a.add(poly_a)
+                all_faces_b.add(poly_b)
+
+            if not hit_list:
+                continue
+
+            # Group faces_a by adjacency
+            neighbors_a = MayaBridge.get_face_neighbors(
+                mesh_a, list(all_faces_a))
+            groups_a = _group_connected_faces(all_faces_a, neighbors_a)
+
+            for grp_a in groups_a:
+                grp_b = set()
+                max_depth = 0.0
+                for h in hit_list:
+                    if h["poly_a"] in grp_a:
+                        grp_b.add(h["poly_b"])
+                        if h["depth"] > max_depth:
+                            max_depth = h["depth"]
+
+                if grp_b:
+                    neighbors_b = MayaBridge.get_face_neighbors(
+                        mesh_b, list(grp_b))
+                    sub_groups_b = _group_connected_faces(grp_b, neighbors_b)
+                    merged_b = set()
+                    for sg in sub_groups_b:
+                        merged_b.update(sg)
+                    grp_b = merged_b
+
+                sorted_a = sorted(grp_a)
+                sorted_b = sorted(grp_b)
+                frame_issues.append({
+                    "mesh_a":  mesh_a,
+                    "mesh_b":  mesh_b,
+                    "faces_a": sorted_a,
+                    "faces_b": sorted_b,
+                    "face_a":  sorted_a[0] if sorted_a else -1,
+                    "face_b":  sorted_b[0] if sorted_b else -1,
+                    "depth":   max_depth,
+                    "point":   None,
+                    "detail":  "{0} Face / {1} Face  max_depth={2:.4f}".format(
+                        len(sorted_a), len(sorted_b), max_depth),
+                })
+        return frame_issues
+
+    @staticmethod
+    def _match_baseline(issue, baseline_issues):
+        """
+        Check if an issue's face group overlaps with any baseline issue's
+        face group on the same mesh pair. If so, it's a 'known' collision.
+        Matching is by mesh pair + any overlap in faces_a OR faces_b.
+        """
+        i_ma = issue["mesh_a"]
+        i_mb = issue["mesh_b"]
+        i_fa = set(issue.get("faces_a", []))
+        i_fb = set(issue.get("faces_b", []))
+
+        for bl in baseline_issues:
+            if bl["mesh_a"] != i_ma or bl["mesh_b"] != i_mb:
+                continue
+            bl_fa = set(bl.get("faces_a", []))
+            bl_fb = set(bl.get("faces_b", []))
+            # Any overlap in either face set = same collision region
+            if i_fa & bl_fa or i_fb & bl_fb:
+                return True
+        return False
+
+    def scan(self):
+        """Run the scan. Returns list of {frame, issues}."""
+        self.elapsed_sec = 0.0
+        if not MAYA_AVAILABLE:
+            return []
+
+        t_start = time.time()
+
+        # Clear caches to ensure fresh topology data
+        MayaBridge.clear_caches()
+
+        # Determine frame range (always from saved spinner values)
+        start = _anim_start_frame[0]
+        end   = _anim_end_frame[0]
+        step  = max(1, _anim_step[0])
+
+        original_time = cmds.currentTime(query=True)
+
+        pairs = _get_pairs_to_check()
+        if not pairs:
+            self.elapsed_sec = time.time() - t_start
+            return []
+
+        frames = list(range(start, end + 1, step))
+        total  = len(frames)
+        self.results = []
+
+        # Step 1: Collect baseline issues at the specified frame
+        baseline_issues = []
+        if _anim_ignore_static[0]:
+            bl_frame = _anim_baseline_frame[0]
+            cmds.currentTime(bl_frame, edit=True, update=True)
+            if self._progress_cb:
+                self._progress_cb(bl_frame, total, [])
+            try:
+                baseline_issues = self._run_frame_check(pairs)
+            except Exception:
+                baseline_issues = []
+            if self._cancelled_cb and self._cancelled_cb():
+                cmds.currentTime(original_time, edit=True)
+                self.elapsed_sec = time.time() - t_start
+                return []
+
+        # Step 2: Scan all frames
+        for idx, frame in enumerate(frames):
+            if self._cancelled_cb and self._cancelled_cb():
+                break
+
+            cmds.currentTime(frame, edit=True, update=True)
+
+            all_issues = self._run_frame_check(pairs)
+
+            # Step 3: Filter — separate baseline-known vs new issues
+            if baseline_issues:
+                new_issues = []
+                for iss in all_issues:
+                    if not self._match_baseline(iss, baseline_issues):
+                        new_issues.append(iss)
+                frame_issues = new_issues
+            else:
+                frame_issues = all_issues
+
+            if frame_issues:
+                self.results.append({"frame": frame, "issues": frame_issues})
+
+            if self._progress_cb:
+                self._progress_cb(frame, total, frame_issues)
+
+        cmds.currentTime(original_time, edit=True)
+
+        # Frame-to-frame dedup: collapse consecutive occurrences of the same
+        # mesh-pair + overlapping face groups into a single result. Carries
+        # over between frames so the user only sees each collision "event"
+        # once per contiguous span of frames.
+        self.results = self._dedup_consecutive(self.results)
+
+        self.elapsed_sec = time.time() - t_start
+        return self.results
+
+    @staticmethod
+    def _dedup_consecutive(results):
+        """
+        Remove issues that are EXACTLY identical to an issue from the
+        immediately previous frame. An issue is considered a continuation
+        only if another issue exists with the same mesh pair AND exactly
+        the same faces_a / faces_b sets. Any change in face participation
+        counts as a new issue.
+        """
+        if not results:
+            return results
+
+        # Previous frame's issues, stored as:
+        #   (mesh_a, mesh_b, frozenset(faces_a), frozenset(faces_b))
+        prev_signatures = set()
+        out_results = []
+
+        for entry in results:
+            frame = entry["frame"]
+            frame_issues = entry["issues"]
+            current_signatures = set()
+            kept_issues = []
+
+            for iss in frame_issues:
+                sig = (
+                    iss.get("mesh_a", ""),
+                    iss.get("mesh_b", ""),
+                    frozenset(iss.get("faces_a", [])),
+                    frozenset(iss.get("faces_b", [])),
+                )
+                current_signatures.add(sig)
+                # Only skip if this exact signature existed in the
+                # immediately previous frame.
+                if sig not in prev_signatures:
+                    kept_issues.append(iss)
+
+            prev_signatures = current_signatures
+
+            if kept_issues:
+                out_results.append({"frame": frame, "issues": kept_issues})
+
+        return out_results
+
+
+# ---------------------------------------------------------------------------
+# AnimScanSettingsDialog
