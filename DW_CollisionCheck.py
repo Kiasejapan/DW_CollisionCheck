@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.13.1539"
+VERSION = "2026.04.13.1541"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
