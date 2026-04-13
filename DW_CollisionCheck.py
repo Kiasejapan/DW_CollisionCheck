@@ -1,0 +1,3369 @@
+# -*- coding: utf-8 -*-
+"""
+DW_CollisionCheck.py
+Polygon Collision Check Tool for Maya 2018-2025
+Python 2.7 / 3.x compatible
+"""
+from __future__ import print_function, division, absolute_import
+import sys
+import os
+import math
+import time
+import csv
+
+PY2 = sys.version_info[0] == 2
+
+# Python 2/3 compatible reload
+if PY2:
+    _reload = reload   # noqa: F821  (builtin in Py2)
+else:
+    import importlib
+    _reload = importlib.reload
+
+try:
+    import maya.cmds as cmds
+    import maya.OpenMaya as om
+    import maya.OpenMayaUI as omui
+    MAYA_AVAILABLE = True
+except ImportError:
+    MAYA_AVAILABLE = False
+
+try:
+    from PySide2 import QtWidgets, QtCore, QtGui
+    from shiboken2 import wrapInstance
+except ImportError:
+    try:
+        from PySide6 import QtWidgets, QtCore, QtGui
+        from shiboken6 import wrapInstance
+    except ImportError:
+        from PySide import QtWidgets, QtCore, QtGui
+        from shiboken import wrapInstance
+
+
+
+# ---------------------------------------------------------------------------
+# Localization
+# ---------------------------------------------------------------------------
+LANG_EN = "en"
+LANG_JP = "jp"
+_current_lang = LANG_EN
+_saved_geometry = None
+_saved_lang = None
+
+_STRINGS = {
+    "window_title":         {"en": "DW Collision Check",            "jp": u"DW \u5e72\u6e09\u30c1\u30a7\u30c3\u30af"},
+    "grp_static":           {"en": "Static Checks",                 "jp": u"\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u30c1\u30a7\u30c3\u30af"},
+    "grp_anim":             {"en": "Animation Scan",                "jp": u"\u30a2\u30cb\u30e1\u30fc\u30b7\u30e7\u30f3\u30b9\u30ad\u30e3\u30f3"},
+    "run_static":           {"en": "Run Static Checks",             "jp": u"\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u5b9f\u884c"},
+    "btn_check":            {"en": "Check",                         "jp": u"\u30c1\u30a7\u30c3\u30af"},
+    "btn_reload":           {"en": "Reload",                        "jp": u"\u30ea\u30ed\u30fc\u30c9"},
+    "btn_help":             {"en": "?",                             "jp": u"?"},
+    "btn_lang":             {"en": "JP",                            "jp": u"EN"},
+    "btn_static_results":   {"en": "Static Results",                "jp": u"\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u7d50\u679c"},
+    "chk_intersection":     {"en": "Intersection Check",            "jp": u"\u4ea4\u5dee\u30c1\u30a7\u30c3\u30af"},
+    "desc_intersection":    {"en": "Detects polygon faces penetrating each other at the current frame.",
+                             "jp": u"\u73fe\u5728\u30d5\u30ec\u30fc\u30e0\u3067\u30dd\u30ea\u30b4\u30f3\u30d5\u30a7\u30fc\u30b9\u304c\u8cab\u901a\u3057\u3066\u3044\u308b\u7b87\u6240\u3092\u691c\u51fa\u3057\u307e\u3059\u3002"},
+    "chk_overlap":          {"en": "Overlap Check",                 "jp": u"\u91cd\u306a\u308a\u30c1\u30a7\u30c3\u30af"},
+    "desc_overlap":         {"en": "Detects coplanar overlapping faces (z-fighting / double faces).",
+                             "jp": u"\u540c\u4e00\u5e73\u9762\u4e0a\u3067\u91cd\u306a\u3063\u3066\u3044\u308b\u30d5\u30a7\u30fc\u30b9\u3092\u691c\u51fa\u3057\u307e\u3059\u3002"},
+    "chk_proximity":        {"en": "Proximity Check",               "jp": u"\u8fd1\u63a5\u30c1\u30a7\u30c3\u30af"},
+    "desc_proximity":       {"en": "Detects faces closer than threshold without intersecting.",
+                             "jp": u"\u95be\u5024\u4ee5\u5185\u306b\u8fd1\u63a5\u3057\u3066\u3044\u308b\u30d5\u30a7\u30fc\u30b9\u3092\u691c\u51fa\u3057\u307e\u3059\u3002"},
+    "settings_title_static":{"en": "Static Check Settings",         "jp": u"\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u8a2d\u5b9a"},
+    "settings_detection":   {"en": "Detection",                     "jp": u"\u691c\u51fa\u8a2d\u5b9a"},
+    "settings_mesh_pairs":  {"en": "Mesh Pairs",                    "jp": u"\u30e1\u30c3\u30b7\u30e5\u30da\u30a2"},
+    "chk_selected_only":    {"en": "Check selected meshes only",    "jp": u"\u9078\u629e\u30e1\u30c3\u30b7\u30e5\u306e\u307f\u30c1\u30a7\u30c3\u30af"},
+    "chk_self_intersect":   {"en": "Include self-intersection",     "jp": u"\u81ea\u5df1\u4ea4\u5dee\u3082\u691c\u51fa"},
+    "chk_self_intersect":   {"en": "Include self-intersection",     "jp": u"\u81ea\u5df1\u4ea4\u5dee\u3082\u691c\u51fa"},
+    "lbl_proximity_thresh":  {"en": "Proximity threshold (mm):",    "jp": u"\u8fd1\u63a5\u95be\u5024 (mm):"},
+    "lbl_add_pair":         {"en": "Add selected pair",             "jp": u"\u9078\u629e\u30da\u30a2\u3092\u8ffd\u52a0"},
+    "lbl_remove_pair":      {"en": "Remove",                        "jp": u"\u524a\u9664"},
+    "lbl_depth_threshold":  {"en": "Depth threshold:",              "jp": u"\u6df1\u5ea6\u95be\u5024:"},
+    "result_title_static":  {"en": "Static Check Results",          "jp": u"\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u7d50\u679c"},
+    "col_status":           {"en": "Status",                        "jp": u"\u30b9\u30c6\u30fc\u30bf\u30b9"},
+    "col_check":            {"en": "Check",                         "jp": u"\u30c1\u30a7\u30c3\u30af"},
+    "col_mesh_a":           {"en": "Mesh A",                        "jp": u"\u30e1\u30c3\u30b7\u30e5 A"},
+    "col_mesh_b":           {"en": "Mesh B",                        "jp": u"\u30e1\u30c3\u30b7\u30e5 B"},
+    "col_detail":           {"en": "Detail",                        "jp": u"\u8a73\u7d30"},
+    "btn_select_faces":     {"en": "Select Faces",                  "jp": u"\u30d5\u30a7\u30fc\u30b9\u9078\u629e"},
+    "btn_close":            {"en": "Close",                         "jp": u"\u9589\u3058\u308b"},
+    "status_ready":         {"en": "Ready",                         "jp": u"\u6e96\u5099\u5b8c\u4e86"},
+    "status_no_meshes":     {"en": "No meshes selected or available.", "jp": u"\u30e1\u30c3\u30b7\u30e5\u304c\u9078\u629e\u3055\u308c\u3066\u3044\u307e\u305b\u3093\u3002"},
+    "status_no_anim":       {"en": "Selected meshes have no animation.", "jp": u"\u9078\u629e\u30e1\u30c3\u30b7\u30e5\u306b\u30a2\u30cb\u30e1\u30fc\u30b7\u30e7\u30f3\u304c\u3042\u308a\u307e\u305b\u3093\u3002"},
+    "status_checking":      {"en": "Running checks...",             "jp": u"\u30c1\u30a7\u30c3\u30af\u5b9f\u884c\u4e2d..."},
+    "status_done":          {"en": "Done: {count} issue(s) found.", "jp": u"\u5b8c\u4e86: {count} \u4ef6\u306e\u554f\u984c\u3092\u691c\u51fa\u3057\u307e\u3057\u305f\u3002"},
+    "scope_label":          {"en": "Target: {scope}",               "jp": u"\u5bfe\u8c61: {scope}"},
+    "no_mesh_selected":     {"en": "No mesh selected. Using all scene meshes.",
+                             "jp": u"\u30e1\u30c3\u30b7\u30e5\u304c\u9078\u629e\u3055\u308c\u3066\u3044\u307e\u305b\u3093\u3002\u30b7\u30fc\u30f3\u5168\u4f53\u3092\u4f7f\u7528\u3057\u307e\u3059\u3002"},
+    "no_pairs":             {"en": "No mesh pairs defined. Add pairs in settings.",
+                             "jp": u"\u30e1\u30c3\u30b7\u30e5\u30da\u30a2\u304c\u672a\u8a2d\u5b9a\u3067\u3059\u3002\u8a2d\u5b9a\u304b\u3089\u30da\u30a2\u3092\u8ffd\u52a0\u3057\u3066\u304f\u3060\u3055\u3044\u3002"},
+    "err_triangulate":      {"en": "Failed to triangulate: {mesh}", "jp": u"\u4e09\u89d2\u5316\u5931\u6557: {mesh}"},
+    "pass_label":           {"en": "PASS",                          "jp": u"PASS"},
+    "fail_label":           {"en": "FAIL",                          "jp": u"FAIL"},
+    "run_anim":             {"en": "Run Animation Scan",            "jp": u"\u30a2\u30cb\u30e1\u30fc\u30b7\u30e7\u30f3\u30b9\u30ad\u30e3\u30f3\u5b9f\u884c"},
+    "btn_stop_anim":        {"en": "Stop",                          "jp": u"\u505c\u6b62"},
+    "btn_anim_results":     {"en": "Anim Results",                  "jp": u"\u30a2\u30cb\u30e1\u7d50\u679c"},
+    "anim_settings_title":  {"en": "Animation Scan Settings",       "jp": u"\u30a2\u30cb\u30e1\u30b9\u30ad\u30e3\u30f3\u8a2d\u5b9a"},
+    "lbl_frame_range":      {"en": "Frame range:",                  "jp": u"\u30d5\u30ec\u30fc\u30e0\u7bc4\u56f2:"},
+    "lbl_frame_step":       {"en": "Step:",                         "jp": u"\u30b9\u30c6\u30c3\u30d7:"},
+    "chk_use_timeline":     {"en": "Use timeline range",            "jp": u"\u30bf\u30a4\u30e0\u30e9\u30a4\u30f3\u7bc4\u56f2\u3092\u4f7f\u7528"},
+    "chk_ignore_static":    {"en": "Ignore baseline frame collisions",
+                             "jp": u"\u30d9\u30fc\u30b9\u30e9\u30a4\u30f3\u30d5\u30ec\u30fc\u30e0\u306e\u5e72\u6e09\u3092\u7121\u8996"},
+    "lbl_baseline_frame":   {"en": "Baseline frame:",               "jp": u"\u30d9\u30fc\u30b9\u30e9\u30a4\u30f3:"},
+    "anim_scanning":        {"en": "Scanning frame {frame}/{total}...",
+                             "jp": u"\u30d5\u30ec\u30fc\u30e0 {frame}/{total} \u3092\u30b9\u30ad\u30e3\u30f3\u4e2d..."},
+    "anim_done":            {"en": "Animation scan done: {count} frame(s) with issues.",
+                             "jp": u"\u30a2\u30cb\u30e1\u30b9\u30ad\u30e3\u30f3\u5b8c\u4e86: {count} \u30d5\u30ec\u30fc\u30e0\u3067\u554f\u984c\u691c\u51fa\u3002"},
+    "anim_cancelled":       {"en": "Animation scan cancelled.",     "jp": u"\u30a2\u30cb\u30e1\u30b9\u30ad\u30e3\u30f3\u304c\u30ad\u30e3\u30f3\u30bb\u30eb\u3055\u308c\u307e\u3057\u305f\u3002"},
+    "result_title_anim":    {"en": "Animation Scan Results",        "jp": u"\u30a2\u30cb\u30e1\u30b9\u30ad\u30e3\u30f3\u7d50\u679c"},
+    "col_frame":            {"en": "Frame",                         "jp": u"\u30d5\u30ec\u30fc\u30e0"},
+    "btn_goto_frame":       {"en": "Go to Frame",                   "jp": u"\u30d5\u30ec\u30fc\u30e0\u3078\u79fb\u52d5"},
+    "lbl_anim_summary":     {"en": "{total} issues across {frames} frame(s)",
+                             "jp": u"{frames} \u30d5\u30ec\u30fc\u30e0\u3067 {total} \u4ef6\u306e\u554f\u984c"},
+    "help_text": {
+        "en": "<h3>DW Collision Check</h3>"
+              "<p>Detects polygon intersections (hair/cloth collisions) in the current frame or across an animation range.</p>"
+              "<h4>Static Checks</h4>"
+              "<ul><li><b>Intersection Check</b>: Finds faces that physically penetrate each other.</li>"
+              "<li><b>Proximity Check</b>: Finds faces within the threshold distance.</li></ul>"
+              "<h4>Usage</h4>"
+              "<ol><li>Select meshes or define pairs in settings (⚙).</li>"
+              "<li>Click [Check] per item or [Run Static Checks] for all.</li>"
+              "<li>Click a result row to select the faces in the viewport.</li></ol>",
+        "jp": u"<h3>DW \u5e72\u6e09\u30c1\u30a7\u30c3\u30af</h3>"
+              u"<p>\u73fe\u5728\u30d5\u30ec\u30fc\u30e0\u307e\u305f\u306f\u30a2\u30cb\u30e1\u30fc\u30b7\u30e7\u30f3\u7bc4\u56f2\u5185\u3067\u30dd\u30ea\u30b4\u30f3\u306e\u5e72\u6e09\uff08\u9aea\u30fb\u5e03\u306e\u523a\u3055\u308a\uff09\u3092\u691c\u51fa\u3057\u307e\u3059\u3002</p>"
+              u"<h4>\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u30c1\u30a7\u30c3\u30af</h4>"
+              u"<ul><li><b>\u4ea4\u5dee\u30c1\u30a7\u30c3\u30af</b>: \u5b9f\u969b\u306b\u8cab\u901a\u3057\u3066\u3044\u308b\u30d5\u30a7\u30fc\u30b9\u3092\u691c\u51fa\u3002</li>"
+              u"<li><b>\u8fd1\u63a5\u30c1\u30a7\u30c3\u30af</b>: \u95be\u5024\u8ddd\u96e2\u4ee5\u5185\u306e\u30d5\u30a7\u30fc\u30b9\u3092\u691c\u51fa\u3002</li></ul>"
+              u"<h4>\u4f7f\u3044\u65b9</h4>"
+              u"<ol><li>\u30e1\u30c3\u30b7\u30e5\u3092\u9078\u629e\u3059\u308b\u304b\u3001\u8a2d\u5b9a(\u2699)\u3067\u30da\u30a2\u3092\u767b\u9332\u3002</li>"
+              u"<li>[Check] \u307e\u305f\u306f [\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u5b9f\u884c] \u3092\u30af\u30ea\u30c3\u30af\u3002</li>"
+              u"<li>\u7d50\u679c\u884c\u3092\u30af\u30ea\u30c3\u30af\u3059\u308b\u3068\u30d3\u30e5\u30fc\u30dd\u30fc\u30c8\u3067\u30d5\u30a7\u30fc\u30b9\u3092\u9078\u629e\u3002</li></ol>",
+    },
+}
+
+def tr(key, **kw):
+    e = _STRINGS.get(key, {})
+    if isinstance(e, dict) and ("en" in e or "jp" in e):
+        t = e.get(_current_lang, e.get("en", key))
+    else:
+        t = key
+    return t.format(**kw) if kw else t
+
+
+
+# ---------------------------------------------------------------------------
+# CollisionDetector  (Pure Python — no Maya dependency)
+# ---------------------------------------------------------------------------
+_EPSILON = 1e-7   # tolerance for floating-point comparisons
+
+
+def _sub(a, b):   return (a[0]-b[0], a[1]-b[1], a[2]-b[2])
+def _cross(a, b): return (a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0])
+def _dot(a, b):   return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+def _len(a):      return math.sqrt(a[0]*a[0] + a[1]*a[1] + a[2]*a[2])
+def _norm(a):
+    l = _len(a)
+    return (a[0]/l, a[1]/l, a[2]/l) if l > 1e-15 else (0.0, 0.0, 0.0)
+
+
+# ---------------------------------------------------------------------------
+# AABB
+# ---------------------------------------------------------------------------
+class _AABB(object):
+    __slots__ = ("mn", "mx")
+
+    def __init__(self, mn, mx):
+        self.mn = mn
+        self.mx = mx
+
+    def intersects(self, o):
+        return (self.mn[0] <= o.mx[0] and self.mx[0] >= o.mn[0] and
+                self.mn[1] <= o.mx[1] and self.mx[1] >= o.mn[1] and
+                self.mn[2] <= o.mx[2] and self.mx[2] >= o.mn[2])
+
+    @staticmethod
+    def from_tri(tri):
+        xs = (tri[0][0], tri[1][0], tri[2][0])
+        ys = (tri[0][1], tri[1][1], tri[2][1])
+        zs = (tri[0][2], tri[1][2], tri[2][2])
+        return _AABB((min(xs), min(ys), min(zs)),
+                     (max(xs), max(ys), max(zs)))
+
+    def merge(self, o):
+        return _AABB(
+            (min(self.mn[0], o.mn[0]), min(self.mn[1], o.mn[1]), min(self.mn[2], o.mn[2])),
+            (max(self.mx[0], o.mx[0]), max(self.mx[1], o.mx[1]), max(self.mx[2], o.mx[2])))
+
+    def surface_area(self):
+        dx = self.mx[0] - self.mn[0]
+        dy = self.mx[1] - self.mn[1]
+        dz = self.mx[2] - self.mn[2]
+        return 2.0 * (dx*dy + dy*dz + dz*dx)
+
+
+# ---------------------------------------------------------------------------
+# BVH
+# ---------------------------------------------------------------------------
+class _BVHNode(object):
+    __slots__ = ("aabb", "left", "right", "tri_idx")
+    def __init__(self):
+        self.aabb    = None
+        self.left    = None
+        self.right   = None
+        self.tri_idx = -1   # >= 0: leaf node
+
+
+def _centroid_ax(tri, axis):
+    return (tri[0][axis] + tri[1][axis] + tri[2][axis]) / 3.0
+
+
+def _build_bvh(tris, indices):
+    node = _BVHNode()
+    box = _AABB.from_tri(tris[indices[0]])
+    for i in indices[1:]:
+        box = box.merge(_AABB.from_tri(tris[i]))
+    node.aabb = box
+
+    if len(indices) == 1:
+        node.tri_idx = indices[0]
+        return node
+
+    if len(indices) == 2:
+        l = _BVHNode(); l.aabb = _AABB.from_tri(tris[indices[0]]); l.tri_idx = indices[0]
+        r = _BVHNode(); r.aabb = _AABB.from_tri(tris[indices[1]]); r.tri_idx = indices[1]
+        node.left = l; node.right = r
+        return node
+
+    c = [(_centroid_ax(tris[i], 0), _centroid_ax(tris[i], 1), _centroid_ax(tris[i], 2))
+         for i in indices]
+    spans = [max(v[ax] for v in c) - min(v[ax] for v in c) for ax in range(3)]
+    axis = spans.index(max(spans))
+
+    sorted_idx = sorted(indices, key=lambda i: _centroid_ax(tris[i], axis))
+    mid = len(sorted_idx) // 2
+    node.left  = _build_bvh(tris, sorted_idx[:mid])
+    node.right = _build_bvh(tris, sorted_idx[mid:])
+    return node
+
+
+def _refit_bvh(node, tris):
+    """
+    Recursively update AABBs in an existing BVH using new triangle positions.
+    The tree structure (left/right/tri_idx) is preserved — only AABBs change.
+    This is much faster than rebuilding the BVH from scratch, since the
+    topology doesn't change between animation frames.
+    """
+    if node is None:
+        return None
+    if node.tri_idx >= 0:
+        # Leaf: rebuild AABB from the current triangle position
+        node.aabb = _AABB.from_tri(tris[node.tri_idx])
+        return node.aabb
+    left_aabb = _refit_bvh(node.left, tris)
+    right_aabb = _refit_bvh(node.right, tris)
+    if left_aabb is None:
+        node.aabb = right_aabb
+    elif right_aabb is None:
+        node.aabb = left_aabb
+    else:
+        node.aabb = left_aabb.merge(right_aabb)
+    return node.aabb
+
+
+
+# ---------------------------------------------------------------------------
+# Triangle-Triangle intersection  (Moller 1997, corrected)
+# ---------------------------------------------------------------------------
+def _sgn(x):
+    if x > _EPSILON:  return  1
+    if x < -_EPSILON: return -1
+    return 0
+
+
+def _coplanar_2d_sat(t1, t2, n):
+    """Strict 2D SAT for coplanar triangles. Touching edges return True."""
+    nx, ny, nz = abs(n[0]), abs(n[1]), abs(n[2])
+    if nx <= ny and nx <= nz: u = _norm((0.0, n[2], -n[1]))
+    elif ny <= nz:             u = _norm((n[2], 0.0, -n[0]))
+    else:                      u = _norm((n[1], -n[0], 0.0))
+    v = _norm(_cross(n, u))
+
+    def p2(pt): return (_dot(pt, u), _dot(pt, v))
+    p1 = [p2(p) for p in t1]
+    p2_ = [p2(p) for p in t2]
+
+    for pts_a, pts_b in [(p1, p2_), (p2_, p1)]:
+        for i in range(3):
+            j = (i + 1) % 3
+            ex = pts_a[j][0] - pts_a[i][0]
+            ey = pts_a[j][1] - pts_a[i][1]
+            al = math.sqrt(ex*ex + ey*ey)
+            if al < 1e-12: continue
+            ax = -ey / al;  ay = ex / al
+            a_d = [pt[0]*ax + pt[1]*ay for pt in pts_a]
+            b_d = [pt[0]*ax + pt[1]*ay for pt in pts_b]
+            if max(b_d) < min(a_d) - _EPSILON or max(a_d) < min(b_d) - _EPSILON:
+                return False
+    return True
+
+
+def _moller_interval(coords, dists):
+    """
+    Compute [t_min, t_max] scalar interval on the intersection line
+    for one triangle, given projected coords and plane distances.
+
+    Correctly handles all cases:
+      - Normal case: one isolated vertex (opposite sign from the other two)
+      - Vertex-on-plane: one dist == 0 (vertex lies exactly on opposite plane)
+    """
+    d0, d1, d2 = dists[0], dists[1], dists[2]
+    p0, p1, p2 = coords[0], coords[1], coords[2]
+
+    s = (_sgn(d0), _sgn(d1), _sgn(d2))
+    pos = [i for i in range(3) if s[i] > 0]
+    neg = [i for i in range(3) if s[i] < 0]
+    zer = [i for i in range(3) if s[i] == 0]
+
+    c = [(p0, d0), (p1, d1), (p2, d2)]
+
+    if len(zer) == 2:
+        # Two vertices on plane
+        pts = [c[i][0] for i in zer]
+        return min(pts), max(pts)
+
+    if len(zer) == 1:
+        # One vertex on plane — it is an endpoint
+        on = c[zer[0]][0]
+        oth = [i for i in range(3) if i != zer[0]]
+        ia, ib = oth[0], oth[1]
+        if s[ia] != 0 and s[ib] != 0 and s[ia] != s[ib]:
+            den = c[ia][1] - c[ib][1]
+            if abs(den) > 1e-15:
+                t = c[ia][0] + (c[ib][0] - c[ia][0]) * c[ia][1] / den
+            else:
+                t = on
+            return (min(on, t), max(on, t))
+        return on, on
+
+    # Normal case: one isolated vertex
+    if len(pos) == 1 and len(neg) == 2:
+        iso = pos[0]; oth = neg
+    elif len(neg) == 1 and len(pos) == 2:
+        iso = neg[0]; oth = pos
+    else:
+        vals = [p0, p1, p2]; return min(vals), max(vals)
+
+    pi_ = c[iso][0]; di_ = c[iso][1]
+    j,  k  = oth[0], oth[1]
+    pj = c[j][0];  dj = c[j][1]
+    pk = c[k][0];  dk = c[k][1]
+
+    den_j = di_ - dj;  den_k = di_ - dk
+    tj = (pi_ + (pj - pi_) * di_ / den_j) if abs(den_j) > 1e-15 else pi_
+    tk = (pi_ + (pk - pi_) * di_ / den_k) if abs(den_k) > 1e-15 else pi_
+
+    return min(tj, tk), max(tj, tk)
+
+
+def _tri_tri_intersect(t1, t2):
+    """
+    Robust Moller (1997) triangle-triangle intersection.
+    Returns (hit: bool, depth: float, point: tuple|None,
+             n1: tuple|None, n2: tuple|None).
+    """
+    EPS = 1e-6
+
+    # Compute plane of t2 (normalized)
+    e1 = _sub(t2[1], t2[0])
+    e2 = _sub(t2[2], t2[0])
+    n2_raw = _cross(e1, e2)
+    n2_len = _len(n2_raw)
+    if n2_len < 1e-12:
+        return False, 0.0, None, None, None
+    n2 = (n2_raw[0]/n2_len, n2_raw[1]/n2_len, n2_raw[2]/n2_len)
+    d2 = -_dot(n2, t2[0])
+
+    # Signed distances of t1 vertices to plane of t2
+    dv = [_dot(n2, t1[i]) + d2 for i in range(3)]
+    # Clamp tiny values to zero
+    dv = [0.0 if abs(d) < EPS else d for d in dv]
+
+    # Early reject: all on same side
+    if (dv[0] > 0 and dv[1] > 0 and dv[2] > 0) or \
+       (dv[0] < 0 and dv[1] < 0 and dv[2] < 0):
+        return False, 0.0, None, None, None
+
+    # Compute plane of t1 (normalized)
+    e1 = _sub(t1[1], t1[0])
+    e2 = _sub(t1[2], t1[0])
+    n1_raw = _cross(e1, e2)
+    n1_len = _len(n1_raw)
+    if n1_len < 1e-12:
+        return False, 0.0, None, None, None
+    n1 = (n1_raw[0]/n1_len, n1_raw[1]/n1_len, n1_raw[2]/n1_len)
+    d1 = -_dot(n1, t1[0])
+
+    # Signed distances of t2 vertices to plane of t1
+    du = [_dot(n1, t2[i]) + d1 for i in range(3)]
+    du = [0.0 if abs(d) < EPS else d for d in du]
+
+    if (du[0] > 0 and du[1] > 0 and du[2] > 0) or \
+       (du[0] < 0 and du[1] < 0 and du[2] < 0):
+        return False, 0.0, None, None, None
+
+    # Intersection line direction = cross of normals
+    D = _cross(n1, n2)
+    d_len = _len(D)
+
+    # Coplanar / near-parallel case
+    # n1 and n2 are both unit vectors, so |n1 × n2| = sin(angle between planes).
+    # If d_len < 0.01, the planes are within ~0.57 degrees of parallel —
+    # treat as coplanar to avoid numerical instability.
+    if d_len < 0.01:
+        hit = _coplanar_2d_sat(t1, t2, n1)
+        cx = (t1[0][0]+t1[1][0]+t1[2][0]) / 3.0
+        cy = (t1[0][1]+t1[1][1]+t1[2][1]) / 3.0
+        cz = (t1[0][2]+t1[1][2]+t1[2][2]) / 3.0
+        return hit, 0.0, (cx, cy, cz), n1, n2
+
+    # Normalized intersection line direction
+    Dn = (D[0]/d_len, D[1]/d_len, D[2]/d_len)
+
+    # Compute scalar intervals using 3D edge-plane intersections
+    t1_lo, t1_hi = _compute_interval_3d(t1, dv, Dn)
+    if t1_lo is None:
+        return False, 0.0, None, None, None
+    t2_lo, t2_hi = _compute_interval_3d(t2, du, Dn)
+    if t2_lo is None:
+        return False, 0.0, None, None, None
+
+    # Check overlap of the two intervals
+    ov_lo = max(t1_lo, t2_lo)
+    ov_hi = min(t1_hi, t2_hi)
+
+    if ov_lo > ov_hi + EPS:
+        return False, 0.0, None, None, None
+
+    # Overlap length in world units along the intersection line
+    overlap_len = max(0.0, ov_hi - ov_lo)
+
+    cx = (t1[0][0]+t1[1][0]+t1[2][0]) / 3.0
+    cy = (t1[0][1]+t1[1][1]+t1[2][1]) / 3.0
+    cz = (t1[0][2]+t1[1][2]+t1[2][2]) / 3.0
+    return True, overlap_len, (cx, cy, cz), n1, n2
+
+
+def _compute_interval_3d(verts, dists, Dn):
+    """
+    Given triangle vertices, signed distances to the opposite plane,
+    and the unit direction of the intersection line Dn,
+    compute the scalar interval [t_lo, t_hi] along Dn where the
+    triangle crosses the opposite plane (i.e. the 3D points where
+    edges pierce the plane, projected onto Dn).
+    Returns (t_lo, t_hi) or (None, None) if no crossing.
+    """
+    signs = []
+    for d in dists:
+        if d > 0: signs.append(1)
+        elif d < 0: signs.append(-1)
+        else: signs.append(0)
+
+    pos = [i for i in range(3) if signs[i] > 0]
+    neg = [i for i in range(3) if signs[i] < 0]
+    zer = [i for i in range(3) if signs[i] == 0]
+
+    # Helper: project 3D point onto Dn
+    def proj(pt):
+        return _dot(Dn, pt)
+
+    # All zero: shouldn't happen here (coplanar handled separately)
+    if len(zer) == 3:
+        return None, None
+
+    # Two zero: the edge between them lies on the plane
+    if len(zer) == 2:
+        t_a = proj(verts[zer[0]])
+        t_b = proj(verts[zer[1]])
+        return min(t_a, t_b), max(t_a, t_b)
+
+    # One zero: vertex on plane + possibly an edge crossing
+    if len(zer) == 1:
+        z = zer[0]
+        others = [i for i in range(3) if i != z]
+        a, b = others[0], others[1]
+        t_z = proj(verts[z])
+        if signs[a] * signs[b] < 0:
+            # Edge a-b pierces the plane in 3D
+            t_param = dists[a] / (dists[a] - dists[b])
+            pt = (verts[a][0] + (verts[b][0] - verts[a][0]) * t_param,
+                  verts[a][1] + (verts[b][1] - verts[a][1]) * t_param,
+                  verts[a][2] + (verts[b][2] - verts[a][2]) * t_param)
+            t_cross = proj(pt)
+            return min(t_z, t_cross), max(t_z, t_cross)
+        else:
+            return t_z, t_z
+
+    # Normal case: one isolated vertex, two on the other side
+    if len(pos) == 1 and len(neg) == 2:
+        iso = pos[0]
+        others = neg
+    elif len(neg) == 1 and len(pos) == 2:
+        iso = neg[0]
+        others = pos
+    else:
+        return None, None
+
+    a, b = others[0], others[1]
+    # Edge iso-a pierces the plane at:
+    t_param_a = dists[iso] / (dists[iso] - dists[a])
+    pt_a = (verts[iso][0] + (verts[a][0] - verts[iso][0]) * t_param_a,
+            verts[iso][1] + (verts[a][1] - verts[iso][1]) * t_param_a,
+            verts[iso][2] + (verts[a][2] - verts[iso][2]) * t_param_a)
+    # Edge iso-b pierces at:
+    t_param_b = dists[iso] / (dists[iso] - dists[b])
+    pt_b = (verts[iso][0] + (verts[b][0] - verts[iso][0]) * t_param_b,
+            verts[iso][1] + (verts[b][1] - verts[iso][1]) * t_param_b,
+            verts[iso][2] + (verts[b][2] - verts[iso][2]) * t_param_b)
+
+    t_a = proj(pt_a)
+    t_b = proj(pt_b)
+    return min(t_a, t_b), max(t_a, t_b)
+
+
+def _compute_interval(proj, dists):
+    """Legacy wrapper — kept for backward compat but not used."""
+    return None, None
+
+
+# ---------------------------------------------------------------------------
+# Dual-BVH traversal
+# ---------------------------------------------------------------------------
+def _query_bvh(na, tris_a, nb, tris_b, out, backface_cull=False,
+               self_test=False, tri_adj=None, cross_shared=None):
+    if not na.aabb.intersects(nb.aabb):
+        return
+
+    leaf_a = (na.tri_idx >= 0)
+    leaf_b = (nb.tri_idx >= 0)
+
+    if leaf_a and leaf_b:
+        # Self-intersection: skip same triangle and adjacent triangles
+        if self_test:
+            if na.tri_idx == nb.tri_idx:
+                return
+            if na.tri_idx <= nb.tri_idx:
+                return  # avoid duplicate pairs
+            if tri_adj and nb.tri_idx in tri_adj.get(na.tri_idx, ()):
+                return  # skip adjacent triangles (they share an edge)
+
+        # Cross-mesh: skip if triangles share a snapped vertex position
+        if cross_shared and (na.tri_idx, nb.tri_idx) in cross_shared:
+            return
+
+        hit, depth, pt, n1, n2 = _tri_tri_intersect(
+            tris_a[na.tri_idx], tris_b[nb.tri_idx])
+        if hit:
+            # Backface culling: skip if normals face opposite directions
+            if backface_cull and n1 is not None and n2 is not None:
+                if _dot(n1, n2) < -0.5:
+                    return
+            out.append({"face_a": na.tri_idx, "face_b": nb.tri_idx,
+                        "depth": depth, "point": pt})
+        return
+
+    if leaf_a:
+        _query_bvh(na, tris_a, nb.left,  tris_b, out, backface_cull,
+                   self_test, tri_adj, cross_shared)
+        _query_bvh(na, tris_a, nb.right, tris_b, out, backface_cull,
+                   self_test, tri_adj, cross_shared)
+    elif leaf_b:
+        _query_bvh(na.left,  tris_a, nb, tris_b, out, backface_cull,
+                   self_test, tri_adj, cross_shared)
+        _query_bvh(na.right, tris_a, nb, tris_b, out, backface_cull,
+                   self_test, tri_adj, cross_shared)
+    else:
+        if na.aabb.surface_area() >= nb.aabb.surface_area():
+            _query_bvh(na.left,  tris_a, nb, tris_b, out, backface_cull,
+                       self_test, tri_adj, cross_shared)
+            _query_bvh(na.right, tris_a, nb, tris_b, out, backface_cull,
+                       self_test, tri_adj, cross_shared)
+        else:
+            _query_bvh(na, tris_a, nb.left,  tris_b, out, backface_cull,
+                       self_test, tri_adj, cross_shared)
+            _query_bvh(na, tris_a, nb.right, tris_b, out, backface_cull,
+                       self_test, tri_adj, cross_shared)
+
+
+def _build_tri_adjacency(tri_vert_ids):
+    """
+    Build triangle adjacency based on shared vertices.
+    Two triangles are adjacent if they share ANY vertex.
+    This prevents false positives between neighboring faces in self-intersection.
+    Returns dict: {tri_idx: set(adjacent_tri_indices)}
+    """
+    # Build vertex -> triangle mapping
+    vert_to_tris = {}
+    for ti, (v0, v1, v2) in enumerate(tri_vert_ids):
+        for v in (v0, v1, v2):
+            if v not in vert_to_tris:
+                vert_to_tris[v] = []
+            vert_to_tris[v].append(ti)
+
+    # Two triangles sharing any vertex are adjacent
+    adj = {}
+    for ti in range(len(tri_vert_ids)):
+        adj[ti] = set()
+    for v, tri_list in vert_to_tris.items():
+        for i in range(len(tri_list)):
+            for j in range(i + 1, len(tri_list)):
+                adj[tri_list[i]].add(tri_list[j])
+                adj[tri_list[j]].add(tri_list[i])
+    return adj
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+def _build_cross_mesh_shared_verts(tris_a, tris_b, precision=3):
+    """
+    For cross-mesh checks, build a set of triangle pairs that share an
+    edge or vertex at the boundary. Two triangles from different meshes
+    are considered 'adjacent' (boundary-touching) if they share 2 or
+    more vertex positions (rounded to *precision* decimal places).
+    Sharing a single vertex is also skipped since it often indicates
+    a seam where meshes meet at a point.
+    Returns: set of (tri_idx_a, tri_idx_b)
+    """
+    # Build rounded-position set for each triangle in B
+    b_vert_sets = []
+    for tri in tris_b:
+        s = set()
+        for v in tri:
+            s.add((round(v[0], precision),
+                   round(v[1], precision),
+                   round(v[2], precision)))
+        b_vert_sets.append(s)
+
+    # Map rounded vertex positions to triangle indices in B
+    pos_to_b = {}
+    for ti, tri in enumerate(tris_b):
+        for v in tri:
+            key = (round(v[0], precision),
+                   round(v[1], precision),
+                   round(v[2], precision))
+            if key not in pos_to_b:
+                pos_to_b[key] = set()
+            pos_to_b[key].add(ti)
+
+    shared = set()
+    for ti_a, tri in enumerate(tris_a):
+        verts_a = set()
+        for v in tri:
+            verts_a.add((round(v[0], precision),
+                         round(v[1], precision),
+                         round(v[2], precision)))
+
+        # Find candidate B-triangles that share at least one vertex
+        candidates = set()
+        for va in verts_a:
+            if va in pos_to_b:
+                candidates.update(pos_to_b[va])
+
+        for ti_b in candidates:
+            # Count how many vertex positions are shared
+            common = len(verts_a & b_vert_sets[ti_b])
+            if common >= 1:
+                shared.add((ti_a, ti_b))
+    return shared
+
+
+class CollisionDetector(object):
+    """
+    BVH-accelerated polygon collision detector.
+    Maya-independent. Input: world-space triangle lists.
+    triangles format: list of ( (x,y,z), (x,y,z), (x,y,z) )
+    """
+
+    def __init__(self, triangles_a, triangles_b, tri_vert_ids_a=None,
+                 bvh_a=None, bvh_b=None, tri_adj_a=None, cross_shared=None):
+        """
+        Optional bvh_a/bvh_b: pre-built BVH trees (e.g. refitted).
+            If provided, skips building from scratch. Must match triangles_a/b.
+        Optional tri_adj_a: pre-built vertex-share adjacency for self-test.
+        Optional cross_shared: pre-built cross-mesh shared-vertex pair set.
+        """
+        self._tris_a = triangles_a
+        self._tris_b = triangles_b
+        self._self_test = (triangles_a is triangles_b)
+        self._tri_vert_ids_a = tri_vert_ids_a
+        self._tri_adj_a = tri_adj_a
+        self._cross_shared = cross_shared
+        if bvh_a is not None:
+            self._bvh_a = bvh_a
+        else:
+            self._bvh_a = (_build_bvh(triangles_a, list(range(len(triangles_a))))
+                           if triangles_a else None)
+        if self._self_test:
+            self._bvh_b = self._bvh_a
+        elif bvh_b is not None:
+            self._bvh_b = bvh_b
+        else:
+            self._bvh_b = (_build_bvh(triangles_b, list(range(len(triangles_b))))
+                           if triangles_b else None)
+
+    def check(self, threshold=0.0, backface_cull=False):
+        """Returns list of {face_a, face_b, depth, point} for intersecting pairs.
+        backface_cull: if True, skip pairs where normals face opposite directions.
+        """
+        if self._bvh_a is None or self._bvh_b is None:
+            return []
+
+        # Build triangle adjacency for self-test to skip neighboring tris
+        tri_adj = self._tri_adj_a
+        if self._self_test and tri_adj is None and self._tri_vert_ids_a is not None:
+            tri_adj = _build_tri_adjacency(self._tri_vert_ids_a)
+
+        # For cross-mesh, build shared-vertex pair set (use cache if provided)
+        cross_shared = None
+        if not self._self_test:
+            if self._cross_shared is not None:
+                cross_shared = self._cross_shared
+            else:
+                cross_shared = _build_cross_mesh_shared_verts(
+                    self._tris_a, self._tris_b)
+
+        raw = []
+        _query_bvh(self._bvh_a, self._tris_a,
+                   self._bvh_b, self._tris_b, raw, backface_cull,
+                   self._self_test, tri_adj, cross_shared)
+        seen, unique = set(), []
+        for r in raw:
+            key = (r["face_a"], r["face_b"])
+            if key not in seen:
+                seen.add(key)
+                unique.append(r)
+        return unique
+
+
+
+# ---------------------------------------------------------------------------
+# MayaBridge  (Maya cmds / OpenMaya wrapper)
+# ---------------------------------------------------------------------------
+class MayaBridge(object):
+    """
+    Extracts triangle data from Maya meshes and provides scene utilities.
+    All methods are static and call Maya API only when MAYA_AVAILABLE.
+    """
+
+    @staticmethod
+    def get_mesh_shapes():
+        """Returns all visible mesh shapes in the scene."""
+        if not MAYA_AVAILABLE:
+            return []
+        shapes = cmds.ls(type="mesh", long=True) or []
+        visible = []
+        for s in shapes:
+            try:
+                if not cmds.getAttr(s + ".visibility"):
+                    continue
+                if cmds.getAttr(s + ".intermediateObject"):
+                    continue
+                visible.append(s)
+            except Exception:
+                pass
+        return visible
+
+    @staticmethod
+    def get_selected_meshes():
+        """Returns mesh shapes from current selection, including all descendants."""
+        if not MAYA_AVAILABLE:
+            return []
+        sel = cmds.ls(selection=True, long=True) or []
+        shapes = []
+        seen = set()
+        for node in sel:
+            node_type = cmds.nodeType(node)
+            if node_type == "mesh":
+                if node not in seen:
+                    if not cmds.getAttr(node + ".intermediateObject"):
+                        shapes.append(node)
+                        seen.add(node)
+            elif node_type == "transform":
+                # Get all descendant mesh shapes recursively
+                all_descendants = cmds.listRelatives(
+                    node, allDescendents=True,
+                    type="mesh", fullPath=True) or []
+                for ch in all_descendants:
+                    if ch not in seen:
+                        try:
+                            if not cmds.getAttr(ch + ".intermediateObject"):
+                                shapes.append(ch)
+                                seen.add(ch)
+                        except Exception:
+                            pass
+        return shapes
+
+    @staticmethod
+    def get_triangles(mesh_shape):
+        """
+        Converts a Maya mesh shape to a list of world-space triangles.
+        Returns: (triangles, tri_to_poly, tri_vert_ids)
+            triangles    : list of ( (x,y,z), (x,y,z), (x,y,z) )
+            tri_to_poly  : list of int — tri_to_poly[tri_idx] = polygon face index
+            tri_vert_ids : list of (v0, v1, v2) — vertex indices per triangle
+        Raises:  RuntimeError on failure.
+        """
+        if not MAYA_AVAILABLE:
+            raise RuntimeError("Maya not available")
+
+        try:
+            sel = om.MSelectionList()
+            sel.add(mesh_shape)
+            dag_path = om.MDagPath()
+            sel.getDagPath(0, dag_path)
+
+            # If transform was passed, extend to shape
+            try:
+                dag_path.extendToShape()
+            except Exception:
+                pass
+
+            fn_mesh = om.MFnMesh(dag_path)
+
+            # Get world-space points (deformed positions)
+            pts = om.MPointArray()
+            fn_mesh.getPoints(pts, om.MSpace.kWorld)
+
+            # Get triangle counts and vertex indices per polygon
+            tri_counts  = om.MIntArray()
+            tri_verts   = om.MIntArray()
+            fn_mesh.getTriangles(tri_counts, tri_verts)
+
+            triangles = []
+            tri_to_poly = []
+            tri_vert_ids = []
+            idx = 0
+            for poly_idx in range(fn_mesh.numPolygons()):
+                n_tris = tri_counts[poly_idx]
+                for _ in range(n_tris):
+                    i0 = tri_verts[idx];     idx += 1
+                    i1 = tri_verts[idx];     idx += 1
+                    i2 = tri_verts[idx];     idx += 1
+                    p0 = pts[i0]; p1 = pts[i1]; p2 = pts[i2]
+                    triangles.append((
+                        (p0.x, p0.y, p0.z),
+                        (p1.x, p1.y, p1.z),
+                        (p2.x, p2.y, p2.z),
+                    ))
+                    tri_to_poly.append(poly_idx)
+                    tri_vert_ids.append((i0, i1, i2))
+            return triangles, tri_to_poly, tri_vert_ids
+
+        except Exception as e:
+            raise RuntimeError(
+                tr("err_triangulate", mesh=mesh_shape) + " : " + str(e))
+
+    @staticmethod
+    def select_faces(mesh_shape, face_ids):
+        """Select specific face IDs on a mesh in the Maya viewport."""
+        if not MAYA_AVAILABLE or not face_ids:
+            return
+        cmds.select(clear=True)
+        components = ["{0}.f[{1}]".format(mesh_shape, f) for f in face_ids]
+        cmds.select(components, add=True)
+
+    @staticmethod
+    def get_short_name(long_name):
+        """Returns the shortest unique name for display."""
+        parts = long_name.split("|")
+        return parts[-1] if parts else long_name
+
+    @staticmethod
+    def mesh_exists(name):
+        if not MAYA_AVAILABLE:
+            return False
+        return cmds.objExists(name) and cmds.nodeType(name) in ("mesh", "transform")
+
+    @staticmethod
+    def get_transform(shape_name):
+        """Returns the parent transform of a shape."""
+        if not MAYA_AVAILABLE:
+            return shape_name
+        parents = cmds.listRelatives(shape_name, parent=True, fullPath=True) or []
+        return parents[0] if parents else shape_name
+
+    @staticmethod
+    def has_animation(mesh_shape):
+        """
+        Returns True if the mesh is actually animated — its geometry or
+        world transform can change between frames.
+
+        A skinCluster / blendShape / etc. alone is NOT animation. The
+        deformer's drivers (joints, target weights, controllers) must
+        themselves be animated for the mesh to move.
+
+        We check:
+          1. animCurve connections on the mesh's transform chain (walking up)
+          2. constraint / expression / motionPath inputs on the transform chain
+          3. If a skinCluster is present: whether ANY driver joint in its
+             influence list is animated (transitively via transform chain
+             animCurves)
+          4. If a blendShape is present: whether its weight attrs are
+             driven by animCurves or expressions
+        Returns False if no actual time-varying driver is found.
+        """
+        if not MAYA_AVAILABLE:
+            return False
+
+        visited_nodes = set()
+
+        def _transform_has_anim(tr_node):
+            """Walk the transform chain upward; True if any node is animated."""
+            node = tr_node
+            safety = 0
+            while node and safety < 64:
+                safety += 1
+                if node in visited_nodes:
+                    return False
+                visited_nodes.add(node)
+                try:
+                    conns = cmds.listConnections(
+                        node, source=True, destination=False,
+                        type="animCurve") or []
+                    if conns:
+                        return True
+                    # Check constraints on this transform
+                    constraints = cmds.listConnections(
+                        node, source=True, destination=False,
+                        type="constraint") or []
+                    if constraints:
+                        return True
+                    exprs = cmds.listConnections(
+                        node, source=True, destination=False,
+                        type="expression") or []
+                    if exprs:
+                        return True
+                    motion = cmds.listConnections(
+                        node, source=True, destination=False,
+                        type="motionPath") or []
+                    if motion:
+                        return True
+                    parents = cmds.listRelatives(
+                        node, parent=True, fullPath=True) or []
+                except Exception:
+                    return False
+                if not parents:
+                    break
+                node = parents[0]
+            return False
+
+        try:
+            # 1. Check the mesh's own transform chain
+            tr = MayaBridge.get_transform(mesh_shape)
+            if _transform_has_anim(tr):
+                return True
+
+            # 2. Check deformers. For each deformer, verify that its
+            #    drivers are actually animated.
+            hist = cmds.listHistory(mesh_shape, pruneDagObjects=True) or []
+            for node in hist:
+                try:
+                    nt = cmds.nodeType(node)
+                except Exception:
+                    continue
+
+                if nt == "skinCluster":
+                    # Get influence joints / drivers
+                    try:
+                        inflist = cmds.skinCluster(
+                            node, query=True, influence=True) or []
+                    except Exception:
+                        inflist = []
+                    for inf in inflist:
+                        if _transform_has_anim(inf):
+                            return True
+
+                elif nt == "blendShape":
+                    # Check weight-attr animation
+                    try:
+                        weight_conns = cmds.listConnections(
+                            node + ".weight", source=True, destination=False,
+                            type="animCurve") or []
+                        if weight_conns:
+                            return True
+                        weight_exprs = cmds.listConnections(
+                            node + ".weight", source=True, destination=False,
+                            type="expression") or []
+                        if weight_exprs:
+                            return True
+                    except Exception:
+                        pass
+
+                elif nt in ("cluster", "lattice", "nonLinear", "softMod",
+                            "wire", "ffd", "sculpt"):
+                    # These are driven by their handle transform —
+                    # check the handle's transform chain.
+                    try:
+                        handles = cmds.listConnections(
+                            node, source=True, destination=False,
+                            type="transform") or []
+                        for h in handles:
+                            if _transform_has_anim(h):
+                                return True
+                    except Exception:
+                        pass
+
+                elif nt.startswith("animCurve"):
+                    # Direct animation curve in the shape history
+                    return True
+        except Exception:
+            return False
+
+        return False
+
+    @staticmethod
+    def any_has_animation(mesh_shapes):
+        """Returns True if ANY of the given meshes has animation."""
+        for m in mesh_shapes:
+            if MayaBridge.has_animation(m):
+                return True
+        return False
+
+    # Cache: {mesh_shape: {face_id: set(neighbor_face_ids)}}
+    _face_adjacency_cache = {}
+    # Cache: {mesh_shape: bvh_root_node}
+    _bvh_cache = {}
+    # Cache: {mesh_shape: tri_adjacency_dict}
+    _tri_adj_cache = {}
+    # Cache: {(mesh_a, mesh_b): set_of_shared_tri_pairs}
+    _cross_shared_cache = {}
+
+    @staticmethod
+    def clear_caches():
+        """Clear all MayaBridge caches. Call when scene topology may have changed."""
+        MayaBridge._face_adjacency_cache = {}
+        MayaBridge._bvh_cache = {}
+        MayaBridge._tri_adj_cache = {}
+        MayaBridge._cross_shared_cache = {}
+
+    @staticmethod
+    def get_or_build_cross_shared(mesh_a, mesh_b, tris_a, tris_b):
+        """
+        Return cached cross-mesh shared-vertex triangle-pair set, or build.
+        Since welded seams stay welded through skinning (shared rig driver),
+        this set is stable across animation frames.
+        """
+        key = (mesh_a, mesh_b)
+        cached = MayaBridge._cross_shared_cache.get(key)
+        if cached is not None:
+            return cached
+        shared = _build_cross_mesh_shared_verts(tris_a, tris_b)
+        MayaBridge._cross_shared_cache[key] = shared
+        return shared
+
+    @staticmethod
+    def get_or_build_bvh(mesh_shape, tris):
+        """
+        Return a BVH for the given mesh. If cached, refits the existing
+        tree (much faster). Otherwise builds a new tree and caches it.
+        """
+        cached = MayaBridge._bvh_cache.get(mesh_shape)
+        if cached is not None:
+            # Refit: update AABBs in place, keep the tree structure
+            _refit_bvh(cached, tris)
+            return cached
+        # Build fresh
+        if not tris:
+            return None
+        root = _build_bvh(tris, list(range(len(tris))))
+        MayaBridge._bvh_cache[mesh_shape] = root
+        return root
+
+    @staticmethod
+    def get_or_build_tri_adj(mesh_shape, tri_vert_ids):
+        """Return cached vertex-share triangle adjacency, or build and cache."""
+        cached = MayaBridge._tri_adj_cache.get(mesh_shape)
+        if cached is not None:
+            return cached
+        adj = _build_tri_adjacency(tri_vert_ids) if tri_vert_ids else {}
+        MayaBridge._tri_adj_cache[mesh_shape] = adj
+        return adj
+
+    @staticmethod
+    def _build_full_adjacency(mesh_shape):
+        """
+        Build adjacency for ALL faces of the mesh in one shot and cache it.
+        Returns dict {face_id: set(neighbor_face_ids)}.
+        """
+        if mesh_shape in MayaBridge._face_adjacency_cache:
+            return MayaBridge._face_adjacency_cache[mesh_shape]
+
+        adj = {}
+        if not MAYA_AVAILABLE:
+            return adj
+        try:
+            # One polyInfo call for the entire mesh: edge -> faces
+            # This returns a list of lines like:
+            # "EDGE    0:    0    1"
+            edge_faces = cmds.polyInfo(mesh_shape, edgeToFace=True) or []
+            for line in edge_faces:
+                # Parse "EDGE    N:    fa fb ..."
+                try:
+                    parts = line.split(":")[1].strip().split()
+                    face_list = [int(p) for p in parts if p.lstrip("-").isdigit()]
+                except (IndexError, ValueError):
+                    continue
+                # All faces sharing this edge are mutual neighbors
+                n = len(face_list)
+                for i in range(n):
+                    fa = face_list[i]
+                    if fa < 0:
+                        continue
+                    if fa not in adj:
+                        adj[fa] = set()
+                    for j in range(n):
+                        if i == j:
+                            continue
+                        fb = face_list[j]
+                        if fb >= 0:
+                            adj[fa].add(fb)
+        except Exception:
+            pass
+
+        MayaBridge._face_adjacency_cache[mesh_shape] = adj
+        return adj
+
+    @staticmethod
+    def get_face_neighbors(mesh_shape, face_ids):
+        """
+        Returns a dict {face_id: set(neighbor_face_ids)} for the given faces.
+        Two faces are neighbors if they share at least one edge.
+        Uses cached full adjacency for speed.
+        """
+        if not MAYA_AVAILABLE or not face_ids:
+            return {}
+
+        full_adj = MayaBridge._build_full_adjacency(mesh_shape)
+        face_set = set(face_ids)
+        result = {}
+        for fid in face_ids:
+            # Only keep neighbors that are in the requested face set
+            result[fid] = full_adj.get(fid, set()) & face_set
+        return result
+
+
+def _group_connected_faces(face_ids, neighbors):
+    """
+    Given a set of face IDs and their adjacency, returns a list of
+    connected groups (each group is a set of face IDs).
+    Uses BFS flood-fill.
+    """
+    remaining = set(face_ids)
+    groups = []
+    while remaining:
+        seed = next(iter(remaining))
+        group = set()
+        queue = [seed]
+        while queue:
+            f = queue.pop(0)
+            if f in group:
+                continue
+            group.add(f)
+            remaining.discard(f)
+            for n in neighbors.get(f, ()):
+                if n in remaining:
+                    queue.append(n)
+        groups.append(group)
+    return groups
+
+
+
+# ---------------------------------------------------------------------------
+# CheckItem  (base + concrete implementations)
+# ---------------------------------------------------------------------------
+SCOPE_SCENE = "scene"
+SCOPE_MESH  = "mesh"
+
+_ICON        = {"unchecked": u"\u25CB", "pass": u"\u2714", "fail": u"\u2718"}
+_ICON_COLOR  = {"unchecked": "#888", "pass": "#4CAF50", "fail": "#F44336"}
+
+
+class CheckItem(object):
+    """Abstract base for all collision checks. Python 2.7 compatible."""
+    label_key       = ""
+    desc_key        = ""
+    can_auto_fix    = False
+    scope           = SCOPE_MESH
+    default_enabled = True
+
+    def __init__(self):
+        self.issues  = []
+        self.status  = "unchecked"
+        self.enabled = self.__class__.default_enabled
+        self.elapsed_sec = 0.0
+        # Settings shared across instances of same class
+        self._settings = {}
+
+    @property
+    def label(self):
+        return tr(self.label_key)
+
+    @property
+    def description(self):
+        return tr(self.desc_key)
+
+    def check(self):
+        """Detection only. Must NOT modify the Maya scene. Returns list[dict]."""
+        raise NotImplementedError
+
+    def fix(self, issues=None):
+        raise NotImplementedError
+
+    def run_check(self):
+        t_start = time.time()
+        try:
+            self.issues = self.check()
+            self.status = "fail" if self.issues else "pass"
+        except Exception as e:
+            self.issues = [{"mesh_a": "ERROR", "mesh_b": "", "face_a": -1,
+                            "face_b": -1, "depth": 0.0, "point": None,
+                            "detail": str(e)}]
+            self.status = "fail"
+        self.elapsed_sec = time.time() - t_start
+        return self.issues
+
+    # --- shared settings helpers ---
+    def get_setting(self, key, default=None):
+        return self._settings.get(key, default)
+
+    def set_setting(self, key, value):
+        self._settings[key] = value
+
+
+# ---- Shared state for mesh pairs (used by both checks) --------------------
+_mesh_pairs = []        # list of (mesh_a_long, mesh_b_long)
+_use_selected_only = [True]   # wrapped in list for Py2 closure mutability
+_self_intersect = [True]      # check self-intersection within a single mesh
+_depth_threshold = [0.011]     # minimum depth to report (filters boundary noise)
+_proximity_threshold = [2.0]   # mm
+
+
+def _compute_tris_aabb(tris):
+    """Compute AABB (min, max) from a list of triangles. Returns None if empty."""
+    if not tris:
+        return None
+    mn = [float("inf"), float("inf"), float("inf")]
+    mx = [float("-inf"), float("-inf"), float("-inf")]
+    for tri in tris:
+        for v in tri:
+            if v[0] < mn[0]: mn[0] = v[0]
+            if v[1] < mn[1]: mn[1] = v[1]
+            if v[2] < mn[2]: mn[2] = v[2]
+            if v[0] > mx[0]: mx[0] = v[0]
+            if v[1] > mx[1]: mx[1] = v[1]
+            if v[2] > mx[2]: mx[2] = v[2]
+    return (tuple(mn), tuple(mx))
+
+
+def _aabbs_overlap(a, b, margin=0.0):
+    """Return True if two AABB tuples (min, max) overlap."""
+    if a is None or b is None:
+        return False
+    amin, amax = a
+    bmin, bmax = b
+    if amax[0] + margin < bmin[0] or bmax[0] + margin < amin[0]:
+        return False
+    if amax[1] + margin < bmin[1] or bmax[1] + margin < amin[1]:
+        return False
+    if amax[2] + margin < bmin[2] or bmax[2] + margin < amin[2]:
+        return False
+    return True
+
+
+def _get_pairs_to_check():
+    """
+    Returns list of (mesh_a, mesh_b) tuples to check.
+    When mesh_a == mesh_b, it means self-intersection check.
+    If pairs are defined: use them.
+    If selected-only: use all combinations from selection.
+    Else: all pairs from scene.
+    """
+    if _mesh_pairs:
+        valid = []
+        for a, b in _mesh_pairs:
+            if MayaBridge.mesh_exists(a) and MayaBridge.mesh_exists(b):
+                valid.append((a, b))
+        return valid
+
+    if _use_selected_only[0]:
+        meshes = MayaBridge.get_selected_meshes()
+    else:
+        meshes = MayaBridge.get_mesh_shapes()
+
+    pairs = []
+    # Self-intersection pairs
+    if _self_intersect[0]:
+        for m in meshes:
+            pairs.append((m, m))
+
+    # Cross-mesh pairs
+    for i in range(len(meshes)):
+        for j in range(i + 1, len(meshes)):
+            pairs.append((meshes[i], meshes[j]))
+    return pairs
+
+
+# ---------------------------------------------------------------------------
+class IntersectionCheck(CheckItem):
+    """Detects triangles that physically intersect at the current frame.
+    Results are grouped by connected adjacent faces."""
+    label_key = "chk_intersection"
+    desc_key  = "desc_intersection"
+
+    def check(self):
+        pairs = _get_pairs_to_check()
+        if not pairs:
+            return []
+
+        issues = []
+        # Triangle + AABB cache for this check run
+        _tri_cache = {}
+        def _get_cached(m):
+            if m in _tri_cache:
+                return _tri_cache[m]
+            try:
+                t, mp, v = MayaBridge.get_triangles(m)
+            except RuntimeError as e:
+                _tri_cache[m] = ("error", str(e))
+                return _tri_cache[m]
+            if not t:
+                _tri_cache[m] = None
+                return None
+            entry = (t, mp, v, _compute_tris_aabb(t))
+            _tri_cache[m] = entry
+            return entry
+
+        for mesh_a, mesh_b in pairs:
+            is_self = (mesh_a == mesh_b)
+            ea = _get_cached(mesh_a)
+            if ea is None:
+                continue
+            if isinstance(ea, tuple) and len(ea) == 2 and ea[0] == "error":
+                issues.append({
+                    "mesh_a": mesh_a, "mesh_b": mesh_b,
+                    "faces_a": [], "faces_b": [],
+                    "face_a": -1, "face_b": -1,
+                    "depth": 0.0, "point": None,
+                    "detail": ea[1],
+                })
+                continue
+            tris_a, map_a, vids_a, aabb_a = ea
+            if is_self:
+                tris_b, map_b, vids_b, aabb_b = tris_a, map_a, vids_a, aabb_a
+            else:
+                eb = _get_cached(mesh_b)
+                if eb is None:
+                    continue
+                if isinstance(eb, tuple) and len(eb) == 2 and eb[0] == "error":
+                    continue
+                tris_b, map_b, vids_b, aabb_b = eb
+                if not _aabbs_overlap(aabb_a, aabb_b):
+                    continue
+
+            # Build BVH fresh each time (no cache) to avoid any staleness issues
+            det = CollisionDetector(
+                tris_a, tris_b if not is_self else tris_a,
+                tri_vert_ids_a=vids_a if is_self else None)
+            hits = det.check(threshold=0.0, backface_cull=True)
+
+            # Collect unique polygon face pairs, skip coplanar (depth==0)
+            all_faces_a = set()
+            all_faces_b = set()
+            seen_poly_pairs = set()
+            hit_list = []
+            for h in hits:
+                poly_a = map_a[h["face_a"]]
+                poly_b = map_b[h["face_b"]]
+                key = (poly_a, poly_b)
+                if key in seen_poly_pairs:
+                    continue
+                seen_poly_pairs.add(key)
+                if h["depth"] < _depth_threshold[0]:
+                    continue  # skip coplanar — handled by OverlapCheck
+                hit_list.append({
+                    "poly_a": poly_a, "poly_b": poly_b,
+                    "depth": h["depth"], "point": h["point"],
+                })
+                all_faces_a.add(poly_a)
+                all_faces_b.add(poly_b)
+
+            if not hit_list:
+                continue
+
+            # Group faces_a by adjacency
+            neighbors_a = MayaBridge.get_face_neighbors(
+                mesh_a, list(all_faces_a))
+            groups_a = _group_connected_faces(all_faces_a, neighbors_a)
+
+            # For each group_a, collect all associated faces_b
+            for grp_a in groups_a:
+                grp_b = set()
+                max_depth = 0.0
+                for h in hit_list:
+                    if h["poly_a"] in grp_a:
+                        grp_b.add(h["poly_b"])
+                        if h["depth"] > max_depth:
+                            max_depth = h["depth"]
+
+                # Sub-group faces_b by adjacency
+                if grp_b:
+                    neighbors_b = MayaBridge.get_face_neighbors(
+                        mesh_b, list(grp_b))
+                    sub_groups_b = _group_connected_faces(grp_b, neighbors_b)
+                    # Merge all sub_groups_b into one for this group_a
+                    merged_b = set()
+                    for sg in sub_groups_b:
+                        merged_b.update(sg)
+                    grp_b = merged_b
+
+                sorted_a = sorted(grp_a)
+                sorted_b = sorted(grp_b)
+                issues.append({
+                    "mesh_a":  mesh_a,
+                    "mesh_b":  mesh_b,
+                    "faces_a": sorted_a,
+                    "faces_b": sorted_b,
+                    "face_a":  sorted_a[0] if sorted_a else -1,
+                    "face_b":  sorted_b[0] if sorted_b else -1,
+                    "depth":   max_depth,
+                    "point":   None,
+                    "detail":  "{0} Face / {1} Face  max_depth={2:.4f}".format(
+                        len(sorted_a), len(sorted_b), max_depth),
+                })
+        return issues
+
+    def fix(self, issues=None):
+        pass  # No auto-fix for intersections
+
+
+# ---------------------------------------------------------------------------
+class OverlapCheck(CheckItem):
+    """Detects coplanar overlapping faces (complete overlap / z-fighting)."""
+    label_key       = "chk_overlap"
+    desc_key        = "desc_overlap"
+    default_enabled = False
+
+    def check(self):
+        pairs = _get_pairs_to_check()
+        if not pairs:
+            return []
+
+        issues = []
+        for mesh_a, mesh_b in pairs:
+            is_self = (mesh_a == mesh_b)
+            try:
+                tris_a, map_a, vids_a = MayaBridge.get_triangles(mesh_a)
+                if is_self:
+                    tris_b, map_b, vids_b = tris_a, map_a, vids_a
+                else:
+                    tris_b, map_b, vids_b = MayaBridge.get_triangles(mesh_b)
+            except RuntimeError as e:
+                issues.append({
+                    "mesh_a": mesh_a, "mesh_b": mesh_b,
+                    "faces_a": [], "faces_b": [],
+                    "face_a": -1, "face_b": -1,
+                    "depth": 0.0, "point": None,
+                    "detail": str(e),
+                })
+                continue
+
+            if not tris_a or not tris_b:
+                continue
+
+            det = CollisionDetector(
+                tris_a, tris_b if not is_self else tris_a,
+                tri_vert_ids_a=vids_a if is_self else None)
+            hits = det.check(threshold=0.0)
+
+            # Collect only coplanar (depth==0) hits
+            all_faces_a = set()
+            all_faces_b = set()
+            seen_poly_pairs = set()
+            for h in hits:
+                poly_a = map_a[h["face_a"]]
+                poly_b = map_b[h["face_b"]]
+                key = (poly_a, poly_b)
+                if key in seen_poly_pairs:
+                    continue
+                seen_poly_pairs.add(key)
+                if h["depth"] >= _EPSILON:
+                    continue  # skip non-coplanar
+                all_faces_a.add(poly_a)
+                all_faces_b.add(poly_b)
+
+            if not all_faces_a:
+                continue
+
+            # Group by adjacency
+            neighbors_a = MayaBridge.get_face_neighbors(
+                mesh_a, list(all_faces_a))
+            groups_a = _group_connected_faces(all_faces_a, neighbors_a)
+
+            for grp_a in groups_a:
+                # Collect associated faces_b
+                grp_b = set()
+                for pa, pb in seen_poly_pairs:
+                    if pa in grp_a:
+                        grp_b.add(pb)
+
+                sorted_a = sorted(grp_a)
+                sorted_b = sorted(grp_b)
+                issues.append({
+                    "mesh_a":  mesh_a,
+                    "mesh_b":  mesh_b,
+                    "faces_a": sorted_a,
+                    "faces_b": sorted_b,
+                    "face_a":  sorted_a[0] if sorted_a else -1,
+                    "face_b":  sorted_b[0] if sorted_b else -1,
+                    "depth":   0.0,
+                    "point":   None,
+                    "detail":  "{0} Face / {1} Face  coplanar".format(
+                        len(sorted_a), len(sorted_b)),
+                })
+        return issues
+
+    def fix(self, issues=None):
+        pass
+
+
+# ---------------------------------------------------------------------------
+class ProximityCheck(CheckItem):
+    """Detects triangles within proximity threshold without intersecting."""
+    label_key = "chk_proximity"
+    desc_key  = "desc_proximity"
+
+    def check(self):
+        threshold = _proximity_threshold[0]
+        pairs = _get_pairs_to_check()
+        if not pairs:
+            return []
+
+        issues = []
+        for mesh_a, mesh_b in pairs:
+            try:
+                tris_a, map_a, _va = MayaBridge.get_triangles(mesh_a)
+                tris_b, map_b, _vb = MayaBridge.get_triangles(mesh_b)
+            except RuntimeError as e:
+                issues.append({
+                    "mesh_a": mesh_a, "mesh_b": mesh_b,
+                    "face_a": -1, "face_b": -1,
+                    "depth": 0.0, "point": None,
+                    "detail": str(e),
+                })
+                continue
+
+            if not tris_a or not tris_b:
+                continue
+
+            # threshold > 0: near-miss detection
+            det  = CollisionDetector(tris_a, tris_b)
+            hits = det.check(threshold=threshold)
+
+            seen_poly_pairs = set()
+            for h in hits:
+                # Exclude actual intersections (depth > 0) — those belong to
+                # IntersectionCheck. Proximity shows near-miss only.
+                if h["depth"] > _EPSILON:
+                    continue
+                poly_a = map_a[h["face_a"]]
+                poly_b = map_b[h["face_b"]]
+                key = (poly_a, poly_b)
+                if key in seen_poly_pairs:
+                    continue
+                seen_poly_pairs.add(key)
+                issues.append({
+                    "mesh_a": mesh_a,
+                    "mesh_b": mesh_b,
+                    "face_a": poly_a,
+                    "face_b": poly_b,
+                    "depth":  h["depth"],
+                    "point":  h["point"],
+                    "detail": "near-miss (thresh={0:.1f}mm)".format(threshold),
+                })
+        return issues
+
+    def fix(self, issues=None):
+        pass
+
+
+# Registry for Static group
+STATIC_CHECKS = [IntersectionCheck, OverlapCheck]
+
+
+# ---------------------------------------------------------------------------
+# Shared UI helpers & stylesheets
+# ---------------------------------------------------------------------------
+def _mkbtn(text, h, bg, hv, fs=11, parent=None):
+    b = QtWidgets.QPushButton(text, parent)
+    b.setFixedHeight(h)
+    b.setStyleSheet(
+        "QPushButton{{background-color:{bg};color:white;border:none;"
+        "border-radius:4px;font-size:{fs}px;font-weight:bold;padding:0 10px}}"
+        "QPushButton:hover{{background-color:{hv}}}"
+        "QPushButton:disabled{{background-color:#444;color:#666}}"
+        .format(bg=bg, hv=hv, fs=fs))
+    return b
+
+
+_DIALOG_SS = (
+    "QDialog{background-color:#333;color:#EEE}"
+    "QGroupBox{border:1px solid #555;border-radius:6px;"
+    "background-color:#2E2E2E;color:#EEE;margin-top:8px;padding-top:8px}"
+    "QGroupBox::title{subcontrol-origin:margin;left:8px}"
+    "QLabel{color:#EEE}"
+    "QCheckBox{color:#EEE}"
+    "QDoubleSpinBox,QSpinBox,QLineEdit{"
+    "background-color:#2B2B2B;color:#EEE;border:1px solid #555;"
+    "border-radius:3px;padding:2px}"
+    "QListWidget{background-color:#2B2B2B;color:#EEE;"
+    "border:1px solid #555;border-radius:3px}"
+    "QListWidget::item:selected{background-color:#1565C0}"
+)
+
+_TABLE_SS = (
+    "QTableWidget{background-color:#2B2B2B;color:#EEE;"
+    "gridline-color:#444;border:none}"
+    "QTableWidget::item{padding:2px}"
+    "QTableWidget::item:selected{background-color:#1565C0}"
+    "QHeaderView::section{background-color:#3C3C3C;color:#EEE;"
+    "border:1px solid #555;padding:4px;font-size:10px;font-weight:bold}"
+    "QScrollBar:vertical{background:#2B2B2B;width:10px}"
+    "QScrollBar::handle:vertical{background:#555;border-radius:4px}"
+)
+
+
+# ---------------------------------------------------------------------------
+# Animation Scan  (global settings + scanner)
+# ---------------------------------------------------------------------------
+_anim_start_frame = [1]
+_anim_end_frame   = [100]
+_anim_step        = [1]
+_anim_use_timeline = [True]
+_anim_ignore_static = [True]   # ignore intersections from baseline frame
+_anim_baseline_frame = [0]    # specific frame to use as baseline
+
+
+class AnimationScanner(object):
+    """
+    Scans frame range for intersection issues.
+    Runs on the main thread (Maya API requirement), yields progress
+    via callback so the UI can update with processEvents().
+    """
+
+    def __init__(self, progress_cb=None, cancelled_cb=None):
+        """
+        progress_cb(frame, total_frames, issues_this_frame)
+        cancelled_cb() -> bool  (returns True if user pressed Stop)
+        """
+        self._progress_cb  = progress_cb
+        self._cancelled_cb = cancelled_cb
+        self.results = []    # list of {frame, issues: [...]}
+        self.elapsed_sec = 0.0
+
+    def _run_frame_check(self, pairs):
+        """
+        Run intersection check at the current frame (same logic as static).
+        Returns list of grouped issue dicts.
+        """
+        frame_issues = []
+        # Cache for mesh triangles and AABBs this frame
+        tri_cache = {}  # mesh -> (tris, map, vids, aabb)
+
+        def _get_cached(m):
+            if m in tri_cache:
+                return tri_cache[m]
+            try:
+                t, mp, v = MayaBridge.get_triangles(m)
+            except RuntimeError:
+                tri_cache[m] = None
+                return None
+            if not t:
+                tri_cache[m] = None
+                return None
+            ab = _compute_tris_aabb(t)
+            entry = (t, mp, v, ab)
+            tri_cache[m] = entry
+            return entry
+
+        for mesh_a, mesh_b in pairs:
+            is_self = (mesh_a == mesh_b)
+            ea = _get_cached(mesh_a)
+            if ea is None:
+                continue
+            tris_a, map_a, vids_a, aabb_a = ea
+            if is_self:
+                tris_b, map_b, aabb_b = tris_a, map_a, aabb_a
+            else:
+                eb = _get_cached(mesh_b)
+                if eb is None:
+                    continue
+                tris_b, map_b, _vb, aabb_b = eb
+                # Mesh-level AABB pre-check
+                if not _aabbs_overlap(aabb_a, aabb_b):
+                    continue
+
+            # Build fresh detector (no caching) to guarantee correctness.
+            # AABB cache (tri_cache) above still avoids redundant mesh fetches.
+            det = CollisionDetector(
+                tris_a, tris_b if not is_self else tris_a,
+                tri_vert_ids_a=vids_a if is_self else None)
+            hits = det.check(threshold=0.0, backface_cull=True)
+
+            all_faces_a = set()
+            all_faces_b = set()
+            seen = set()
+            hit_list = []
+            for h in hits:
+                poly_a = map_a[h["face_a"]]
+                poly_b = map_b[h["face_b"]]
+                key = (poly_a, poly_b)
+                if key in seen:
+                    continue
+                seen.add(key)
+                if h["depth"] < _depth_threshold[0]:
+                    continue
+                hit_list.append({
+                    "poly_a": poly_a, "poly_b": poly_b,
+                    "depth": h["depth"],
+                })
+                all_faces_a.add(poly_a)
+                all_faces_b.add(poly_b)
+
+            if not hit_list:
+                continue
+
+            # Group faces_a by adjacency
+            neighbors_a = MayaBridge.get_face_neighbors(
+                mesh_a, list(all_faces_a))
+            groups_a = _group_connected_faces(all_faces_a, neighbors_a)
+
+            for grp_a in groups_a:
+                grp_b = set()
+                max_depth = 0.0
+                for h in hit_list:
+                    if h["poly_a"] in grp_a:
+                        grp_b.add(h["poly_b"])
+                        if h["depth"] > max_depth:
+                            max_depth = h["depth"]
+
+                if grp_b:
+                    neighbors_b = MayaBridge.get_face_neighbors(
+                        mesh_b, list(grp_b))
+                    sub_groups_b = _group_connected_faces(grp_b, neighbors_b)
+                    merged_b = set()
+                    for sg in sub_groups_b:
+                        merged_b.update(sg)
+                    grp_b = merged_b
+
+                sorted_a = sorted(grp_a)
+                sorted_b = sorted(grp_b)
+                frame_issues.append({
+                    "mesh_a":  mesh_a,
+                    "mesh_b":  mesh_b,
+                    "faces_a": sorted_a,
+                    "faces_b": sorted_b,
+                    "face_a":  sorted_a[0] if sorted_a else -1,
+                    "face_b":  sorted_b[0] if sorted_b else -1,
+                    "depth":   max_depth,
+                    "point":   None,
+                    "detail":  "{0} Face / {1} Face  max_depth={2:.4f}".format(
+                        len(sorted_a), len(sorted_b), max_depth),
+                })
+        return frame_issues
+
+    @staticmethod
+    def _match_baseline(issue, baseline_issues):
+        """
+        Check if an issue's face group overlaps with any baseline issue's
+        face group on the same mesh pair. If so, it's a 'known' collision.
+        Matching is by mesh pair + any overlap in faces_a OR faces_b.
+        """
+        i_ma = issue["mesh_a"]
+        i_mb = issue["mesh_b"]
+        i_fa = set(issue.get("faces_a", []))
+        i_fb = set(issue.get("faces_b", []))
+
+        for bl in baseline_issues:
+            if bl["mesh_a"] != i_ma or bl["mesh_b"] != i_mb:
+                continue
+            bl_fa = set(bl.get("faces_a", []))
+            bl_fb = set(bl.get("faces_b", []))
+            # Any overlap in either face set = same collision region
+            if i_fa & bl_fa or i_fb & bl_fb:
+                return True
+        return False
+
+    def scan(self):
+        """Run the scan. Returns list of {frame, issues}."""
+        self.elapsed_sec = 0.0
+        if not MAYA_AVAILABLE:
+            return []
+
+        t_start = time.time()
+
+        # Clear caches to ensure fresh topology data
+        MayaBridge.clear_caches()
+
+        # Determine frame range (always from saved spinner values)
+        start = _anim_start_frame[0]
+        end   = _anim_end_frame[0]
+        step  = max(1, _anim_step[0])
+
+        original_time = cmds.currentTime(query=True)
+
+        pairs = _get_pairs_to_check()
+        if not pairs:
+            self.elapsed_sec = time.time() - t_start
+            return []
+
+        frames = list(range(start, end + 1, step))
+        total  = len(frames)
+        self.results = []
+
+        # Step 1: Collect baseline issues at the specified frame
+        baseline_issues = []
+        if _anim_ignore_static[0]:
+            bl_frame = _anim_baseline_frame[0]
+            cmds.currentTime(bl_frame, edit=True, update=True)
+            if self._progress_cb:
+                self._progress_cb(bl_frame, total, [])
+            try:
+                baseline_issues = self._run_frame_check(pairs)
+            except Exception:
+                baseline_issues = []
+            if self._cancelled_cb and self._cancelled_cb():
+                cmds.currentTime(original_time, edit=True)
+                self.elapsed_sec = time.time() - t_start
+                return []
+
+        # Step 2: Scan all frames
+        for idx, frame in enumerate(frames):
+            if self._cancelled_cb and self._cancelled_cb():
+                break
+
+            cmds.currentTime(frame, edit=True, update=True)
+
+            all_issues = self._run_frame_check(pairs)
+
+            # Step 3: Filter — separate baseline-known vs new issues
+            if baseline_issues:
+                new_issues = []
+                for iss in all_issues:
+                    if not self._match_baseline(iss, baseline_issues):
+                        new_issues.append(iss)
+                frame_issues = new_issues
+            else:
+                frame_issues = all_issues
+
+            if frame_issues:
+                self.results.append({"frame": frame, "issues": frame_issues})
+
+            if self._progress_cb:
+                self._progress_cb(frame, total, frame_issues)
+
+        cmds.currentTime(original_time, edit=True)
+
+        # Frame-to-frame dedup: collapse consecutive occurrences of the same
+        # mesh-pair + overlapping face groups into a single result. Carries
+        # over between frames so the user only sees each collision "event"
+        # once per contiguous span of frames.
+        self.results = self._dedup_consecutive(self.results)
+
+        self.elapsed_sec = time.time() - t_start
+        return self.results
+
+    @staticmethod
+    def _dedup_consecutive(results):
+        """
+        Remove issues that are EXACTLY identical to an issue from the
+        immediately previous frame. An issue is considered a continuation
+        only if another issue exists with the same mesh pair AND exactly
+        the same faces_a / faces_b sets. Any change in face participation
+        counts as a new issue.
+        """
+        if not results:
+            return results
+
+        # Previous frame's issues, stored as:
+        #   (mesh_a, mesh_b, frozenset(faces_a), frozenset(faces_b))
+        prev_signatures = set()
+        out_results = []
+
+        for entry in results:
+            frame = entry["frame"]
+            frame_issues = entry["issues"]
+            current_signatures = set()
+            kept_issues = []
+
+            for iss in frame_issues:
+                sig = (
+                    iss.get("mesh_a", ""),
+                    iss.get("mesh_b", ""),
+                    frozenset(iss.get("faces_a", [])),
+                    frozenset(iss.get("faces_b", [])),
+                )
+                current_signatures.add(sig)
+                # Only skip if this exact signature existed in the
+                # immediately previous frame.
+                if sig not in prev_signatures:
+                    kept_issues.append(iss)
+
+            prev_signatures = current_signatures
+
+            if kept_issues:
+                out_results.append({"frame": frame, "issues": kept_issues})
+
+        return out_results
+
+
+# ---------------------------------------------------------------------------
+# AnimScanSettingsDialog
+# ---------------------------------------------------------------------------
+class AnimScanSettingsDialog(QtWidgets.QDialog):
+    """Settings dialog for animation scan: frame range and step."""
+
+    def __init__(self, parent=None):
+        super(AnimScanSettingsDialog, self).__init__(parent)
+        self.setWindowTitle(tr("anim_settings_title"))
+        self.setFixedWidth(320)
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
+        self.setStyleSheet(_DIALOG_SS)
+        self._build()
+        self._load_state()
+
+    def _build(self):
+        lo = QtWidgets.QVBoxLayout(self)
+        lo.setContentsMargins(10, 10, 10, 10)
+        lo.setSpacing(8)
+
+        grp = QtWidgets.QGroupBox(tr("lbl_frame_range"))
+        glo = QtWidgets.QVBoxLayout(grp)
+
+        # Use timeline checkbox
+        self.cb_timeline = QtWidgets.QCheckBox(tr("chk_use_timeline"))
+        self.cb_timeline.toggled.connect(self._on_timeline_toggled)
+        glo.addWidget(self.cb_timeline)
+
+        # Frame range row
+        range_row = QtWidgets.QHBoxLayout()
+        range_row.addWidget(QtWidgets.QLabel(tr("lbl_frame_range")))
+        self.spin_start = QtWidgets.QSpinBox()
+        self.spin_start.setRange(-100000, 100000)
+        self.spin_start.setFixedWidth(70)
+        range_row.addWidget(self.spin_start)
+        range_row.addWidget(QtWidgets.QLabel(" - "))
+        self.spin_end = QtWidgets.QSpinBox()
+        self.spin_end.setRange(-100000, 100000)
+        self.spin_end.setFixedWidth(70)
+        range_row.addWidget(self.spin_end)
+        range_row.addStretch()
+        glo.addLayout(range_row)
+
+        # Step row
+        step_row = QtWidgets.QHBoxLayout()
+        step_row.addWidget(QtWidgets.QLabel(tr("lbl_frame_step")))
+        self.spin_step = QtWidgets.QSpinBox()
+        self.spin_step.setRange(1, 100)
+        self.spin_step.setFixedWidth(60)
+        step_row.addWidget(self.spin_step)
+        step_row.addStretch()
+        glo.addLayout(step_row)
+
+        # Ignore static intersections
+        self.cb_ignore_static = QtWidgets.QCheckBox(tr("chk_ignore_static"))
+        glo.addWidget(self.cb_ignore_static)
+
+        lo.addWidget(grp)
+
+        # OK / Cancel
+        bottom = QtWidgets.QHBoxLayout()
+        bottom.addStretch()
+        ok = _mkbtn("OK", 26, "#FF9800", "#F57C00")
+        ok.clicked.connect(self._save_and_close)
+        cancel = _mkbtn("Cancel", 26, "#555", "#444")
+        cancel.clicked.connect(self.reject)
+        bottom.addWidget(ok)
+        bottom.addWidget(cancel)
+        lo.addLayout(bottom)
+
+    def _load_state(self):
+        self.cb_timeline.setChecked(_anim_use_timeline[0])
+        self.cb_ignore_static.setChecked(_anim_ignore_static[0])
+        self.spin_start.setValue(_anim_start_frame[0])
+        self.spin_end.setValue(_anim_end_frame[0])
+        self.spin_step.setValue(_anim_step[0])
+
+        if MAYA_AVAILABLE and _anim_use_timeline[0]:
+            self.spin_start.setValue(
+                int(cmds.playbackOptions(query=True, minTime=True)))
+            self.spin_end.setValue(
+                int(cmds.playbackOptions(query=True, maxTime=True)))
+
+        self._on_timeline_toggled(self.cb_timeline.isChecked())
+
+    def _on_timeline_toggled(self, checked):
+        self.spin_start.setEnabled(not checked)
+        self.spin_end.setEnabled(not checked)
+        if checked and MAYA_AVAILABLE:
+            self.spin_start.setValue(
+                int(cmds.playbackOptions(query=True, minTime=True)))
+            self.spin_end.setValue(
+                int(cmds.playbackOptions(query=True, maxTime=True)))
+
+    def _save_and_close(self):
+        _anim_use_timeline[0] = self.cb_timeline.isChecked()
+        _anim_ignore_static[0] = self.cb_ignore_static.isChecked()
+        _anim_start_frame[0]  = self.spin_start.value()
+        _anim_end_frame[0]    = self.spin_end.value()
+        _anim_step[0]         = self.spin_step.value()
+        self.accept()
+
+
+# ---------------------------------------------------------------------------
+# AnimResultWindow
+# ---------------------------------------------------------------------------
+class AnimResultWindow(QtWidgets.QDialog):
+    """
+    Displays per-frame intersection results.
+    Row click -> go to that frame + select the faces.
+    """
+
+    def __init__(self, parent=None):
+        super(AnimResultWindow, self).__init__(parent)
+        self.setWindowTitle(tr("result_title_anim"))
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose, False)
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
+        self.setMinimumSize(720, 450)
+        self.setStyleSheet(
+            "QDialog{background-color:#333;color:#EEE}"
+            "QLabel{color:#EEE}")
+        self._rows = []
+        self._build()
+
+    def _build(self):
+        lo = QtWidgets.QVBoxLayout(self)
+        lo.setContentsMargins(8, 8, 8, 8)
+        lo.setSpacing(6)
+
+        # Summary label
+        self._summary_label = QtWidgets.QLabel("")
+        self._summary_label.setStyleSheet(
+            "color:#FF9800;background-color:#2B2B2B;"
+            "padding:4px 8px;border-radius:3px;font-size:10px")
+        self._summary_label.setWordWrap(True)
+        lo.addWidget(self._summary_label)
+
+        # Table: Frame | Status | Mesh A | Mesh B | Detail
+        self._table = QtWidgets.QTableWidget(0, 5)
+        self._table.setStyleSheet(
+            _TABLE_SS + "QTableWidget{alternate-background-color:#323232}")
+        self._table.setHorizontalHeaderLabels([
+            tr("col_frame"), tr("col_status"),
+            tr("col_mesh_a"), tr("col_mesh_b"), tr("col_detail"),
+        ])
+        self._table.horizontalHeader().setStretchLastSection(True)
+        self._table.setColumnWidth(0, 50)
+        self._table.setColumnWidth(1, 55)
+        self._table.setColumnWidth(2, 130)
+        self._table.setColumnWidth(3, 130)
+        self._table.setWordWrap(True)
+        self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._table.setAlternatingRowColors(True)
+        self._table.verticalHeader().setVisible(False)
+        self._table.currentCellChanged.connect(self._on_row_changed)
+        lo.addWidget(self._table)
+
+        # Bottom bar
+        bottom = QtWidgets.QHBoxLayout()
+        bottom.addStretch()
+        self._btn_goto = _mkbtn(tr("btn_goto_frame"), 26, "#FF9800", "#F57C00")
+        self._btn_goto.clicked.connect(self._goto_current_frame)
+        bottom.addWidget(self._btn_goto)
+        self._btn_select = _mkbtn(tr("btn_select_faces"), 26, "#2196F3", "#1976D2")
+        self._btn_select.clicked.connect(self._select_current_faces)
+        bottom.addWidget(self._btn_select)
+        btn_close = _mkbtn(tr("btn_close"), 26, "#555", "#444")
+        btn_close.clicked.connect(self.hide)
+        bottom.addWidget(btn_close)
+        lo.addLayout(bottom)
+
+    def populate(self, scan_results):
+        """
+        scan_results: list of {frame: int, issues: [issue_dict, ...]}
+        """
+        self._table.setRowCount(0)
+        self._rows = []
+
+        total_issues = 0
+        frames_with_issues = 0
+
+        for fr_data in scan_results:
+            frame = fr_data["frame"]
+            issues = fr_data["issues"]
+            if not issues:
+                continue
+            frames_with_issues += 1
+
+            for issue in issues:
+                row = self._table.rowCount()
+                self._table.insertRow(row)
+
+                # Frame
+                f_item = QtWidgets.QTableWidgetItem(str(frame))
+                f_item.setTextAlignment(QtCore.Qt.AlignCenter)
+                self._table.setItem(row, 0, f_item)
+
+                # Status
+                st_item = QtWidgets.QTableWidgetItem(tr("fail_label"))
+                st_item.setTextAlignment(QtCore.Qt.AlignCenter)
+                st_item.setForeground(QtGui.QColor("#F44336"))
+                font = st_item.font()
+                font.setBold(True)
+                st_item.setFont(font)
+                self._table.setItem(row, 1, st_item)
+
+                # Mesh A
+                short_a = MayaBridge.get_short_name(
+                    issue.get("mesh_a", ""))
+                self._table.setItem(row, 2,
+                    QtWidgets.QTableWidgetItem(short_a))
+
+                # Mesh B
+                short_b = MayaBridge.get_short_name(
+                    issue.get("mesh_b", ""))
+                self._table.setItem(row, 3,
+                    QtWidgets.QTableWidgetItem(short_b))
+
+                # Detail
+                self._table.setItem(row, 4,
+                    QtWidgets.QTableWidgetItem(issue.get("detail", "")))
+
+                self._rows.append({
+                    "frame": frame, "issue": issue})
+                total_issues += 1
+
+        self._summary_label.setText(
+            tr("lbl_anim_summary",
+               total=total_issues, frames=frames_with_issues))
+
+    def _on_row_changed(self, row, col, prev_row, prev_col):
+        if row < 0 or row >= len(self._rows):
+            return
+        self._goto_and_select(row)
+
+    def _goto_and_select(self, row):
+        """Go to frame and select the grouped faces stored in the issue."""
+        if not MAYA_AVAILABLE:
+            return
+        data  = self._rows[row]
+        frame = data["frame"]
+        issue = data["issue"]
+
+        cmds.currentTime(frame, edit=True)
+
+        mesh_a = issue.get("mesh_a", "")
+        mesh_b = issue.get("mesh_b", "")
+
+        # Use pre-grouped faces if available, fall back to single face
+        faces_a = issue.get("faces_a", [])
+        faces_b = issue.get("faces_b", [])
+        if not faces_a:
+            fa = issue.get("face_a", -1)
+            if fa >= 0:
+                faces_a = [fa]
+        if not faces_b:
+            fb = issue.get("face_b", -1)
+            if fb >= 0:
+                faces_b = [fb]
+
+        if faces_a and mesh_a:
+            MayaBridge.select_faces(mesh_a, faces_a)
+        if faces_b and mesh_b:
+            for fb in faces_b:
+                try:
+                    cmds.select(
+                        "{0}.f[{1}]".format(mesh_b, fb), add=True)
+                except Exception:
+                    pass
+
+    def _goto_current_frame(self):
+        row = self._table.currentRow()
+        if row >= 0 and row < len(self._rows):
+            if MAYA_AVAILABLE:
+                cmds.currentTime(
+                    self._rows[row]["frame"], edit=True)
+
+    def _select_current_faces(self):
+        row = self._table.currentRow()
+        if row >= 0:
+            self._goto_and_select(row)
+
+    def refresh_labels(self):
+        self.setWindowTitle(tr("result_title_anim"))
+        headers = [tr("col_frame"), tr("col_status"),
+                   tr("col_mesh_a"), tr("col_mesh_b"), tr("col_detail")]
+        for i, h in enumerate(headers):
+            item = self._table.horizontalHeaderItem(i)
+            if item:
+                item.setText(h)
+        self._btn_goto.setText(tr("btn_goto_frame"))
+        self._btn_select.setText(tr("btn_select_faces"))
+
+
+
+# ---------------------------------------------------------------------------
+# Settings Dialogs
+# ---------------------------------------------------------------------------
+class StaticCheckSettingsDialog(QtWidgets.QDialog):
+    """Settings for mesh pairs and selection mode."""
+
+    def __init__(self, parent=None):
+        super(StaticCheckSettingsDialog, self).__init__(parent)
+        self.setWindowTitle(tr("settings_title_static"))
+        self.setFixedWidth(360)
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
+        self.setStyleSheet(_DIALOG_SS)
+        self._build()
+        self._load_state()
+
+    def _build(self):
+        lo = QtWidgets.QVBoxLayout(self)
+        lo.setContentsMargins(10, 10, 10, 10)
+        lo.setSpacing(8)
+
+        # Detection options
+        det_grp = QtWidgets.QGroupBox(tr("settings_detection"))
+        det_lo  = QtWidgets.QVBoxLayout(det_grp)
+
+        self.cb_selected = QtWidgets.QCheckBox(tr("chk_selected_only"))
+        self.cb_selected.setChecked(_use_selected_only[0])
+        det_lo.addWidget(self.cb_selected)
+
+        lo.addWidget(det_grp)
+
+        # Mesh pairs
+        pairs_grp = QtWidgets.QGroupBox(tr("settings_mesh_pairs"))
+        pairs_lo  = QtWidgets.QVBoxLayout(pairs_grp)
+
+        self.pair_list = QtWidgets.QListWidget()
+        self.pair_list.setFixedHeight(120)
+        pairs_lo.addWidget(self.pair_list)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        self.btn_add = _mkbtn(tr("lbl_add_pair"), 24, "#4CAF50", "#388E3C", fs=10)
+        self.btn_add.setToolTip(
+            "Select exactly 2 meshes in viewport, then click.")
+        self.btn_add.clicked.connect(self._add_pair)
+        btn_row.addWidget(self.btn_add)
+
+        self.btn_remove = _mkbtn(tr("lbl_remove_pair"), 24, "#F44336", "#C62828", fs=10)
+        self.btn_remove.clicked.connect(self._remove_pair)
+        btn_row.addWidget(self.btn_remove)
+        btn_row.addStretch()
+        pairs_lo.addLayout(btn_row)
+
+        lo.addWidget(pairs_grp)
+
+        # OK / Cancel
+        bottom = QtWidgets.QHBoxLayout()
+        bottom.addStretch()
+        ok = _mkbtn("OK", 26, "#2196F3", "#1976D2")
+        ok.clicked.connect(self._save_and_close)
+        cancel = _mkbtn("Cancel", 26, "#555", "#444")
+        cancel.clicked.connect(self.reject)
+        bottom.addWidget(ok)
+        bottom.addWidget(cancel)
+        lo.addLayout(bottom)
+
+    def _load_state(self):
+        self.pair_list.clear()
+        for a, b in _mesh_pairs:
+            short_a = MayaBridge.get_short_name(a)
+            short_b = MayaBridge.get_short_name(b)
+            item = QtWidgets.QListWidgetItem(
+                "{0}  vs  {1}".format(short_a, short_b))
+            item.setData(QtCore.Qt.UserRole, (a, b))
+            self.pair_list.addItem(item)
+
+    def _add_pair(self):
+        if not MAYA_AVAILABLE:
+            QtWidgets.QMessageBox.warning(
+                self, "Warning", "Maya not available.")
+            return
+        sel = MayaBridge.get_selected_meshes()
+        if len(sel) < 2:
+            QtWidgets.QMessageBox.warning(
+                self, "Warning",
+                "Please select exactly 2 meshes in the viewport first.")
+            return
+        a, b = sel[0], sel[1]
+        # Avoid duplicates
+        for pa, pb in _mesh_pairs:
+            if (pa == a and pb == b) or (pa == b and pb == a):
+                return
+        _mesh_pairs.append((a, b))
+        short_a = MayaBridge.get_short_name(a)
+        short_b = MayaBridge.get_short_name(b)
+        item = QtWidgets.QListWidgetItem(
+            "{0}  vs  {1}".format(short_a, short_b))
+        item.setData(QtCore.Qt.UserRole, (a, b))
+        self.pair_list.addItem(item)
+
+    def _remove_pair(self):
+        row = self.pair_list.currentRow()
+        if row < 0:
+            return
+        self.pair_list.takeItem(row)
+        if row < len(_mesh_pairs):
+            _mesh_pairs.pop(row)
+
+    def _save_and_close(self):
+        _use_selected_only[0] = self.cb_selected.isChecked()
+        self.accept()
+
+
+
+# ---------------------------------------------------------------------------
+# StaticResultWindow
+# ---------------------------------------------------------------------------
+class StaticResultWindow(QtWidgets.QDialog):
+    """
+    Displays intersection / proximity issues in a table.
+    Row selection → auto-selects faces in Maya viewport.
+    """
+    def __init__(self, all_check_items, parent=None):
+        super(StaticResultWindow, self).__init__(parent)
+        self.setWindowTitle(tr("result_title_static"))
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose, False)
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
+        self.setMinimumSize(680, 400)
+        self.setStyleSheet(
+            "QDialog{background-color:#333;color:#EEE}"
+            "QLabel{color:#EEE}"
+        )
+        self._check_items = all_check_items
+        self._rows = []   # list of {issue, check_item}
+        self._build()
+        self.populate(all_check_items)
+
+    def _build(self):
+        lo = QtWidgets.QVBoxLayout(self)
+        lo.setContentsMargins(8, 8, 8, 8)
+        lo.setSpacing(6)
+
+        # Scope label
+        self._scope_label = QtWidgets.QLabel("")
+        self._scope_label.setStyleSheet(
+            "color:#8BC34A;background-color:#2B2B2B;"
+            "padding:4px 8px;border-radius:3px;font-size:10px")
+        self._scope_label.setWordWrap(True)
+        lo.addWidget(self._scope_label)
+
+        # Table: Status | Check | Mesh A | Mesh B | Detail
+        self._table = QtWidgets.QTableWidget(0, 5)
+        self._table.setStyleSheet(_TABLE_SS)
+        self._table.setHorizontalHeaderLabels([
+            tr("col_status"), tr("col_check"),
+            tr("col_mesh_a"), tr("col_mesh_b"), tr("col_detail"),
+        ])
+        self._table.horizontalHeader().setStretchLastSection(True)
+        self._table.setColumnWidth(0, 60)
+        self._table.setColumnWidth(1, 100)
+        self._table.setColumnWidth(2, 130)
+        self._table.setColumnWidth(3, 130)
+        self._table.setWordWrap(True)
+        self._table.verticalHeader().setDefaultSectionSize(28)
+        self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._table.setAlternatingRowColors(True)
+        self._table.setStyleSheet(
+            _TABLE_SS + "QTableWidget{alternate-background-color:#323232}")
+        self._table.verticalHeader().setVisible(False)
+        self._table.currentCellChanged.connect(self._on_row_changed)
+        lo.addWidget(self._table)
+
+        # Bottom bar
+        bottom = QtWidgets.QHBoxLayout()
+        bottom.addStretch()
+        self._btn_select = _mkbtn(tr("btn_select_faces"), 26, "#2196F3", "#1976D2")
+        self._btn_select.clicked.connect(self._select_current_faces)
+        bottom.addWidget(self._btn_select)
+
+        btn_close = _mkbtn(tr("btn_close"), 26, "#555", "#444")
+        btn_close.clicked.connect(self.hide)
+        bottom.addWidget(btn_close)
+        lo.addLayout(bottom)
+
+    def populate(self, check_items):
+        """Rebuild the table from the current issues of all check items."""
+        self._table.setRowCount(0)
+        self._rows = []
+
+        total_issues = 0
+        scope_parts  = set()
+
+        for ci in check_items:
+            if ci.status == "unchecked":
+                continue
+            for issue in ci.issues:
+                row = self._table.rowCount()
+                self._table.insertRow(row)
+
+                # Status
+                if issue.get("face_a", -1) == -1:
+                    status_text  = "ERROR"
+                    status_color = "#FF9800"
+                else:
+                    status_text  = tr("fail_label")
+                    status_color = "#F44336"
+
+                st_item = QtWidgets.QTableWidgetItem(status_text)
+                st_item.setTextAlignment(QtCore.Qt.AlignCenter)
+                st_item.setForeground(QtGui.QColor(status_color))
+                font = st_item.font(); font.setBold(True); st_item.setFont(font)
+                self._table.setItem(row, 0, st_item)
+
+                # Check name
+                self._table.setItem(row, 1,
+                    QtWidgets.QTableWidgetItem(ci.label))
+
+                # Mesh A
+                short_a = MayaBridge.get_short_name(
+                    issue.get("mesh_a", ""))
+                self._table.setItem(row, 2,
+                    QtWidgets.QTableWidgetItem(short_a))
+
+                # Mesh B
+                short_b = MayaBridge.get_short_name(
+                    issue.get("mesh_b", ""))
+                self._table.setItem(row, 3,
+                    QtWidgets.QTableWidgetItem(short_b))
+
+                # Detail
+                self._table.setItem(row, 4,
+                    QtWidgets.QTableWidgetItem(issue.get("detail", "")))
+
+                self._rows.append({"issue": issue, "check_item": ci})
+                total_issues += 1
+
+                if issue.get("mesh_a"):
+                    scope_parts.add(MayaBridge.get_short_name(issue["mesh_a"]))
+                if issue.get("mesh_b"):
+                    scope_parts.add(MayaBridge.get_short_name(issue["mesh_b"]))
+
+        scope_str = ", ".join(sorted(scope_parts)) if scope_parts else "—"
+        # Compute total elapsed time across all checks
+        total_elapsed = sum(
+            getattr(ci, "elapsed_sec", 0.0) for ci in check_items)
+        elapsed_str = "  |  {0:.2f}s".format(total_elapsed) if total_elapsed > 0 else ""
+        self._scope_label.setText(
+            tr("scope_label", scope=scope_str)
+            + "  |  {0} issue(s)".format(total_issues)
+            + elapsed_str)
+
+    def _on_row_changed(self, row, col, prev_row, prev_col):
+        if row < 0 or row >= len(self._rows):
+            return
+        self._highlight_row(row)
+
+    def _highlight_row(self, row):
+        """Select the grouped faces stored in the issue."""
+        if not MAYA_AVAILABLE:
+            return
+        data = self._rows[row]
+        issue = data["issue"]
+        mesh_a = issue.get("mesh_a", "")
+        mesh_b = issue.get("mesh_b", "")
+
+        # Use pre-grouped faces if available, fall back to single face
+        faces_a = issue.get("faces_a", [])
+        faces_b = issue.get("faces_b", [])
+        if not faces_a:
+            fa = issue.get("face_a", -1)
+            if fa >= 0:
+                faces_a = [fa]
+        if not faces_b:
+            fb = issue.get("face_b", -1)
+            if fb >= 0:
+                faces_b = [fb]
+
+        if faces_a and mesh_a:
+            MayaBridge.select_faces(mesh_a, faces_a)
+        if faces_b and mesh_b:
+            for fb in faces_b:
+                try:
+                    cmds.select(
+                        "{0}.f[{1}]".format(mesh_b, fb), add=True)
+                except Exception:
+                    pass
+
+    def _select_current_faces(self):
+        row = self._table.currentRow()
+        if row >= 0:
+            self._highlight_row(row)
+
+    def refresh_labels(self):
+        """Re-apply localized strings (called on language toggle)."""
+        self.setWindowTitle(tr("result_title_static"))
+        headers = [tr("col_status"), tr("col_check"),
+                   tr("col_mesh_a"), tr("col_mesh_b"), tr("col_detail")]
+        for i, h in enumerate(headers):
+            self._table.horizontalHeaderItem(i).setText(h)
+        self._btn_select.setText(tr("btn_select_faces"))
+
+
+
+# ---------------------------------------------------------------------------
+# CheckItemWidget  (reusable row widget — matches reference architecture)
+# ---------------------------------------------------------------------------
+class CheckItemWidget(QtWidgets.QFrame):
+    check_requested = QtCore.Signal(object)   # emits the CheckItem instance
+
+    def __init__(self, check_item, has_settings=False, parent=None):
+        super(CheckItemWidget, self).__init__(parent)
+        self.check_item   = check_item
+        self.has_settings = has_settings
+        self._build()
+
+    def _build(self):
+        self.setStyleSheet(
+            "QFrame{background-color:#3C3C3C;border:1px solid #555;"
+            "border-radius:4px;margin:1px 0px}")
+        lo = QtWidgets.QVBoxLayout(self)
+        lo.setContentsMargins(8, 5, 8, 5)
+        lo.setSpacing(3)
+
+        # Header row
+        hl = QtWidgets.QHBoxLayout()
+        hl.setSpacing(4)
+
+        # Enable checkbox (for optional checks)
+        self._cb_enabled = QtWidgets.QCheckBox()
+        self._cb_enabled.setChecked(self.check_item.enabled)
+        self._cb_enabled.setFixedSize(16, 16)
+        self._cb_enabled.setStyleSheet(
+            "QCheckBox{color:#EEE}"
+            "QCheckBox::indicator{width:12px;height:12px}")
+        self._cb_enabled.toggled.connect(self._on_enabled_toggled)
+        hl.addWidget(self._cb_enabled)
+
+        self._icon = QtWidgets.QLabel(_ICON["unchecked"])
+        self._icon.setFixedWidth(18)
+        self._icon.setAlignment(QtCore.Qt.AlignCenter)
+        self._icon.setStyleSheet("color:#888;font-size:13px;font-weight:bold")
+        hl.addWidget(self._icon)
+
+        self._title = QtWidgets.QLabel(
+            "<b>{0}</b>".format(self.check_item.label))
+        self._title.setStyleSheet("color:#EEE;font-size:11px")
+        hl.addWidget(self._title)
+        hl.addStretch()
+
+        self._badge = QtWidgets.QLabel("")
+        self._badge.setStyleSheet(
+            "color:#F44336;font-size:10px;font-weight:bold;margin-right:4px")
+        self._badge.setVisible(False)
+        hl.addWidget(self._badge)
+
+        if self.has_settings:
+            self._btn_settings = QtWidgets.QPushButton(u"\u2699")
+            self._btn_settings.setFixedSize(22, 22)
+            self._btn_settings.setStyleSheet(
+                "QPushButton{background-color:#555;color:#EEE;"
+                "border:1px solid #777;border-radius:3px;font-size:12px}"
+                "QPushButton:hover{background-color:#607D8B;border-color:#90A4AE}")
+            self._btn_settings.clicked.connect(self._open_settings)
+            hl.addWidget(self._btn_settings)
+
+        self._btn_check = QtWidgets.QPushButton(tr("btn_check"))
+        self._btn_check.setFixedSize(60, 22)
+        self._btn_check.setStyleSheet(
+            "QPushButton{background-color:#2196F3;color:white;border:none;"
+            "border-radius:3px;font-size:10px;font-weight:bold}"
+            "QPushButton:hover{background-color:#1976D2}"
+            "QPushButton:disabled{background-color:#444;color:#666}")
+        self._btn_check.clicked.connect(self._on_check)
+        hl.addWidget(self._btn_check)
+
+        lo.addLayout(hl)
+
+        self._desc = QtWidgets.QLabel(self.check_item.description)
+        self._desc.setStyleSheet("color:#AAA;font-size:9px;padding-left:20px")
+        self._desc.setWordWrap(True)
+        lo.addWidget(self._desc)
+
+        # Apply initial enabled state
+        self._apply_enabled_state()
+
+    def _on_enabled_toggled(self, checked):
+        self.check_item.enabled = checked
+        self._apply_enabled_state()
+
+    def _apply_enabled_state(self):
+        enabled = self.check_item.enabled
+        self._btn_check.setEnabled(enabled)
+        opacity = "1.0" if enabled else "0.4"
+        self._title.setStyleSheet(
+            "color:#EEE;font-size:11px;opacity:{0}".format(opacity))
+        self._desc.setStyleSheet(
+            "color:{0};font-size:9px;padding-left:20px".format(
+                "#AAA" if enabled else "#666"))
+        self._icon.setStyleSheet(
+            "color:{0};font-size:13px;font-weight:bold".format(
+                "#888" if enabled else "#555"))
+
+    def _on_check(self):
+        self._btn_check.setEnabled(False)
+        self._icon.setText(u"\u29D7")  # hourglass-like placeholder
+        self._icon.setStyleSheet("color:#FF9800;font-size:13px;font-weight:bold")
+        QtWidgets.QApplication.processEvents()
+
+        self.check_item.run_check()
+        self._update_ui()
+        self._btn_check.setEnabled(True)
+        self.check_requested.emit(self.check_item)
+
+    def _open_settings(self):
+        dlg = StaticCheckSettingsDialog(parent=self)
+        dlg.exec_()
+
+    def _update_ui(self):
+        s = self.check_item.status
+        self._icon.setText(_ICON.get(s, _ICON["unchecked"]))
+        self._icon.setStyleSheet(
+            "color:{c};font-size:13px;font-weight:bold".format(
+                c=_ICON_COLOR.get(s, "#888")))
+        n = len(self.check_item.issues)
+        if n:
+            self._badge.setText("({0})".format(n))
+            self._badge.setVisible(True)
+        else:
+            self._badge.setVisible(False)
+
+    def refresh_labels(self):
+        self._title.setText("<b>{0}</b>".format(self.check_item.label))
+        self._desc.setText(self.check_item.description)
+        self._btn_check.setText(tr("btn_check"))
+
+    def reset(self):
+        self.check_item.status = "unchecked"
+        self.check_item.issues = []
+        self._icon.setText(_ICON["unchecked"])
+        self._icon.setStyleSheet("color:#888;font-size:13px;font-weight:bold")
+        self._badge.setVisible(False)
+
+
+
+# ---------------------------------------------------------------------------
+# CollisionCheckToolWindow  (Main UI — reference architecture compliant)
+# ---------------------------------------------------------------------------
+_MAIN_SS = (
+    "QDialog{background-color:#333}"
+    "QScrollArea{border:none;background-color:transparent}"
+    "QScrollBar:vertical{background:#2B2B2B;width:10px}"
+    "QScrollBar::handle:vertical{background:#555;border-radius:4px}"
+    "QGroupBox{border-radius:6px;background-color:#2E2E2E;margin-top:6px}"
+    "QGroupBox::title{subcontrol-origin:margin;left:10px;"
+    "color:#EEE;font-size:11px;font-weight:bold}"
+    "QLabel{color:#EEE}"
+)
+
+
+class CollisionCheckToolWindow(QtWidgets.QDialog):
+
+    def __init__(self, parent=None):
+        if parent is None and MAYA_AVAILABLE:
+            try:
+                ptr    = omui.MQtUtil.mainWindow()
+                if PY2:
+                    parent = wrapInstance(long(ptr), QtWidgets.QWidget)  # noqa: F821
+                else:
+                    parent = wrapInstance(int(ptr), QtWidgets.QWidget)
+            except Exception:
+                pass
+
+        super(CollisionCheckToolWindow, self).__init__(parent)
+        self.setWindowTitle(tr("window_title"))
+        self.setMinimumWidth(440)
+        self.setMinimumHeight(320)
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
+        self.setStyleSheet(_MAIN_SS)
+
+        self._check_instances = []   # list of CheckItem instances
+        self._check_widgets   = []   # list of CheckItemWidget
+        self._result_window   = None
+        self._anim_result_window = None
+        self._anim_scanning   = False
+        self._anim_cancelled  = False
+        self._anim_results    = []
+
+        self._build()
+
+        if _saved_geometry:
+            x, y, w, h = _saved_geometry
+            self.setGeometry(x, y, w, h)
+        else:
+            self.adjustSize()
+
+    # ------------------------------------------------------------------
+    def _build(self):
+        main_lo = QtWidgets.QVBoxLayout(self)
+        main_lo.setContentsMargins(8, 8, 8, 8)
+        main_lo.setSpacing(4)
+
+        # ---- Header bar ----
+        header = QtWidgets.QHBoxLayout()
+        header.setSpacing(4)
+
+        self._title_lbl = QtWidgets.QLabel(
+            "<b>{0}</b>".format(tr("window_title")))
+        self._title_lbl.setStyleSheet(
+            "color:#EEE;font-size:14px;padding:4px")
+        header.addWidget(self._title_lbl)
+        header.addStretch()
+
+        # Reload button
+        reload_btn = QtWidgets.QPushButton(u"\u21BB")
+        reload_btn.setFixedSize(28, 24)
+        reload_btn.setToolTip(tr("btn_reload"))
+        reload_btn.setStyleSheet(
+            "QPushButton{background-color:#555;color:#EEE;"
+            "border:1px solid #777;border-radius:3px;font-size:14px}"
+            "QPushButton:hover{background-color:#4CAF50}")
+        reload_btn.clicked.connect(self._on_reload)
+        header.addWidget(reload_btn)
+
+        # Help button
+        help_btn = QtWidgets.QPushButton("?")
+        help_btn.setFixedSize(24, 24)
+        help_btn.setStyleSheet(
+            "QPushButton{background-color:#555;color:#EEE;"
+            "border:1px solid #777;border-radius:3px;font-size:12px;font-weight:bold}"
+            "QPushButton:hover{background-color:#2196F3}")
+        help_btn.clicked.connect(self._open_help)
+        header.addWidget(help_btn)
+
+        # Language toggle
+        self._lang_btn = QtWidgets.QPushButton(tr("btn_lang"))
+        self._lang_btn.setFixedSize(36, 24)
+        self._lang_btn.setStyleSheet(
+            "QPushButton{background-color:#555;color:#EEE;"
+            "border:1px solid #777;border-radius:3px;font-size:10px;font-weight:bold}"
+            "QPushButton:hover{background-color:#607D8B}")
+        self._lang_btn.clicked.connect(self._toggle_lang)
+        header.addWidget(self._lang_btn)
+
+        # Static Results button
+        self._btn_static_results = QtWidgets.QPushButton(tr("btn_static_results"))
+        self._btn_static_results.setFixedHeight(24)
+        self._btn_static_results.setEnabled(False)
+        self._btn_static_results.setStyleSheet(
+            "QPushButton{background-color:#2196F3;color:white;border:none;"
+            "border-radius:4px;font-size:10px;font-weight:bold;padding:0 8px}"
+            "QPushButton:hover{background-color:#1976D2}"
+            "QPushButton:disabled{background-color:#444;color:#666}")
+        self._btn_static_results.clicked.connect(self._show_static_results)
+        header.addWidget(self._btn_static_results)
+
+        # Anim Results button
+        self._btn_anim_results = QtWidgets.QPushButton(tr("btn_anim_results"))
+        self._btn_anim_results.setFixedHeight(24)
+        self._btn_anim_results.setEnabled(False)
+        self._btn_anim_results.setStyleSheet(
+            "QPushButton{background-color:#FF9800;color:white;border:none;"
+            "border-radius:4px;font-size:10px;font-weight:bold;padding:0 8px}"
+            "QPushButton:hover{background-color:#F57C00}"
+            "QPushButton:disabled{background-color:#444;color:#666}")
+        self._btn_anim_results.clicked.connect(self._show_anim_results)
+        header.addWidget(self._btn_anim_results)
+
+        main_lo.addLayout(header)
+
+        # ---- Selection mode row ----
+        sel_row = QtWidgets.QHBoxLayout()
+        sel_row.setContentsMargins(4, 0, 4, 0)
+        self._cb_selected_only = QtWidgets.QCheckBox(tr("chk_selected_only"))
+        self._cb_selected_only.setChecked(_use_selected_only[0])
+        self._cb_selected_only.setStyleSheet(
+            "QCheckBox{color:#AAA;font-size:10px}"
+            "QCheckBox::indicator{width:12px;height:12px}")
+        self._cb_selected_only.toggled.connect(self._on_selected_only_toggled)
+        sel_row.addWidget(self._cb_selected_only)
+
+        self._cb_self_intersect = QtWidgets.QCheckBox(tr("chk_self_intersect"))
+        self._cb_self_intersect.setChecked(_self_intersect[0])
+        self._cb_self_intersect.setStyleSheet(
+            "QCheckBox{color:#AAA;font-size:10px}"
+            "QCheckBox::indicator{width:12px;height:12px}")
+        self._cb_self_intersect.toggled.connect(self._on_self_intersect_toggled)
+        sel_row.addWidget(self._cb_self_intersect)
+
+        sel_row.addStretch()
+        main_lo.addLayout(sel_row)
+
+        # ---- Scroll area ----
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_w = QtWidgets.QWidget()
+        scroll_lo = QtWidgets.QVBoxLayout(scroll_w)
+        scroll_lo.setContentsMargins(0, 2, 0, 2)
+        scroll_lo.setSpacing(8)
+
+        # ---- Static Check Group (blue border) ----
+        static_grp = QtWidgets.QGroupBox()
+        static_grp.setStyleSheet(
+            "QGroupBox{border:1px solid #2196F3;border-radius:6px;"
+            "background-color:#2E2E2E;margin-top:6px}"
+            "QGroupBox::title{subcontrol-origin:margin;left:10px;"
+            "color:#EEE;font-size:11px;font-weight:bold}")
+
+        static_lo = QtWidgets.QVBoxLayout(static_grp)
+        static_lo.setContentsMargins(6, 10, 6, 6)
+        static_lo.setSpacing(4)
+
+        # Group header row
+        grp_header = QtWidgets.QHBoxLayout()
+        self._static_grp_lbl = QtWidgets.QLabel(
+            u"\u25A0 " + tr("grp_static"))
+        self._static_grp_lbl.setStyleSheet(
+            "color:#2196F3;font-size:11px;font-weight:bold")
+        grp_header.addWidget(self._static_grp_lbl)
+        grp_header.addStretch()
+
+        self._btn_run_all = _mkbtn(tr("run_static"), 24, "#2196F3", "#1976D2")
+        self._btn_run_all.clicked.connect(self._run_all_static)
+        grp_header.addWidget(self._btn_run_all)
+        static_lo.addLayout(grp_header)
+
+        # CheckItem widgets
+        for cls in STATIC_CHECKS:
+            inst = cls()
+            widget = CheckItemWidget(inst, has_settings=True)
+            widget.check_requested.connect(self._on_check_done)
+            self._check_instances.append(inst)
+            self._check_widgets.append(widget)
+            static_lo.addWidget(widget)
+
+        # Depth threshold row (inline)
+        thresh_row = QtWidgets.QHBoxLayout()
+        self._lbl_depth_thresh = QtWidgets.QLabel(tr("lbl_depth_threshold"))
+        self._lbl_depth_thresh.setStyleSheet("color:#AAA;font-size:10px")
+        thresh_row.addWidget(self._lbl_depth_thresh)
+        self._spin_depth = QtWidgets.QDoubleSpinBox()
+        self._spin_depth.setRange(0.0, 10.0)
+        self._spin_depth.setDecimals(3)
+        self._spin_depth.setSingleStep(0.005)
+        self._spin_depth.setValue(_depth_threshold[0])
+        self._spin_depth.setFixedWidth(75)
+        self._spin_depth.setStyleSheet(
+            "QDoubleSpinBox{background-color:#2B2B2B;color:#EEE;"
+            "border:1px solid #555;border-radius:3px;padding:1px;font-size:10px}")
+        self._spin_depth.valueChanged.connect(self._on_depth_threshold_changed)
+        thresh_row.addWidget(self._spin_depth)
+        thresh_row.addStretch()
+        static_lo.addLayout(thresh_row)
+
+        scroll_lo.addWidget(static_grp)
+
+        # ---- Animation Scan Group (amber border) ----
+        anim_grp = QtWidgets.QGroupBox()
+        anim_grp.setStyleSheet(
+            "QGroupBox{border:1px solid #FF9800;border-radius:6px;"
+            "background-color:#2E2E2E;margin-top:6px}"
+            "QGroupBox::title{subcontrol-origin:margin;left:10px;"
+            "color:#EEE;font-size:11px;font-weight:bold}")
+
+        anim_lo = QtWidgets.QVBoxLayout(anim_grp)
+        anim_lo.setContentsMargins(6, 10, 6, 6)
+        anim_lo.setSpacing(4)
+
+        # Group header row
+        anim_header = QtWidgets.QHBoxLayout()
+        self._anim_grp_lbl = QtWidgets.QLabel(
+            u"\u25A0 " + tr("grp_anim"))
+        self._anim_grp_lbl.setStyleSheet(
+            "color:#FF9800;font-size:11px;font-weight:bold")
+        anim_header.addWidget(self._anim_grp_lbl)
+        anim_header.addStretch()
+
+        # Run button
+        self._btn_run_anim = _mkbtn(
+            tr("run_anim"), 24, "#FF9800", "#F57C00")
+        self._btn_run_anim.clicked.connect(self._run_anim_scan)
+        anim_header.addWidget(self._btn_run_anim)
+
+        # Stop button (hidden by default)
+        self._btn_stop_anim = _mkbtn(
+            tr("btn_stop_anim"), 24, "#F44336", "#C62828")
+        self._btn_stop_anim.setVisible(False)
+        self._btn_stop_anim.clicked.connect(self._stop_anim_scan)
+        anim_header.addWidget(self._btn_stop_anim)
+
+        anim_lo.addLayout(anim_header)
+
+        # ---- Inline anim settings ----
+        _ss_small = "color:#AAA;font-size:10px"
+        _ss_spin = ("QSpinBox{background-color:#2B2B2B;color:#EEE;"
+                    "border:1px solid #555;border-radius:3px;"
+                    "padding:1px;font-size:10px}")
+        _ss_cb = ("QCheckBox{color:#AAA;font-size:10px}"
+                  "QCheckBox::indicator{width:12px;height:12px}")
+
+        # Frame range row
+        fr_row = QtWidgets.QHBoxLayout()
+        self._cb_use_timeline = QtWidgets.QCheckBox(tr("chk_use_timeline"))
+        self._cb_use_timeline.setChecked(_anim_use_timeline[0])
+        self._cb_use_timeline.setStyleSheet(_ss_cb)
+        self._cb_use_timeline.toggled.connect(self._on_use_timeline_toggled)
+        fr_row.addWidget(self._cb_use_timeline)
+
+        self._lbl_fr = QtWidgets.QLabel(tr("lbl_frame_range"))
+        self._lbl_fr.setStyleSheet(_ss_small)
+        fr_row.addWidget(self._lbl_fr)
+        self._spin_anim_start = QtWidgets.QSpinBox()
+        self._spin_anim_start.setRange(-100000, 100000)
+        self._spin_anim_start.setFixedWidth(55)
+        self._spin_anim_start.setStyleSheet(_ss_spin)
+        fr_row.addWidget(self._spin_anim_start)
+        fr_row.addWidget(QtWidgets.QLabel("-"))
+        self._spin_anim_end = QtWidgets.QSpinBox()
+        self._spin_anim_end.setRange(-100000, 100000)
+        self._spin_anim_end.setFixedWidth(55)
+        self._spin_anim_end.setStyleSheet(_ss_spin)
+        fr_row.addWidget(self._spin_anim_end)
+
+        self._lbl_step = QtWidgets.QLabel(tr("lbl_frame_step"))
+        self._lbl_step.setStyleSheet(_ss_small)
+        fr_row.addWidget(self._lbl_step)
+        self._spin_anim_step = QtWidgets.QSpinBox()
+        self._spin_anim_step.setRange(1, 100)
+        self._spin_anim_step.setFixedWidth(40)
+        self._spin_anim_step.setStyleSheet(_ss_spin)
+        fr_row.addWidget(self._spin_anim_step)
+        fr_row.addStretch()
+        anim_lo.addLayout(fr_row)
+
+        # Ignore static checkbox + baseline frame
+        ig_row = QtWidgets.QHBoxLayout()
+        self._cb_ignore_static = QtWidgets.QCheckBox(tr("chk_ignore_static"))
+        self._cb_ignore_static.setChecked(_anim_ignore_static[0])
+        self._cb_ignore_static.setStyleSheet(_ss_cb)
+        self._cb_ignore_static.toggled.connect(self._on_ignore_static_toggled)
+        ig_row.addWidget(self._cb_ignore_static)
+
+        self._lbl_baseline = QtWidgets.QLabel(tr("lbl_baseline_frame"))
+        self._lbl_baseline.setStyleSheet(_ss_small)
+        ig_row.addWidget(self._lbl_baseline)
+        self._spin_baseline = QtWidgets.QSpinBox()
+        self._spin_baseline.setRange(-100000, 100000)
+        self._spin_baseline.setValue(_anim_baseline_frame[0])
+        self._spin_baseline.setFixedWidth(55)
+        self._spin_baseline.setStyleSheet(_ss_spin)
+        self._spin_baseline.setEnabled(_anim_ignore_static[0])
+        ig_row.addWidget(self._spin_baseline)
+        ig_row.addStretch()
+        anim_lo.addLayout(ig_row)
+
+        # Load initial values
+        self._load_anim_settings()
+
+        # Progress bar
+        self._anim_progress = QtWidgets.QProgressBar()
+        self._anim_progress.setFixedHeight(16)
+        self._anim_progress.setVisible(False)
+        self._anim_progress.setStyleSheet(
+            "QProgressBar{border:1px solid #555;border-radius:3px;"
+            "background-color:#2B2B2B;text-align:center;color:#EEE;font-size:9px}"
+            "QProgressBar::chunk{background-color:#FF9800;border-radius:2px}")
+        anim_lo.addWidget(self._anim_progress)
+
+        # Anim status label
+        self._anim_status_lbl = QtWidgets.QLabel("")
+        self._anim_status_lbl.setStyleSheet(
+            "color:#AAA;font-size:10px;padding:2px")
+        anim_lo.addWidget(self._anim_status_lbl)
+
+        scroll_lo.addWidget(anim_grp)
+
+        scroll_lo.addStretch()
+
+        scroll.setWidget(scroll_w)
+        main_lo.addWidget(scroll)
+
+        # ---- Status bar ----
+        self._status_bar = QtWidgets.QLabel(tr("status_ready"))
+        self._status_bar.setStyleSheet(
+            "color:#AAA;font-size:10px;padding:4px")
+
+        # Progress bar for static checks (hidden until running)
+        self._static_progress = QtWidgets.QProgressBar()
+        self._static_progress.setFixedHeight(14)
+        self._static_progress.setVisible(False)
+        self._static_progress.setTextVisible(True)
+        self._static_progress.setStyleSheet(
+            "QProgressBar{border:1px solid #555;border-radius:3px;"
+            "background-color:#2B2B2B;text-align:center;color:#EEE;font-size:9px}"
+            "QProgressBar::chunk{background-color:#2196F3;border-radius:2px}")
+
+        status_row = QtWidgets.QHBoxLayout()
+        status_row.setContentsMargins(0, 0, 0, 0)
+        status_row.addWidget(self._status_bar, 1)
+        status_row.addWidget(self._static_progress, 1)
+        main_lo.addLayout(status_row)
+
+    # ------------------------------------------------------------------
+    def _on_selected_only_toggled(self, checked):
+        _use_selected_only[0] = checked
+
+    def _on_self_intersect_toggled(self, checked):
+        _self_intersect[0] = checked
+
+    def _run_all_static(self):
+        self._status_bar.setText(tr("status_checking"))
+        self._btn_run_all.setEnabled(False)
+
+        # Clear caches to ensure fresh topology data
+        MayaBridge.clear_caches()
+
+        enabled_widgets = [w for w in self._check_widgets
+                            if w.check_item.enabled]
+        n_checks = len(enabled_widgets)
+
+        # Show progress bar
+        self._static_progress.setVisible(True)
+        self._static_progress.setMaximum(max(1, n_checks))
+        self._static_progress.setValue(0)
+        self._status_bar.setVisible(False)
+        QtWidgets.QApplication.processEvents()
+
+        total = 0
+        for idx, widget in enumerate(enabled_widgets):
+            self._static_progress.setFormat(
+                "{0} ({1}/{2})".format(widget.check_item.label, idx + 1, n_checks))
+            QtWidgets.QApplication.processEvents()
+            widget.check_item.run_check()
+            widget._update_ui()
+            total += len(widget.check_item.issues)
+            self._static_progress.setValue(idx + 1)
+            QtWidgets.QApplication.processEvents()
+
+        # Hide progress bar
+        self._static_progress.setVisible(False)
+        self._status_bar.setVisible(True)
+
+        self._btn_run_all.setEnabled(True)
+        total_elapsed = sum(
+            getattr(w.check_item, "elapsed_sec", 0.0)
+            for w in self._check_widgets if w.check_item.enabled)
+        self._status_bar.setText(
+            tr("status_done", count=total)
+            + "  |  {0:.2f}s".format(total_elapsed))
+        self._btn_static_results.setEnabled(True)
+        self._refresh_result_window()
+
+        # Auto-show results window if any issues were found
+        if total > 0:
+            self._show_static_results()
+
+    def _on_check_done(self, check_item):
+        any_results = any(len(ci.issues) > 0 for ci in self._check_instances)
+        any_run = any(ci.status != "unchecked" for ci in self._check_instances)
+        self._btn_static_results.setEnabled(any_run)
+        total = sum(len(ci.issues) for ci in self._check_instances)
+        elapsed = getattr(check_item, "elapsed_sec", 0.0)
+        self._status_bar.setText(
+            tr("status_done", count=total)
+            + "  |  {0:.2f}s".format(elapsed))
+        self._refresh_result_window()
+
+        # Auto-show results window if any issues were found
+        if len(check_item.issues) > 0:
+            self._show_static_results()
+
+    def _refresh_result_window(self):
+        if self._result_window and not self._result_window.isHidden():
+            self._result_window.populate(self._check_instances)
+
+    def _show_static_results(self):
+        if self._result_window is None:
+            self._result_window = StaticResultWindow(
+                self._check_instances, parent=self)
+        else:
+            self._result_window.populate(self._check_instances)
+        self._result_window.show()
+        self._result_window.raise_()
+
+    # ------------------------------------------------------------------
+    # Animation Scan
+    # ------------------------------------------------------------------
+    def _load_anim_settings(self):
+        """Load anim settings into inline widgets."""
+        if MAYA_AVAILABLE and _anim_use_timeline[0]:
+            try:
+                self._spin_anim_start.setValue(
+                    int(cmds.playbackOptions(query=True, minTime=True)))
+                self._spin_anim_end.setValue(
+                    int(cmds.playbackOptions(query=True, maxTime=True)))
+            except Exception:
+                self._spin_anim_start.setValue(_anim_start_frame[0])
+                self._spin_anim_end.setValue(_anim_end_frame[0])
+        else:
+            self._spin_anim_start.setValue(_anim_start_frame[0])
+            self._spin_anim_end.setValue(_anim_end_frame[0])
+        self._spin_anim_step.setValue(_anim_step[0])
+
+    def _on_depth_threshold_changed(self, val):
+        _depth_threshold[0] = val
+
+    def _on_use_timeline_toggled(self, checked):
+        _anim_use_timeline[0] = checked
+        if checked and MAYA_AVAILABLE:
+            try:
+                self._spin_anim_start.setValue(
+                    int(cmds.playbackOptions(query=True, minTime=True)))
+                self._spin_anim_end.setValue(
+                    int(cmds.playbackOptions(query=True, maxTime=True)))
+            except Exception:
+                pass
+
+    def _on_ignore_static_toggled(self, checked):
+        _anim_ignore_static[0] = checked
+        self._spin_baseline.setEnabled(checked)
+
+    def _save_anim_settings(self):
+        """Save inline anim settings to globals before scan."""
+        _anim_use_timeline[0] = self._cb_use_timeline.isChecked()
+        _anim_ignore_static[0] = self._cb_ignore_static.isChecked()
+        _anim_baseline_frame[0] = self._spin_baseline.value()
+        _anim_start_frame[0] = self._spin_anim_start.value()
+        _anim_end_frame[0] = self._spin_anim_end.value()
+        _anim_step[0] = self._spin_anim_step.value()
+
+    def _run_anim_scan(self):
+        if self._anim_scanning:
+            return
+
+        self._save_anim_settings()
+
+        # Early check: bail out if no mesh pairs available
+        pairs_preview = _get_pairs_to_check()
+        if not pairs_preview:
+            self._anim_status_lbl.setText(
+                tr("status_no_meshes") if MAYA_AVAILABLE else "")
+            return
+
+        # Collect unique meshes from pairs and check if any has animation
+        unique_meshes = set()
+        for a, b in pairs_preview:
+            unique_meshes.add(a)
+            unique_meshes.add(b)
+        if MAYA_AVAILABLE and not MayaBridge.any_has_animation(unique_meshes):
+            self._anim_status_lbl.setText(tr("status_no_anim"))
+            return
+
+        self._anim_scanning  = True
+        self._anim_cancelled = False
+        self._anim_results   = []
+
+        # UI state
+        self._btn_run_anim.setVisible(False)
+        self._btn_stop_anim.setVisible(True)
+        self._btn_run_all.setEnabled(False)
+        self._anim_progress.setVisible(True)
+        self._anim_progress.setValue(0)
+
+        # Determine total frames for progress bar
+        start = _anim_start_frame[0]
+        end   = _anim_end_frame[0]
+        step  = max(1, _anim_step[0])
+        total_frames = len(range(start, end + 1, step))
+        self._anim_progress.setMaximum(total_frames)
+        self._anim_frame_idx = 0
+
+        def on_progress(frame, total, issues):
+            self._anim_frame_idx += 1
+            self._anim_progress.setValue(
+                min(self._anim_frame_idx, total_frames))
+            self._anim_status_lbl.setText(
+                tr("anim_scanning",
+                   frame=self._anim_frame_idx, total=total_frames))
+            QtWidgets.QApplication.processEvents()
+
+        def is_cancelled():
+            QtWidgets.QApplication.processEvents()
+            return self._anim_cancelled
+
+        scanner = AnimationScanner(
+            progress_cb=on_progress, cancelled_cb=is_cancelled)
+        results = scanner.scan()
+
+        # Scan finished
+        self._anim_scanning = False
+        self._anim_results  = results
+        self._btn_run_anim.setVisible(True)
+        self._btn_stop_anim.setVisible(False)
+        self._btn_run_all.setEnabled(True)
+        self._anim_progress.setVisible(False)
+
+        if self._anim_cancelled:
+            self._anim_status_lbl.setText(tr("anim_cancelled"))
+        else:
+            frames_with_issues = len(results)
+            msg = tr("anim_done", count=frames_with_issues)
+            if _anim_ignore_static[0]:
+                msg += "  (baseline filtered)"
+            msg += "  |  {0:.2f}s".format(getattr(scanner, "elapsed_sec", 0.0))
+            self._anim_status_lbl.setText(msg)
+
+        if results:
+            self._btn_anim_results.setEnabled(True)
+            self._show_anim_results()
+
+    def _stop_anim_scan(self):
+        self._anim_cancelled = True
+
+    def _show_anim_results(self):
+        if self._anim_result_window is None:
+            self._anim_result_window = AnimResultWindow(parent=self)
+        self._anim_result_window.populate(self._anim_results)
+        self._anim_result_window.show()
+        self._anim_result_window.raise_()
+
+    # ------------------------------------------------------------------
+    def _toggle_lang(self):
+        global _current_lang
+        _current_lang = LANG_JP if _current_lang == LANG_EN else LANG_EN
+        self._refresh_labels()
+
+    def _refresh_labels(self):
+        self._title_lbl.setText("<b>{0}</b>".format(tr("window_title")))
+        self.setWindowTitle(tr("window_title"))
+        self._lang_btn.setText(tr("btn_lang"))
+        self._btn_static_results.setText(tr("btn_static_results"))
+        self._btn_anim_results.setText(tr("btn_anim_results"))
+        self._btn_run_all.setText(tr("run_static"))
+        self._static_grp_lbl.setText(u"\u25A0 " + tr("grp_static"))
+        self._anim_grp_lbl.setText(u"\u25A0 " + tr("grp_anim"))
+        self._btn_run_anim.setText(tr("run_anim"))
+        self._btn_stop_anim.setText(tr("btn_stop_anim"))
+        self._status_bar.setText(tr("status_ready"))
+        self._cb_selected_only.setText(tr("chk_selected_only"))
+        self._cb_self_intersect.setText(tr("chk_self_intersect"))
+        self._lbl_depth_thresh.setText(tr("lbl_depth_threshold"))
+        self._cb_use_timeline.setText(tr("chk_use_timeline"))
+        self._lbl_fr.setText(tr("lbl_frame_range"))
+        self._lbl_step.setText(tr("lbl_frame_step"))
+        self._cb_ignore_static.setText(tr("chk_ignore_static"))
+        self._lbl_baseline.setText(tr("lbl_baseline_frame"))
+        for w in self._check_widgets:
+            w.refresh_labels()
+        if self._result_window:
+            self._result_window.refresh_labels()
+            self._result_window.populate(self._check_instances)
+        if self._anim_result_window:
+            self._anim_result_window.refresh_labels()
+
+    # ------------------------------------------------------------------
+    def _open_help(self):
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("Help")
+        dlg.setWindowFlags(dlg.windowFlags() | QtCore.Qt.Tool)
+        dlg.setMinimumSize(400, 300)
+        dlg.setStyleSheet("QDialog{background-color:#333} QTextBrowser{background-color:#2B2B2B;color:#EEE;border:none}")
+        lo = QtWidgets.QVBoxLayout(dlg)
+        tb = QtWidgets.QTextBrowser()
+        tb.setHtml(tr("help_text"))
+        lo.addWidget(tb)
+        btn_lo = QtWidgets.QHBoxLayout()
+        btn_lo.addStretch()
+        close = _mkbtn("Close", 26, "#555", "#444")
+        close.clicked.connect(dlg.accept)
+        btn_lo.addWidget(close)
+        lo.addLayout(btn_lo)
+        dlg.exec_()
+
+    # ------------------------------------------------------------------
+    def _on_reload(self):
+        global _saved_geometry, _saved_lang
+        geo = self.geometry()
+        _saved_geometry = (geo.x(), geo.y(), geo.width(), geo.height())
+        _saved_lang = _current_lang
+        self.close()
+
+        # Find the module that contains this class.
+        # __module__ may be '__main__' when run from Script Editor,
+        # so fall back to searching sys.modules by filename or known name.
+        mn = self.__class__.__module__
+        mod = sys.modules.get(mn)
+
+        if mod is None or mn == "__main__":
+            # Search sys.modules for the module containing this file
+            for name, m in list(sys.modules.items()):
+                if name == "__main__":
+                    continue
+                f = getattr(m, "__file__", None)
+                if f and "DW_CollisionCheck" in f:
+                    mn = name
+                    mod = m
+                    break
+
+        if mod is not None and mn != "__main__":
+            _reload(mod)
+            mod._saved_geometry = _saved_geometry
+            mod._saved_lang = _saved_lang
+            mod.show()
+        else:
+            # Fallback: try the known module name directly
+            if "DW_CollisionCheck" in sys.modules:
+                mod = sys.modules["DW_CollisionCheck"]
+                _reload(mod)
+                mod._saved_geometry = _saved_geometry
+                mod._saved_lang = _saved_lang
+                mod.show()
+
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+def show():
+    global _saved_geometry, _saved_lang, _current_lang
+
+    # Close existing instance
+    for w in QtWidgets.QApplication.allWidgets():
+        if isinstance(w, CollisionCheckToolWindow):
+            w.close()
+            w.deleteLater()
+
+    if _saved_lang:
+        _current_lang = _saved_lang
+        _saved_lang = None
+
+    win = CollisionCheckToolWindow()
+    win.show()
+    return win
+
+
+if __name__ == "__main__":
+    # Standalone test (outside Maya)
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+    win = show()
+    app.exec_()
+
