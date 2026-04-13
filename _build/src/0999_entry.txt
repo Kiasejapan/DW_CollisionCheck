@@ -13,6 +13,14 @@ def show():
 
     win = CollisionCheckToolWindow()
     win.show()
+
+    # Background version check. Delayed so the UI shows immediately
+    # and the user never waits for the network. Never blocks or fails.
+    try:
+        QtCore.QTimer.singleShot(500, win._startup_version_check)
+    except Exception:
+        pass
+
     return win
 
 

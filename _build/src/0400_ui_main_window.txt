@@ -64,16 +64,16 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         reload_btn.clicked.connect(self._on_reload)
         header.addWidget(reload_btn)
 
-        # Update button
-        update_btn = QtWidgets.QPushButton(u"\u2B07")  # down arrow
-        update_btn.setFixedSize(28, 24)
-        update_btn.setToolTip(tr("btn_update"))
-        update_btn.setStyleSheet(
-            "QPushButton{background-color:#555;color:#EEE;"
-            "border:1px solid #777;border-radius:3px;font-size:12px}"
-            "QPushButton:hover{background-color:#9C27B0}")
-        update_btn.clicked.connect(self._on_check_update)
-        header.addWidget(update_btn)
+        # Update button - color indicates version state
+        #   gray  = unknown / offline
+        #   blue  = up to date
+        #   red   = new version available
+        self._update_btn = QtWidgets.QPushButton(u"\u2B07")  # down arrow
+        self._update_btn.setFixedSize(28, 24)
+        self._update_btn.setToolTip(tr("btn_update"))
+        self._update_btn.clicked.connect(self._on_check_update)
+        header.addWidget(self._update_btn)
+        self._set_update_btn_state("unknown")
 
         # Help button
         help_btn = QtWidgets.QPushButton("?")
@@ -666,8 +666,41 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
                 mod.show()
 
     def _on_check_update(self):
-        """Trigger the auto-update workflow."""
-        check_for_updates()
+        """Trigger the auto-update workflow (interactive)."""
+        result = check_for_updates(silent=False)
+        self._set_update_btn_state(result)
+
+    def _set_update_btn_state(self, state):
+        """Update the button color based on version-check state.
+        state: 'latest' | 'newer_available' | 'unknown'
+        """
+        if state == "newer_available":
+            bg = "#D32F2F"        # red
+            hv = "#E53935"
+            tip = tr("btn_update") + " (NEW!)"
+        elif state == "latest":
+            bg = "#1976D2"        # blue
+            hv = "#2196F3"
+            tip = tr("btn_update") + " (up to date)"
+        else:
+            bg = "#555"           # gray
+            hv = "#9C27B0"
+            tip = tr("btn_update")
+        self._update_btn.setStyleSheet(
+            "QPushButton{{background-color:{0};color:#EEE;"
+            "border:1px solid #777;border-radius:3px;font-size:12px}}"
+            "QPushButton:hover{{background-color:{1}}}".format(bg, hv))
+        self._update_btn.setToolTip(tip)
+
+    def _startup_version_check(self):
+        """Background version check at startup (silent).
+        Never shows any dialog; only updates the button color.
+        """
+        try:
+            state = check_for_updates(silent=True)
+            self._set_update_btn_state(state)
+        except Exception:
+            self._set_update_btn_state("unknown")
 
 
 

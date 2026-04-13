@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.13.1537"
+VERSION = "2026.04.13.1539"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -2747,16 +2747,16 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         reload_btn.clicked.connect(self._on_reload)
         header.addWidget(reload_btn)
 
-        # Update button
-        update_btn = QtWidgets.QPushButton(u"\u2B07")  # down arrow
-        update_btn.setFixedSize(28, 24)
-        update_btn.setToolTip(tr("btn_update"))
-        update_btn.setStyleSheet(
-            "QPushButton{background-color:#555;color:#EEE;"
-            "border:1px solid #777;border-radius:3px;font-size:12px}"
-            "QPushButton:hover{background-color:#9C27B0}")
-        update_btn.clicked.connect(self._on_check_update)
-        header.addWidget(update_btn)
+        # Update button - color indicates version state
+        #   gray  = unknown / offline
+        #   blue  = up to date
+        #   red   = new version available
+        self._update_btn = QtWidgets.QPushButton(u"\u2B07")  # down arrow
+        self._update_btn.setFixedSize(28, 24)
+        self._update_btn.setToolTip(tr("btn_update"))
+        self._update_btn.clicked.connect(self._on_check_update)
+        header.addWidget(self._update_btn)
+        self._set_update_btn_state("unknown")
 
         # Help button
         help_btn = QtWidgets.QPushButton("?")
@@ -3349,8 +3349,41 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
                 mod.show()
 
     def _on_check_update(self):
-        """Trigger the auto-update workflow."""
-        check_for_updates()
+        """Trigger the auto-update workflow (interactive)."""
+        result = check_for_updates(silent=False)
+        self._set_update_btn_state(result)
+
+    def _set_update_btn_state(self, state):
+        """Update the button color based on version-check state.
+        state: 'latest' | 'newer_available' | 'unknown'
+        """
+        if state == "newer_available":
+            bg = "#D32F2F"        # red
+            hv = "#E53935"
+            tip = tr("btn_update") + " (NEW!)"
+        elif state == "latest":
+            bg = "#1976D2"        # blue
+            hv = "#2196F3"
+            tip = tr("btn_update") + " (up to date)"
+        else:
+            bg = "#555"           # gray
+            hv = "#9C27B0"
+            tip = tr("btn_update")
+        self._update_btn.setStyleSheet(
+            "QPushButton{{background-color:{0};color:#EEE;"
+            "border:1px solid #777;border-radius:3px;font-size:12px}}"
+            "QPushButton:hover{{background-color:{1}}}".format(bg, hv))
+        self._update_btn.setToolTip(tip)
+
+    def _startup_version_check(self):
+        """Background version check at startup (silent).
+        Never shows any dialog; only updates the button color.
+        """
+        try:
+            state = check_for_updates(silent=True)
+            self._set_update_btn_state(state)
+        except Exception:
+            self._set_update_btn_state("unknown")
 
 
 
@@ -3382,49 +3415,70 @@ def _extract_remote_version(source_text):
     return m.group(1) if m else None
 
 
-def check_for_updates():
+def check_for_updates(silent=False):
     """
-    Check GitHub for a newer version. If found, offer to download and
-    install it into the user's Maya scripts folder.
+    Check GitHub for a newer version.
+
+    silent=False (default, interactive):
+        Shows dialogs. If a newer version is available, asks the user
+        to download and installs it to Maya scripts folder.
+
+    silent=True (background check at startup):
+        Never shows any dialog. Only returns a state string.
+
+    Returns:
+        'latest'          — local version matches remote (up to date)
+        'newer_available' — remote has a newer version
+        'unknown'         — offline, parse error, or Maya not available
     """
     if not MAYA_AVAILABLE:
-        return
+        return "unknown"
 
-    # Use Qt dialog for cleaner UI (matches tool styling)
+    # Fetch remote source
     try:
-        source = _url_read(_GITHUB_RAW_URL)
+        source = _url_read(_GITHUB_RAW_URL, timeout=5 if silent else 10)
     except Exception as e:
-        QtWidgets.QMessageBox.warning(
-            None, "Update Check",
-            "Failed to connect to GitHub.\n{0}".format(str(e)))
-        return
+        if not silent:
+            QtWidgets.QMessageBox.warning(
+                None, "Update Check",
+                "Failed to connect to GitHub.\n{0}".format(str(e)))
+        return "unknown"
 
     remote_ver = _extract_remote_version(source)
     if not remote_ver:
-        QtWidgets.QMessageBox.warning(
-            None, "Update Check",
-            "Could not read remote version.")
-        return
+        if not silent:
+            QtWidgets.QMessageBox.warning(
+                None, "Update Check",
+                "Could not read remote version.")
+        return "unknown"
 
     local_ver = VERSION
-    if remote_ver == local_ver:
-        QtWidgets.QMessageBox.information(
-            None, "Update Check",
-            u"\u6700\u65b0\u7248\u3067\u3059\u3002\n"
-            u"Version: {0}".format(local_ver))
-        return
 
-    # Compare timestamps (YYYY.MM.DD.HHMM format — lexical compare works)
+    if remote_ver == local_ver:
+        if not silent:
+            QtWidgets.QMessageBox.information(
+                None, "Update Check",
+                u"\u6700\u65b0\u7248\u3067\u3059\u3002\n"
+                u"Version: {0}".format(local_ver))
+        return "latest"
+
+    # Lexical comparison works for YYYY.MM.DD.HHMM format
     is_newer = remote_ver > local_ver
 
     if not is_newer:
-        msg = (u"\u30ed\u30fc\u30ab\u30eb\u7248\u306e\u65b9\u304c\u65b0\u3057"
-               u"\u3044\u3088\u3046\u3067\u3059\u3002\n\n"
-               u"Local:  {0}\nRemote: {1}").format(local_ver, remote_ver)
-        QtWidgets.QMessageBox.information(None, "Update Check", msg)
-        return
+        # Local is ahead of remote (dev state). Treat as up to date.
+        if not silent:
+            msg = (u"\u30ed\u30fc\u30ab\u30eb\u7248\u306e\u65b9\u304c\u65b0"
+                   u"\u3057\u3044\u3088\u3046\u3067\u3059\u3002\n\n"
+                   u"Local:  {0}\nRemote: {1}").format(local_ver, remote_ver)
+            QtWidgets.QMessageBox.information(None, "Update Check", msg)
+        return "latest"
 
-    # Newer version available — ask to download
+    # A newer remote version exists
+    if silent:
+        return "newer_available"
+
+    # Interactive: ask to download
     msg = (u"\u65b0\u3057\u3044\u30d0\u30fc\u30b8\u30e7\u30f3\u304c\u3042"
            u"\u308a\u307e\u3059\u3002\n\n"
            u"Local:  {0}\nRemote: {1}\n\n"
@@ -3434,7 +3488,7 @@ def check_for_updates():
         None, "Update Check", msg,
         QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
     if reply != QtWidgets.QMessageBox.Yes:
-        return
+        return "newer_available"
 
     # Save to Maya scripts folder
     try:
@@ -3471,10 +3525,12 @@ def check_for_updates():
                     u"\u30ea\u30ed\u30fc\u30c9\u30dc\u30bf\u30f3\u3092\u30af"
                     u"\u30ea\u30c3\u30af)").format(remote_ver, dest)
         QtWidgets.QMessageBox.information(None, "Update Check", done_msg)
+        return "latest"  # after update, local matches remote
     except Exception as e:
         QtWidgets.QMessageBox.warning(
             None, "Update Check",
             "Failed to save update.\n{0}".format(str(e)))
+        return "newer_available"
 
 
 # ---------------------------------------------------------------------------
@@ -3495,6 +3551,14 @@ def show():
 
     win = CollisionCheckToolWindow()
     win.show()
+
+    # Background version check. Delayed so the UI shows immediately
+    # and the user never waits for the network. Never blocks or fails.
+    try:
+        QtCore.QTimer.singleShot(500, win._startup_version_check)
+    except Exception:
+        pass
+
     return win
 
 
