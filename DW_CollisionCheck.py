@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.15.1855"
+VERSION = "2026.04.15.1903"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -159,12 +159,13 @@ _STRINGS = {
     "axis_y":               {"en": "Y",                             "jp": u"Y"},
     "axis_z":               {"en": "Z",                             "jp": u"Z"},
 
-    "mode_rigid":           {"en": "Rigid",                         "jp": u"\u4e00\u62ec"},
-    "mode_individual":      {"en": "Indiv",                         "jp": u"\u500b\u5225"},
-    "tip_mode_rigid":       {"en": "Move the entire selection as ONE element (preserves shape).",
-                             "jp": u"\u9078\u629e\u5168\u4f53\u3092\u4e00\u3064\u306e\u8981\u7d20\u3068\u3057\u3066\u79fb\u52d5\uff08\u5f62\u72b6\u4fdd\u6301\uff09\u3002"},
-    "tip_mode_individual":  {"en": "Move each sub-element (vertex/edge/face) independently.",
-                             "jp": u"\u5404\u8981\u7d20\uff08\u9802\u70b9/\u30a8\u30c3\u30b8/\u30d5\u30a7\u30fc\u30b9\uff09\u3092\u500b\u5225\u306b\u79fb\u52d5\u3002"},    "anim_scanning":        {"en": "Scanning frame {frame}/{total}...",
+    "btn_move":             {"en": "Move",                          "jp": u"\u79fb\u52d5"},
+    "mode_rigid":           {"en": "Keep Shape",                    "jp": u"\u5f62\u72b6\u7dad\u6301"},
+    "mode_individual":      {"en": "Free",                          "jp": u"\u500b\u5225\u5909\u5f62"},
+    "tip_mode_rigid":       {"en": "Move the entire selection as ONE rigid element (preserves shape).",
+                             "jp": u"\u9078\u629e\u5168\u4f53\u3092\u4e00\u3064\u306e\u5264\u4f53\u3068\u3057\u3066\u79fb\u52d5\uff08\u5f62\u72b6\u3092\u4fdd\u3061\u307e\u3059\uff09\u3002"},
+    "tip_mode_individual":  {"en": "Move each sub-element (vertex/edge/face) independently (shape may collapse).",
+                             "jp": u"\u5404\u8981\u7d20\uff08\u9802\u70b9/\u30a8\u30c3\u30b8/\u30d5\u30a7\u30fc\u30b9\uff09\u3092\u500b\u5225\u306b\u79fb\u52d5\uff08\u5f62\u72b6\u306f\u5d29\u308c\u308b\u53ef\u80fd\u6027\u3042\u308a\uff09\u3002"},    "anim_scanning":        {"en": "Scanning frame {frame}/{total}...",
                              "jp": u"\u30d5\u30ec\u30fc\u30e0 {frame}/{total} \u3092\u30b9\u30ad\u30e3\u30f3\u4e2d..."},
     "anim_done":            {"en": "Animation scan done: {count} frame(s) with issues.",
                              "jp": u"\u30a2\u30cb\u30e1\u30b9\u30ad\u30e3\u30f3\u5b8c\u4e86: {count} \u30d5\u30ec\u30fc\u30e0\u3067\u554f\u984c\u691c\u51fa\u3002"},
@@ -2761,7 +2762,7 @@ class CheckItemWidget(QtWidgets.QFrame):
         self._btn_mode = None
         if getattr(self.check_item, "supports_modes", False):
             self._btn_mode = QtWidgets.QPushButton(self._mode_label())
-            self._btn_mode.setFixedSize(54, 22)
+            self._btn_mode.setFixedSize(74, 22)
             self._btn_mode.setCheckable(True)
             self._btn_mode.setChecked(
                 getattr(self.check_item, "mode", u"") == u"individual")
@@ -2775,7 +2776,7 @@ class CheckItemWidget(QtWidgets.QFrame):
             self._btn_mode.toggled.connect(self._on_mode_toggled)
             hl.addWidget(self._btn_mode)
 
-        self._btn_check = QtWidgets.QPushButton(tr("btn_check"))
+        self._btn_check = QtWidgets.QPushButton(self._action_button_label())
         self._btn_check.setFixedSize(60, 22)
         self._btn_check.setStyleSheet(
             "QPushButton{background-color:#2196F3;color:white;border:none;"
@@ -2843,10 +2844,16 @@ class CheckItemWidget(QtWidgets.QFrame):
     def refresh_labels(self):
         self._title.setText(u"<b>{0}</b>".format(self.check_item.label))
         self._desc.setText(self.check_item.description)
-        self._btn_check.setText(tr("btn_check"))
+        self._btn_check.setText(self._action_button_label())
         if self._btn_mode is not None:
             self._btn_mode.setText(self._mode_label())
             self._btn_mode.setToolTip(self._mode_tip())
+
+    def _action_button_label(self):
+        # Move/action items use btn_move; checks use btn_check
+        if getattr(self.check_item, "is_action", False):
+            return tr("btn_move")
+        return tr("btn_check")
 
     def _mode_label(self):
         m = getattr(self.check_item, "mode", u"rigid")
@@ -3909,7 +3916,7 @@ class OriginRaycaster(object):
             return []
 
     def cast(self, source_point, direction, exclude_vert_positions=None,
-             max_distance=None):
+             max_distance=None, self_shape=None):
         """
         Cast a ray and return a sorted list of valid hit distances.
 
@@ -3918,10 +3925,12 @@ class OriginRaycaster(object):
             direction:     (dx,dy,dz) world-space direction (will be normalized)
             exclude_vert_positions:
                 iterable of (x,y,z) world positions belonging to the moving
-                element. Any face hit whose vertices include one of these
-                points within `_vert_share_tol` distance is excluded.
-                Pass None / empty to disable per-vertex filtering.
+                element. Used together with `self_shape` to skip self-hits
+                on the source mesh near the moving element. Hits on OTHER
+                meshes are NEVER filtered by this list (so walls always count).
             max_distance:  cap (world units). None = unbounded.
+            self_shape:    long shape name of the moving element's mesh.
+                Vertex-share filtering is applied ONLY to hits on this mesh.
 
         Returns:
             list of float distances, ascending.
@@ -3952,11 +3961,10 @@ class OriginRaycaster(object):
 
         all_distances = []
 
-        # Output containers (reused across shapes is risky in api1, so make
-        # fresh ones per shape to be safe).
         for shape in self._targets:
             fn = self._fn_cache[shape]
             accel = self._acc_cache.get(shape)
+            is_self = (self_shape is not None and shape == self_shape)
 
             hit_pts   = om.MFloatPointArray()
             hit_rps   = om.MFloatArray()
@@ -3989,8 +3997,7 @@ class OriginRaycaster(object):
             if n == 0:
                 continue
 
-            # Pre-fetch face vertex positions only for unique face ids that
-            # we actually need to inspect (only when ex_pts is set).
+            # Vertex-share cache only built when needed (self mesh + ex_pts)
             face_verts_cache = {}
 
             for i in range(n):
@@ -4005,8 +4012,11 @@ class OriginRaycaster(object):
                 if max_distance is not None and d > max_distance:
                     continue
 
-                # Vertex-share filter
-                if ex_pts and tol_sq > 0.0:
+                # Vertex-share filter: ONLY for self-mesh hits.
+                # Cross-mesh hits (walls, other geometry) MUST be kept,
+                # even if their vertex positions happen to be close to
+                # the moving element (e.g. when meshes are touching).
+                if is_self and ex_pts and tol_sq > 0.0:
                     face_id = int(hit_faces[i])
                     fv = face_verts_cache.get(face_id)
                     if fv is None:
@@ -4108,7 +4118,7 @@ class MoveToOriginCore(object):
         self.moved   = 0
         self.skipped = 0
 
-    def _compute_delta(self, center, exclude_pts):
+    def _compute_delta(self, center, exclude_pts, self_shape=None):
         coord = center[self.axis]
         if abs(coord) < _MOVE_EPS:
             return (0.0, 0.0, 0.0), False
@@ -4121,7 +4131,8 @@ class MoveToOriginCore(object):
         hits = self.raycaster.cast(
             center, direction,
             exclude_vert_positions=exclude_pts,
-            max_distance=None)
+            max_distance=None,
+            self_shape=self_shape)
 
         candidates = list(hits)
         candidates.append(dist_to_plane)
@@ -4158,7 +4169,7 @@ class MoveToOriginCore(object):
             (bb[0], bb[4], bb[5]), (bb[3], bb[4], bb[5]),
             center,
         ]
-        delta, moved = self._compute_delta(center, ex)
+        delta, moved = self._compute_delta(center, ex, self_shape=mesh_shape)
         if not moved:
             self.skipped += 1
             return
@@ -4178,7 +4189,7 @@ class MoveToOriginCore(object):
             self.skipped += 1
             return
         center = _avg_point(pts)
-        delta, moved = self._compute_delta(center, pts)
+        delta, moved = self._compute_delta(center, pts, self_shape=mesh_shape)
         if not moved:
             self.skipped += 1
             return
@@ -4191,7 +4202,7 @@ class MoveToOriginCore(object):
             if not pts:
                 self.skipped += 1
                 continue
-            delta, moved = self._compute_delta(pts[0], pts)
+            delta, moved = self._compute_delta(pts[0], pts, self_shape=mesh_shape)
             if not moved:
                 self.skipped += 1
                 continue
@@ -4211,7 +4222,7 @@ class MoveToOriginCore(object):
             self.skipped += 1
             return
         center = _avg_point(pts)
-        delta, moved = self._compute_delta(center, pts)
+        delta, moved = self._compute_delta(center, pts, self_shape=mesh_shape)
         if not moved:
             self.skipped += 1
             return
@@ -4229,7 +4240,7 @@ class MoveToOriginCore(object):
                 self.skipped += 1
                 continue
             center = _avg_point(pts)
-            delta, moved = self._compute_delta(center, pts)
+            delta, moved = self._compute_delta(center, pts, self_shape=mesh_shape)
             if not moved:
                 self.skipped += 1
                 continue
@@ -4249,7 +4260,7 @@ class MoveToOriginCore(object):
             self.skipped += 1
             return
         center = _avg_point(pts)
-        delta, moved = self._compute_delta(center, pts)
+        delta, moved = self._compute_delta(center, pts, self_shape=mesh_shape)
         if not moved:
             self.skipped += 1
             return
@@ -4267,7 +4278,7 @@ class MoveToOriginCore(object):
                 self.skipped += 1
                 continue
             center = _avg_point(pts)
-            delta, moved = self._compute_delta(center, pts)
+            delta, moved = self._compute_delta(center, pts, self_shape=mesh_shape)
             if not moved:
                 self.skipped += 1
                 continue
@@ -4429,11 +4440,13 @@ class MoveItem(CheckItem):
     Class attributes:
         accepts_kind   : "objects" / "vertices" / "edges" / "faces"
         supports_modes : True if user can toggle rigid/individual
+        is_action      : True (used by CheckItemWidget to switch button label)
     """
     can_auto_fix    = False
     default_enabled = True
     accepts_kind    = None
     supports_modes  = False
+    is_action       = True
     _default_mode   = MOVE_MODE_RIGID
 
     def __init__(self):

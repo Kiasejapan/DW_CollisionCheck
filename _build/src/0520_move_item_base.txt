@@ -83,11 +83,13 @@ class MoveItem(CheckItem):
     Class attributes:
         accepts_kind   : "objects" / "vertices" / "edges" / "faces"
         supports_modes : True if user can toggle rigid/individual
+        is_action      : True (used by CheckItemWidget to switch button label)
     """
     can_auto_fix    = False
     default_enabled = True
     accepts_kind    = None
     supports_modes  = False
+    is_action       = True
     _default_mode   = MOVE_MODE_RIGID
 
     def __init__(self):

@@ -61,7 +61,7 @@ class CheckItemWidget(QtWidgets.QFrame):
         self._btn_mode = None
         if getattr(self.check_item, "supports_modes", False):
             self._btn_mode = QtWidgets.QPushButton(self._mode_label())
-            self._btn_mode.setFixedSize(54, 22)
+            self._btn_mode.setFixedSize(74, 22)
             self._btn_mode.setCheckable(True)
             self._btn_mode.setChecked(
                 getattr(self.check_item, "mode", u"") == u"individual")
@@ -75,7 +75,7 @@ class CheckItemWidget(QtWidgets.QFrame):
             self._btn_mode.toggled.connect(self._on_mode_toggled)
             hl.addWidget(self._btn_mode)
 
-        self._btn_check = QtWidgets.QPushButton(tr("btn_check"))
+        self._btn_check = QtWidgets.QPushButton(self._action_button_label())
         self._btn_check.setFixedSize(60, 22)
         self._btn_check.setStyleSheet(
             "QPushButton{background-color:#2196F3;color:white;border:none;"
@@ -143,10 +143,16 @@ class CheckItemWidget(QtWidgets.QFrame):
     def refresh_labels(self):
         self._title.setText(u"<b>{0}</b>".format(self.check_item.label))
         self._desc.setText(self.check_item.description)
-        self._btn_check.setText(tr("btn_check"))
+        self._btn_check.setText(self._action_button_label())
         if self._btn_mode is not None:
             self._btn_mode.setText(self._mode_label())
             self._btn_mode.setToolTip(self._mode_tip())
+
+    def _action_button_label(self):
+        # Move/action items use btn_move; checks use btn_check
+        if getattr(self.check_item, "is_action", False):
+            return tr("btn_move")
+        return tr("btn_check")
 
     def _mode_label(self):
         m = getattr(self.check_item, "mode", u"rigid")

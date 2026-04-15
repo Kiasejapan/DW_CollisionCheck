@@ -90,7 +90,7 @@ class OriginRaycaster(object):
             return []
 
     def cast(self, source_point, direction, exclude_vert_positions=None,
-             max_distance=None):
+             max_distance=None, self_shape=None):
         """
         Cast a ray and return a sorted list of valid hit distances.
 
@@ -99,10 +99,12 @@ class OriginRaycaster(object):
             direction:     (dx,dy,dz) world-space direction (will be normalized)
             exclude_vert_positions:
                 iterable of (x,y,z) world positions belonging to the moving
-                element. Any face hit whose vertices include one of these
-                points within `_vert_share_tol` distance is excluded.
-                Pass None / empty to disable per-vertex filtering.
+                element. Used together with `self_shape` to skip self-hits
+                on the source mesh near the moving element. Hits on OTHER
+                meshes are NEVER filtered by this list (so walls always count).
             max_distance:  cap (world units). None = unbounded.
+            self_shape:    long shape name of the moving element's mesh.
+                Vertex-share filtering is applied ONLY to hits on this mesh.
 
         Returns:
             list of float distances, ascending.
@@ -133,11 +135,10 @@ class OriginRaycaster(object):
 
         all_distances = []
 
-        # Output containers (reused across shapes is risky in api1, so make
-        # fresh ones per shape to be safe).
         for shape in self._targets:
             fn = self._fn_cache[shape]
             accel = self._acc_cache.get(shape)
+            is_self = (self_shape is not None and shape == self_shape)
 
             hit_pts   = om.MFloatPointArray()
             hit_rps   = om.MFloatArray()
@@ -170,8 +171,7 @@ class OriginRaycaster(object):
             if n == 0:
                 continue
 
-            # Pre-fetch face vertex positions only for unique face ids that
-            # we actually need to inspect (only when ex_pts is set).
+            # Vertex-share cache only built when needed (self mesh + ex_pts)
             face_verts_cache = {}
 
             for i in range(n):
@@ -186,8 +186,11 @@ class OriginRaycaster(object):
                 if max_distance is not None and d > max_distance:
                     continue
 
-                # Vertex-share filter
-                if ex_pts and tol_sq > 0.0:
+                # Vertex-share filter: ONLY for self-mesh hits.
+                # Cross-mesh hits (walls, other geometry) MUST be kept,
+                # even if their vertex positions happen to be close to
+                # the moving element (e.g. when meshes are touching).
+                if is_self and ex_pts and tol_sq > 0.0:
                     face_id = int(hit_faces[i])
                     fv = face_verts_cache.get(face_id)
                     if fv is None:
