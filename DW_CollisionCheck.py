@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.15.1410"
+VERSION = "2026.04.15.1830"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -119,7 +119,33 @@ _STRINGS = {
     "lbl_baseline_frame":   {"en": "Baseline frame:",               "jp": u"\u30d9\u30fc\u30b9\u30e9\u30a4\u30f3:"},
     "lbl_vert_share_tol":   {"en": "Vertex-share tolerance:",       "jp": u"\u540c\u4e00\u9802\u70b9\u3068\u307f\u306a\u3059\u8ddd\u96e2:"},
     "tip_vert_share_tol":   {"en": "Triangles sharing a vertex within this distance are skipped from intersection testing.",
-                             "jp": u"\u3053\u306e\u8ddd\u96e2\u4ee5\u5185\u3067\u9802\u70b9\u3092\u5171\u6709\u3059\u308b\u4e09\u89d2\u5f62\u30da\u30a2\u306f\u4ea4\u5dee\u5224\u5b9a\u3092\u30b9\u30ad\u30c3\u30d7\u3057\u307e\u3059\u3002"},    "anim_scanning":        {"en": "Scanning frame {frame}/{total}...",
+                             "jp": u"\u3053\u306e\u8ddd\u96e2\u4ee5\u5185\u3067\u9802\u70b9\u3092\u5171\u6709\u3059\u308b\u4e09\u89d2\u5f62\u30da\u30a2\u306f\u4ea4\u5dee\u5224\u5b9a\u3092\u30b9\u30ad\u30c3\u30d7\u3057\u307e\u3059\u3002"},
+
+    # ---- Move-to-Origin group ------------------------------------------
+    "grp_move":             {"en": "Move to Origin",                "jp": u"\u539f\u70b9\u79fb\u52d5"},
+    "run_move_all":         {"en": "Run Move All",                  "jp": u"\u4e00\u62ec\u5b9f\u884c"},
+    "lbl_move_offset":      {"en": "Stop offset:",                  "jp": u"\u505c\u6b62\u30aa\u30d5\u30bb\u30c3\u30c8:"},
+    "tip_move_offset":      {"en": "Distance to keep between the moved element and the collision/origin.",
+                             "jp": u"\u79fb\u52d5\u8981\u7d20\u3068\u8870\u7a81\u9762/\u539f\u70b9\u3068\u306e\u9593\u306b\u6b8b\u3059\u9694\u305f\u308a\u8ddd\u96e2\u3002"},
+
+    "move_mesh":            {"en": "Move Mesh",                     "jp": u"\u30e1\u30c3\u30b7\u30e5\u3092\u539f\u70b9\u3078"},
+    "move_mesh_desc":       {"en": "Move each selected mesh transform toward the origin until it nearly touches another mesh or the origin.",
+                             "jp": u"\u9078\u629e\u30e1\u30c3\u30b7\u30e5\u3092\u4ed6\u30e1\u30c3\u30b7\u30e5\u307e\u305f\u306f\u539f\u70b9\u306b\u63a5\u3059\u308b\u624b\u524d\u307e\u3067\u539f\u70b9\u65b9\u5411\u306b\u79fb\u52d5\u3002"},
+    "move_vertex":          {"en": "Move Vertices",                 "jp": u"\u9802\u70b9\u3092\u539f\u70b9\u3078"},
+    "move_vertex_desc":     {"en": "Move each selected vertex individually toward the origin.",
+                             "jp": u"\u9078\u629e\u9802\u70b9\u3092\u3001\u305d\u308c\u305e\u308c\u500b\u5225\u306b\u539f\u70b9\u65b9\u5411\u3078\u79fb\u52d5\u3002"},
+    "move_edge":            {"en": "Move Edges",                    "jp": u"\u30a8\u30c3\u30b8\u3092\u539f\u70b9\u3078"},
+    "move_edge_desc":       {"en": "Move each selected edge (as a rigid pair of endpoints) toward the origin.",
+                             "jp": u"\u9078\u629e\u30a8\u30c3\u30b8\u3092\u4e21\u7aef\u70b9\u3054\u3068\u306b\u539f\u70b9\u65b9\u5411\u3078\u79fb\u52d5\u3002"},
+    "move_face":            {"en": "Move Faces",                    "jp": u"\u30d5\u30a7\u30fc\u30b9\u3092\u539f\u70b9\u3078"},
+    "move_face_desc":       {"en": "Move each selected face (with all its vertices) toward the origin.",
+                             "jp": u"\u9078\u629e\u30d5\u30a7\u30fc\u30b9\u3092\u9802\u70b9\u3054\u3068\u539f\u70b9\u65b9\u5411\u3078\u79fb\u52d5\u3002"},
+
+    "move_status_done":     {"en": "Moved {n} element(s)",          "jp": u"{n} \u8981\u7d20\u3092\u79fb\u52d5\u3057\u307e\u3057\u305f"},
+    "move_status_skipped":  {"en": "{n} skipped (near origin / no center)",
+                             "jp": u"{n} \u8981\u7d20\u3092\u30b9\u30ad\u30c3\u30d7\uff08\u539f\u70b9\u8fd1\u508d/\u4e2d\u5fc3\u4e0d\u660e\uff09"},
+    "move_status_no_selection": {"en": "No matching selection for this operation.",
+                                  "jp": u"\u3053\u306e\u64cd\u4f5c\u306b\u5408\u3046\u9078\u629e\u304c\u3042\u308a\u307e\u305b\u3093\u3002"},    "anim_scanning":        {"en": "Scanning frame {frame}/{total}...",
                              "jp": u"\u30d5\u30ec\u30fc\u30e0 {frame}/{total} \u3092\u30b9\u30ad\u30e3\u30f3\u4e2d..."},
     "anim_done":            {"en": "Animation scan done: {count} frame(s) with issues.",
                              "jp": u"\u30a2\u30cb\u30e1\u30b9\u30ad\u30e3\u30f3\u5b8c\u4e86: {count} \u30d5\u30ec\u30fc\u30e0\u3067\u554f\u984c\u691c\u51fa\u3002"},
@@ -3036,6 +3062,67 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
 
         scroll_lo.addWidget(static_grp)
 
+        # ---- Move-to-Origin Group (purple border) ----
+        move_grp = QtWidgets.QGroupBox()
+        move_grp.setStyleSheet(
+            "QGroupBox{border:1px solid #9C27B0;border-radius:6px;"
+            "background-color:#2E2E2E;margin-top:6px}"
+            "QGroupBox::title{subcontrol-origin:margin;left:10px;"
+            "color:#EEE;font-size:11px;font-weight:bold}")
+
+        move_lo = QtWidgets.QVBoxLayout(move_grp)
+        move_lo.setContentsMargins(6, 10, 6, 6)
+        move_lo.setSpacing(4)
+
+        # Group header row
+        move_header = QtWidgets.QHBoxLayout()
+        self._move_grp_lbl = QtWidgets.QLabel(
+            u"\u25A0 " + tr("grp_move"))
+        self._move_grp_lbl.setStyleSheet(
+            "color:#CE93D8;font-size:11px;font-weight:bold")
+        move_header.addWidget(self._move_grp_lbl)
+        move_header.addStretch()
+        self._btn_run_move_all = _mkbtn(
+            tr("run_move_all"), 24, "#9C27B0", "#7B1FA2")
+        self._btn_run_move_all.clicked.connect(self._run_all_move)
+        move_header.addWidget(self._btn_run_move_all)
+        move_lo.addLayout(move_header)
+
+        # MoveItem widgets (re-use CheckItemWidget for consistent UI)
+        self._move_instances = []
+        self._move_widgets   = []
+        for cls in MOVE_ITEMS:
+            inst = cls()
+            widget = CheckItemWidget(inst, has_settings=False)
+            widget.check_requested.connect(self._on_move_done)
+            self._move_instances.append(inst)
+            self._move_widgets.append(widget)
+            move_lo.addWidget(widget)
+
+        # Stop-offset row
+        off_row = QtWidgets.QHBoxLayout()
+        self._lbl_move_offset = QtWidgets.QLabel(tr("lbl_move_offset"))
+        self._lbl_move_offset.setStyleSheet("color:#AAA;font-size:10px")
+        self._lbl_move_offset.setToolTip(tr("tip_move_offset"))
+        off_row.addWidget(self._lbl_move_offset)
+        self._spin_move_offset = QtWidgets.QDoubleSpinBox()
+        self._spin_move_offset.setRange(0.0, 1.0e6)
+        self._spin_move_offset.setDecimals(4)
+        self._spin_move_offset.setSingleStep(0.001)
+        self._spin_move_offset.setValue(_get_move_offset())
+        self._spin_move_offset.setFixedWidth(85)
+        self._spin_move_offset.setToolTip(tr("tip_move_offset"))
+        self._spin_move_offset.setStyleSheet(
+            "QDoubleSpinBox{background-color:#2B2B2B;color:#EEE;"
+            "border:1px solid #555;border-radius:3px;padding:1px;font-size:10px}")
+        self._spin_move_offset.valueChanged.connect(
+            self._on_move_offset_changed)
+        off_row.addWidget(self._spin_move_offset)
+        off_row.addStretch()
+        move_lo.addLayout(off_row)
+
+        scroll_lo.addWidget(move_grp)
+
         # ---- Animation Scan Group (amber border) ----
         anim_grp = QtWidgets.QGroupBox()
         anim_grp.setStyleSheet(
@@ -3191,6 +3278,42 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
 
     def _on_vert_share_tol_changed(self, value):
         _set_vert_share_tolerance(value)
+
+    # ---- Move-to-Origin handlers --------------------------------------
+    def _on_move_offset_changed(self, value):
+        _set_move_offset(value)
+
+    def _run_all_move(self):
+        """Run every move item that has a matching selection."""
+        self._status_bar.setText(tr("status_checking"))
+        QtWidgets.QApplication.processEvents()
+        any_done = False
+        last_summary = u""
+        for w in self._move_widgets:
+            inst = w.check_item
+            inst.run_check()  # actually performs the move
+            w._update_ui()
+            if inst.status == "pass" or inst.issues:
+                any_done = True
+                if hasattr(inst, "_last_summary") and inst._last_summary:
+                    last_summary = inst._last_summary
+                elif inst.issues:
+                    last_summary = inst.issues[0].get("detail", u"")
+        if any_done and last_summary:
+            self._status_bar.setText(last_summary)
+        else:
+            self._status_bar.setText(tr("status_ready"))
+
+    def _on_move_done(self, check_item):
+        """Single move-item completed (badge / status bar update)."""
+        # Prefer the in-instance summary when fully successful
+        msg = u""
+        if hasattr(check_item, "_last_summary") and check_item._last_summary:
+            msg = check_item._last_summary
+        elif check_item.issues:
+            msg = check_item.issues[0].get("detail", u"")
+        if msg:
+            self._status_bar.setText(msg)
 
     def _run_all_static(self):
         self._status_bar.setText(tr("status_checking"))
@@ -3429,6 +3552,14 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         self._lbl_vert_share_tol.setText(tr("lbl_vert_share_tol"))
         self._lbl_vert_share_tol.setToolTip(tr("tip_vert_share_tol"))
         self._spin_vert_share_tol.setToolTip(tr("tip_vert_share_tol"))
+        # Move-to-Origin labels
+        self._move_grp_lbl.setText(u"\u25A0 " + tr("grp_move"))
+        self._btn_run_move_all.setText(tr("run_move_all"))
+        self._lbl_move_offset.setText(tr("lbl_move_offset"))
+        self._lbl_move_offset.setToolTip(tr("tip_move_offset"))
+        self._spin_move_offset.setToolTip(tr("tip_move_offset"))
+        for w in self._move_widgets:
+            w.refresh_labels()
         self._cb_use_timeline.setText(tr("chk_use_timeline"))
         self._lbl_fr.setText(tr("lbl_frame_range"))
         self._lbl_step.setText(tr("lbl_frame_step"))
@@ -3542,6 +3673,723 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
 # ---------------------------------------------------------------------------
 # Auto-update from GitHub
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Origin-directed Raycaster (Maya OpenMaya api1, MFnMesh.allIntersections)
+# ---------------------------------------------------------------------------
+# Casts a ray from a world-space point toward the world origin (0,0,0)
+# and returns the list of valid hit distances against ALL visible mesh
+# shapes in the scene.
+#
+# Filtering:
+#   - self-hit (distance <= EPSILON) is removed
+#   - NaN / inf are removed
+#   - vertices coincident with the source within `_vert_share_tol` are
+#     treated as "shared" and the corresponding face is filtered out
+#     (re-uses the same tolerance as IntersectionCheck).
+# ---------------------------------------------------------------------------
+
+_RAY_EPS = 1.0e-5  # epsilon used for self-hit / numerical filtering
+
+
+class OriginRaycaster(object):
+    """
+    Reusable ray-caster. Build once per move-batch and re-use across
+    many source points; accelParams are cached per shape.
+    """
+
+    def __init__(self, target_shapes=None):
+        """
+        target_shapes: list of mesh shape names. None = all visible meshes.
+        """
+        if target_shapes is None:
+            target_shapes = MayaBridge.get_mesh_shapes()
+        self._fn_cache  = {}   # shape -> MFnMesh
+        self._acc_cache = {}   # shape -> accelParams
+        self._tris_cache = {}  # shape -> (triangles, tri_to_poly)
+        self._targets = []
+        for s in target_shapes:
+            fn = self._make_mfn(s)
+            if fn is None:
+                continue
+            self._fn_cache[s] = fn
+            try:
+                self._acc_cache[s] = fn.autoUniformGridParams()
+            except Exception:
+                self._acc_cache[s] = None
+            self._targets.append(s)
+
+    @staticmethod
+    def _make_mfn(shape):
+        """Build MFnMesh (api1) for a shape name."""
+        try:
+            sel = om.MSelectionList()
+            sel.add(shape)
+            dag = om.MDagPath()
+            sel.getDagPath(0, dag)
+            try:
+                dag.extendToShape()
+            except Exception:
+                pass
+            return om.MFnMesh(dag)
+        except Exception:
+            return None
+
+    def shapes(self):
+        return list(self._targets)
+
+    def _hit_face_world_verts(self, shape, face_id):
+        """Return world-space vertex positions of polygon face `face_id`."""
+        try:
+            pts = []
+            sel = om.MSelectionList()
+            sel.add(shape)
+            dag = om.MDagPath()
+            sel.getDagPath(0, dag)
+            try:
+                dag.extendToShape()
+            except Exception:
+                pass
+            it = om.MItMeshPolygon(dag)
+            # advance to face_id
+            util = om.MScriptUtil()
+            util.createFromInt(0)
+            prev_idx = util.asIntPtr()
+            it.setIndex(face_id, prev_idx)
+            ws_pts = om.MPointArray()
+            it.getPoints(ws_pts, om.MSpace.kWorld)
+            for i in range(ws_pts.length()):
+                p = ws_pts[i]
+                pts.append((p.x, p.y, p.z))
+            return pts
+        except Exception:
+            return []
+
+    def cast(self, source_point, direction, exclude_vert_positions=None,
+             max_distance=None):
+        """
+        Cast a ray and return a sorted list of valid hit distances.
+
+        Args:
+            source_point:  (x,y,z) world-space ray origin
+            direction:     (dx,dy,dz) world-space direction (will be normalized)
+            exclude_vert_positions:
+                iterable of (x,y,z) world positions belonging to the moving
+                element. Any face hit whose vertices include one of these
+                points within `_vert_share_tol` distance is excluded.
+                Pass None / empty to disable per-vertex filtering.
+            max_distance:  cap (world units). None = unbounded.
+
+        Returns:
+            list of float distances, ascending.
+        """
+        if not MAYA_AVAILABLE:
+            return []
+
+        # Validate inputs (NaN/inf guard)
+        if not _is_finite_vec(source_point) or not _is_finite_vec(direction):
+            return []
+        L = _len(direction)
+        if L < _RAY_EPS:
+            return []
+        nd = (direction[0] / L, direction[1] / L, direction[2] / L)
+
+        ray_src = om.MFloatPoint(float(source_point[0]),
+                                 float(source_point[1]),
+                                 float(source_point[2]))
+        ray_dir = om.MFloatVector(float(nd[0]),
+                                  float(nd[1]),
+                                  float(nd[2]))
+
+        max_param = float(max_distance) if (max_distance is not None) else 1.0e9
+
+        tol = _get_vert_share_tolerance()
+        tol_sq = tol * tol if tol > 0.0 else 0.0
+        ex_pts = list(exclude_vert_positions) if exclude_vert_positions else []
+
+        all_distances = []
+
+        # Output containers (reused across shapes is risky in api1, so make
+        # fresh ones per shape to be safe).
+        for shape in self._targets:
+            fn = self._fn_cache[shape]
+            accel = self._acc_cache.get(shape)
+
+            hit_pts   = om.MFloatPointArray()
+            hit_rps   = om.MFloatArray()
+            hit_faces = om.MIntArray()
+            hit_tris  = om.MIntArray()
+            hit_b1    = om.MFloatArray()
+            hit_b2    = om.MFloatArray()
+
+            try:
+                ok = fn.allIntersections(
+                    ray_src, ray_dir,
+                    None,            # faceIds filter
+                    None,            # triIds filter
+                    False,           # idsSorted
+                    om.MSpace.kWorld,
+                    max_param,
+                    False,           # testBothDirections
+                    accel,           # accelParams
+                    True,            # sortHits
+                    hit_pts, hit_rps, hit_faces, hit_tris, hit_b1, hit_b2,
+                    _RAY_EPS,        # tolerance
+                )
+            except Exception:
+                ok = False
+
+            if not ok:
+                continue
+
+            n = hit_rps.length()
+            if n == 0:
+                continue
+
+            # Pre-fetch face vertex positions only for unique face ids that
+            # we actually need to inspect (only when ex_pts is set).
+            face_verts_cache = {}
+
+            for i in range(n):
+                d = float(hit_rps[i])
+                if not _is_finite(d):
+                    continue
+                if d < 0.0:
+                    continue
+                if d <= _RAY_EPS:
+                    # epsilon hit — typically self-touch at the source
+                    continue
+                if max_distance is not None and d > max_distance:
+                    continue
+
+                # Vertex-share filter
+                if ex_pts and tol_sq > 0.0:
+                    face_id = int(hit_faces[i])
+                    fv = face_verts_cache.get(face_id)
+                    if fv is None:
+                        fv = self._hit_face_world_verts(shape, face_id)
+                        face_verts_cache[face_id] = fv
+                    if _any_vertex_within(fv, ex_pts, tol_sq):
+                        continue
+
+                all_distances.append(d)
+
+        all_distances.sort()
+        return all_distances
+
+
+def _any_vertex_within(face_verts, exclude_pts, tol_sq):
+    """True if any face vertex is within sqrt(tol_sq) of any exclude point."""
+    for fv in face_verts:
+        for ep in exclude_pts:
+            dx = fv[0] - ep[0]
+            dy = fv[1] - ep[1]
+            dz = fv[2] - ep[2]
+            if (dx * dx + dy * dy + dz * dz) <= tol_sq:
+                return True
+    return False
+
+
+def _is_finite(v):
+    try:
+        return not (math.isnan(v) or math.isinf(v))
+    except Exception:
+        return False
+
+
+def _is_finite_vec(v):
+    return _is_finite(v[0]) and _is_finite(v[1]) and _is_finite(v[2])
+# ---------------------------------------------------------------------------
+# Move-to-Origin Core
+# ---------------------------------------------------------------------------
+# Per-element move logic. Each element (mesh / vertex / edge / face) is
+# moved as a single unit toward the world origin, stopping just before
+# the nearest collision (with another mesh) or the origin itself.
+#
+# Algorithm (per element):
+#   1. center        = element center (world space)
+#   2. distToOrigin  = |origin - center|
+#   3. if distToOrigin < EPSILON  -> skip (already at origin)
+#   4. direction     = normalize(origin - center)
+#   5. hits          = OriginRaycaster.cast(center, direction,
+#                          exclude_vert_positions = element_vertices)
+#   6. candidates    = hits + [distToOrigin]      # origin is virtual hit
+#   7. moveDist      = min(candidates)
+#   8. finalDist     = max(0, moveDist - offset)
+#   9. delta         = direction * finalDist
+#  10. apply delta to all vertices of the element (or to transform
+#      for the mesh-level case).
+#
+# Notes:
+#   - exclude_vert_positions reuses `_vert_share_tol` (the same tolerance
+#     used by IntersectionCheck for vertex-share filtering).
+#   - Transform-level move uses xform on the parent transform.
+#   - Component-level moves (vtx/edge/face) use xform per vertex with
+#     world-space translation, in a single undo chunk.
+# ---------------------------------------------------------------------------
+
+_MOVE_EPS = 1.0e-5
+_DEFAULT_MOVE_OFFSET = [0.001]  # mutable shared default (cm)
+
+
+def _get_move_offset():
+    return _DEFAULT_MOVE_OFFSET[0]
+
+
+def _set_move_offset(v):
+    try:
+        v = float(v)
+    except Exception:
+        return
+    if v < 0.0:
+        v = 0.0
+    _DEFAULT_MOVE_OFFSET[0] = v
+
+
+class MoveToOriginCore(object):
+    """
+    Stateful core: holds an OriginRaycaster instance for one move pass.
+    """
+
+    def __init__(self, offset=None, target_shapes=None):
+        self.offset = float(_get_move_offset() if offset is None else offset)
+        self.raycaster = OriginRaycaster(target_shapes=target_shapes)
+        # counters for last batch
+        self.moved   = 0
+        self.skipped = 0
+
+    # -- internal: compute delta vector for a center & exclusion set ------
+    def _compute_delta(self, center, exclude_pts):
+        origin = (0.0, 0.0, 0.0)
+        to_o = (origin[0] - center[0],
+                origin[1] - center[1],
+                origin[2] - center[2])
+        dist_to_origin = math.sqrt(to_o[0] * to_o[0]
+                                   + to_o[1] * to_o[1]
+                                   + to_o[2] * to_o[2])
+        if dist_to_origin < _MOVE_EPS:
+            return (0.0, 0.0, 0.0), False  # skipped
+
+        inv = 1.0 / dist_to_origin
+        direction = (to_o[0] * inv, to_o[1] * inv, to_o[2] * inv)
+
+        hits = self.raycaster.cast(
+            center, direction,
+            exclude_vert_positions=exclude_pts,
+            max_distance=None)
+
+        # Origin is ALWAYS in candidates -> no branching for "no hit" case
+        candidates = list(hits)
+        candidates.append(dist_to_origin)
+
+        move_dist = min(candidates)
+        final_dist = move_dist - self.offset
+        if final_dist < 0.0:
+            final_dist = 0.0
+
+        delta = (direction[0] * final_dist,
+                 direction[1] * final_dist,
+                 direction[2] * final_dist)
+        return delta, True
+
+    # -- mesh (transform) -------------------------------------------------
+    def move_mesh(self, mesh_shape):
+        """Move the mesh's transform; element center = mesh bounding-box center."""
+        if not MAYA_AVAILABLE:
+            return
+        tr_node = MayaBridge.get_transform(mesh_shape)
+        if not tr_node:
+            self.skipped += 1
+            return
+        try:
+            bb = cmds.exactWorldBoundingBox(mesh_shape)
+            # bb = [xmin, ymin, zmin, xmax, ymax, zmax]
+            center = ((bb[0] + bb[3]) * 0.5,
+                      (bb[1] + bb[4]) * 0.5,
+                      (bb[2] + bb[5]) * 0.5)
+        except Exception:
+            self.skipped += 1
+            return
+
+        # Exclude all this mesh's bounding-box corners as "shared verts" so
+        # raycast can't pick its own faces near the start. (BBox corners
+        # are an over-approximation but safe.)
+        ex = [
+            (bb[0], bb[1], bb[2]), (bb[3], bb[1], bb[2]),
+            (bb[0], bb[4], bb[2]), (bb[3], bb[4], bb[2]),
+            (bb[0], bb[1], bb[5]), (bb[3], bb[1], bb[5]),
+            (bb[0], bb[4], bb[5]), (bb[3], bb[4], bb[5]),
+            center,
+        ]
+
+        delta, moved = self._compute_delta(center, ex)
+        if not moved:
+            self.skipped += 1
+            return
+        try:
+            # additive world-space translate
+            cmds.xform(tr_node, ws=True, r=True,
+                       t=(delta[0], delta[1], delta[2]))
+            self.moved += 1
+        except Exception:
+            self.skipped += 1
+
+    # -- vertices ---------------------------------------------------------
+    def move_vertices(self, mesh_shape, vert_indices):
+        """
+        Treat the vertex set as a SINGLE element (one center, one delta).
+        Equivalent to: select all listed vertices, compute their averaged
+        center, and translate them as a rigid group.
+        """
+        if not vert_indices:
+            return
+        pts = self._get_vert_positions(mesh_shape, vert_indices)
+        if not pts:
+            self.skipped += 1
+            return
+        center = _avg_point(pts)
+        # exclude the element vertices themselves
+        delta, moved = self._compute_delta(center, pts)
+        if not moved:
+            self.skipped += 1
+            return
+        self._translate_vertices(mesh_shape, vert_indices, delta)
+        self.moved += 1
+
+    def move_vertices_individually(self, mesh_shape, vert_indices):
+        """
+        Treat each vertex as its OWN element (separate raycast each).
+        Useful when the user wants per-vertex collapse rather than rigid
+        group move.
+        """
+        for vi in vert_indices:
+            pts = self._get_vert_positions(mesh_shape, [vi])
+            if not pts:
+                self.skipped += 1
+                continue
+            delta, moved = self._compute_delta(pts[0], pts)
+            if not moved:
+                self.skipped += 1
+                continue
+            self._translate_vertices(mesh_shape, [vi], delta)
+            self.moved += 1
+
+    # -- edges ------------------------------------------------------------
+    def move_edges(self, mesh_shape, edge_indices):
+        """
+        Each edge is one element. Center = midpoint of its 2 vertices.
+        Both endpoints receive the same delta.
+        """
+        for ei in edge_indices:
+            try:
+                vert_pair = cmds.polyListComponentConversion(
+                    "{0}.e[{1}]".format(mesh_shape, ei),
+                    fromEdge=True, toVertex=True) or []
+                vlist = cmds.ls(vert_pair, fl=True) or []
+                vidx = []
+                for v in vlist:
+                    try:
+                        vidx.append(int(v.split("[")[-1].rstrip("]")))
+                    except Exception:
+                        pass
+            except Exception:
+                vidx = []
+            if not vidx:
+                self.skipped += 1
+                continue
+            pts = self._get_vert_positions(mesh_shape, vidx)
+            if not pts:
+                self.skipped += 1
+                continue
+            center = _avg_point(pts)
+            delta, moved = self._compute_delta(center, pts)
+            if not moved:
+                self.skipped += 1
+                continue
+            self._translate_vertices(mesh_shape, vidx, delta)
+            self.moved += 1
+
+    # -- faces ------------------------------------------------------------
+    def move_faces(self, mesh_shape, face_indices):
+        """
+        Each face is one element. Center = average of its vertex positions.
+        All vertices of that face receive the same delta.
+        """
+        for fi in face_indices:
+            try:
+                vlist_raw = cmds.polyListComponentConversion(
+                    "{0}.f[{1}]".format(mesh_shape, fi),
+                    fromFace=True, toVertex=True) or []
+                vlist = cmds.ls(vlist_raw, fl=True) or []
+                vidx = []
+                for v in vlist:
+                    try:
+                        vidx.append(int(v.split("[")[-1].rstrip("]")))
+                    except Exception:
+                        pass
+            except Exception:
+                vidx = []
+            if not vidx:
+                self.skipped += 1
+                continue
+            pts = self._get_vert_positions(mesh_shape, vidx)
+            if not pts:
+                self.skipped += 1
+                continue
+            center = _avg_point(pts)
+            delta, moved = self._compute_delta(center, pts)
+            if not moved:
+                self.skipped += 1
+                continue
+            self._translate_vertices(mesh_shape, vidx, delta)
+            self.moved += 1
+
+    # -- helpers ----------------------------------------------------------
+    @staticmethod
+    def _get_vert_positions(mesh_shape, vert_indices):
+        out = []
+        for vi in vert_indices:
+            try:
+                p = cmds.xform("{0}.vtx[{1}]".format(mesh_shape, vi),
+                               q=True, ws=True, t=True)
+                out.append((p[0], p[1], p[2]))
+            except Exception:
+                pass
+        return out
+
+    @staticmethod
+    def _translate_vertices(mesh_shape, vert_indices, delta):
+        if not vert_indices:
+            return
+        comps = ["{0}.vtx[{1}]".format(mesh_shape, vi) for vi in vert_indices]
+        try:
+            cmds.xform(comps, ws=True, r=True,
+                       t=(delta[0], delta[1], delta[2]))
+        except Exception:
+            # fallback per-vertex if batched call fails
+            for c in comps:
+                try:
+                    cmds.xform(c, ws=True, r=True,
+                               t=(delta[0], delta[1], delta[2]))
+                except Exception:
+                    pass
+
+
+def _avg_point(pts):
+    sx = sy = sz = 0.0
+    for p in pts:
+        sx += p[0]; sy += p[1]; sz += p[2]
+    n = float(len(pts))
+    return (sx / n, sy / n, sz / n)
+# ---------------------------------------------------------------------------
+# MoveItem base + Selection parsing for origin-move actions
+# ---------------------------------------------------------------------------
+# MoveItem inherits from CheckItem so it can be reused inside the existing
+# CheckItemWidget (same row layout: icon, label, badge, "Run" button).
+# Instead of detection, `check()` performs the actual scene mutation
+# wrapped in a single undo chunk, and reports a 1-line summary in
+# `self.issues[0]["detail"]`.
+# ---------------------------------------------------------------------------
+
+
+def _parse_selection_for_move():
+    """
+    Inspect the current Maya selection and return a dict:
+        {
+          "vertices": {mesh_shape: [vert_idx, ...], ...},
+          "edges":    {mesh_shape: [edge_idx, ...], ...},
+          "faces":    {mesh_shape: [face_idx, ...], ...},
+          "objects":  [mesh_shape, ...],
+        }
+    Each bucket is independent; the caller decides which to consume.
+    """
+    out = {"vertices": {}, "edges": {}, "faces": {}, "objects": []}
+    if not MAYA_AVAILABLE:
+        return out
+    try:
+        sel = cmds.ls(sl=True, fl=True, long=True) or []
+    except Exception:
+        sel = []
+    if not sel:
+        return out
+
+    seen_objs = set()
+    for it in sel:
+        if ".vtx[" in it:
+            shape, _, rest = it.partition(".vtx[")
+            try:
+                idx = int(rest.rstrip("]"))
+            except Exception:
+                continue
+            out["vertices"].setdefault(shape, []).append(idx)
+        elif ".e[" in it:
+            shape, _, rest = it.partition(".e[")
+            try:
+                idx = int(rest.rstrip("]"))
+            except Exception:
+                continue
+            out["edges"].setdefault(shape, []).append(idx)
+        elif ".f[" in it:
+            shape, _, rest = it.partition(".f[")
+            try:
+                idx = int(rest.rstrip("]"))
+            except Exception:
+                continue
+            out["faces"].setdefault(shape, []).append(idx)
+        else:
+            # transform or shape
+            try:
+                t = cmds.nodeType(it)
+            except Exception:
+                continue
+            if t == "transform":
+                # find mesh shapes under it
+                shapes = cmds.listRelatives(
+                    it, allDescendents=True, type="mesh",
+                    fullPath=True, ni=True) or []
+                for s in shapes:
+                    if s in seen_objs:
+                        continue
+                    try:
+                        if cmds.getAttr(s + ".intermediateObject"):
+                            continue
+                    except Exception:
+                        pass
+                    seen_objs.add(s)
+                    out["objects"].append(s)
+            elif t == "mesh":
+                if it in seen_objs:
+                    continue
+                try:
+                    if cmds.getAttr(it + ".intermediateObject"):
+                        continue
+                except Exception:
+                    pass
+                seen_objs.add(it)
+                out["objects"].append(it)
+    return out
+
+
+# ---------------------------------------------------------------------------
+class MoveItem(CheckItem):
+    """
+    Base class for move-to-origin actions. Reuses CheckItem's run_check()
+    flow so it can plug into CheckItemWidget without UI changes.
+
+    Subclasses must implement `_perform(parsed_selection, core)` and set
+    `label_key` / `desc_key`.
+    """
+    can_auto_fix    = False
+    default_enabled = True
+    accepts_kind    = None  # one of "vertices" / "edges" / "faces" / "objects"
+
+    def check(self):
+        """Perform the move on the current selection. Returns issues list
+        (used here as a status carrier)."""
+        parsed = _parse_selection_for_move()
+        bucket = parsed.get(self.accepts_kind, None) if self.accepts_kind else None
+        is_empty = (not bucket) if isinstance(bucket, dict) else (not bucket)
+        if is_empty:
+            return [{
+                "mesh_a": "", "mesh_b": "",
+                "face_a": -1, "face_b": -1,
+                "depth": 0.0, "point": None,
+                "detail": tr("move_status_no_selection"),
+            }]
+
+        offset = _get_move_offset()
+        cmds.undoInfo(openChunk=True, chunkName="DW_MoveToOrigin")
+        try:
+            core = MoveToOriginCore(offset=offset)
+            self._perform(parsed, core)
+        finally:
+            try:
+                cmds.undoInfo(closeChunk=True)
+            except Exception:
+                pass
+
+        moved = core.moved
+        skipped = core.skipped
+        if moved == 0 and skipped == 0:
+            return [{
+                "mesh_a": "", "mesh_b": "",
+                "face_a": -1, "face_b": -1,
+                "depth": 0.0, "point": None,
+                "detail": tr("move_status_no_selection"),
+            }]
+        # Use issues to carry the summary; status will be "fail" if any
+        # were skipped (so the badge shows skip count) or "pass" otherwise.
+        summary = tr("move_status_done", n=moved)
+        if skipped > 0:
+            summary += u"  /  " + tr("move_status_skipped", n=skipped)
+        # We return an empty list when fully successful (status -> "pass").
+        # We return one summary entry with skip info when partial.
+        if skipped > 0:
+            return [{
+                "mesh_a": "", "mesh_b": "",
+                "face_a": -1, "face_b": -1,
+                "depth": 0.0, "point": None,
+                "detail": summary,
+            }]
+        # All-good: show summary in status bar but no "issue" badge.
+        # We stash the summary on the instance for the UI to read.
+        self._last_summary = summary
+        return []
+
+    def _perform(self, parsed, core):
+        raise NotImplementedError
+# ---------------------------------------------------------------------------
+# Concrete MoveItem subclasses (Mesh / Vertex / Edge / Face)
+# ---------------------------------------------------------------------------
+
+
+class MoveMeshToOrigin(MoveItem):
+    label_key    = "move_mesh"
+    desc_key     = "move_mesh_desc"
+    accepts_kind = "objects"
+
+    def _perform(self, parsed, core):
+        for shape in parsed["objects"]:
+            core.move_mesh(shape)
+
+
+class MoveVertexToOrigin(MoveItem):
+    label_key    = "move_vertex"
+    desc_key     = "move_vertex_desc"
+    accepts_kind = "vertices"
+
+    def _perform(self, parsed, core):
+        # Per-vertex (each vertex is its own element)
+        for shape, idxs in parsed["vertices"].items():
+            core.move_vertices_individually(shape, idxs)
+
+
+class MoveEdgeToOrigin(MoveItem):
+    label_key    = "move_edge"
+    desc_key     = "move_edge_desc"
+    accepts_kind = "edges"
+
+    def _perform(self, parsed, core):
+        for shape, idxs in parsed["edges"].items():
+            core.move_edges(shape, idxs)
+
+
+class MoveFaceToOrigin(MoveItem):
+    label_key    = "move_face"
+    desc_key     = "move_face_desc"
+    accepts_kind = "faces"
+
+    def _perform(self, parsed, core):
+        for shape, idxs in parsed["faces"].items():
+            core.move_faces(shape, idxs)
+
+
+# Registry consumed by the main window
+MOVE_ITEMS = [
+    MoveMeshToOrigin,
+    MoveVertexToOrigin,
+    MoveEdgeToOrigin,
+    MoveFaceToOrigin,
+]
 def _url_read(url, timeout=10):
     """Read a URL and return the decoded string. Py2/3 compatible."""
     if PY2:

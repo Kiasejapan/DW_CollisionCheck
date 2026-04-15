@@ -1,0 +1,53 @@
+# ---------------------------------------------------------------------------
+# Concrete MoveItem subclasses (Mesh / Vertex / Edge / Face)
+# ---------------------------------------------------------------------------
+
+
+class MoveMeshToOrigin(MoveItem):
+    label_key    = "move_mesh"
+    desc_key     = "move_mesh_desc"
+    accepts_kind = "objects"
+
+    def _perform(self, parsed, core):
+        for shape in parsed["objects"]:
+            core.move_mesh(shape)
+
+
+class MoveVertexToOrigin(MoveItem):
+    label_key    = "move_vertex"
+    desc_key     = "move_vertex_desc"
+    accepts_kind = "vertices"
+
+    def _perform(self, parsed, core):
+        # Per-vertex (each vertex is its own element)
+        for shape, idxs in parsed["vertices"].items():
+            core.move_vertices_individually(shape, idxs)
+
+
+class MoveEdgeToOrigin(MoveItem):
+    label_key    = "move_edge"
+    desc_key     = "move_edge_desc"
+    accepts_kind = "edges"
+
+    def _perform(self, parsed, core):
+        for shape, idxs in parsed["edges"].items():
+            core.move_edges(shape, idxs)
+
+
+class MoveFaceToOrigin(MoveItem):
+    label_key    = "move_face"
+    desc_key     = "move_face_desc"
+    accepts_kind = "faces"
+
+    def _perform(self, parsed, core):
+        for shape, idxs in parsed["faces"].items():
+            core.move_faces(shape, idxs)
+
+
+# Registry consumed by the main window
+MOVE_ITEMS = [
+    MoveMeshToOrigin,
+    MoveVertexToOrigin,
+    MoveEdgeToOrigin,
+    MoveFaceToOrigin,
+]

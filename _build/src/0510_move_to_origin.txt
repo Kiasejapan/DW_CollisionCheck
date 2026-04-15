@@ -1,0 +1,282 @@
+# ---------------------------------------------------------------------------
+# Move-to-Origin Core
+# ---------------------------------------------------------------------------
+# Per-element move logic. Each element (mesh / vertex / edge / face) is
+# moved as a single unit toward the world origin, stopping just before
+# the nearest collision (with another mesh) or the origin itself.
+#
+# Algorithm (per element):
+#   1. center        = element center (world space)
+#   2. distToOrigin  = |origin - center|
+#   3. if distToOrigin < EPSILON  -> skip (already at origin)
+#   4. direction     = normalize(origin - center)
+#   5. hits          = OriginRaycaster.cast(center, direction,
+#                          exclude_vert_positions = element_vertices)
+#   6. candidates    = hits + [distToOrigin]      # origin is virtual hit
+#   7. moveDist      = min(candidates)
+#   8. finalDist     = max(0, moveDist - offset)
+#   9. delta         = direction * finalDist
+#  10. apply delta to all vertices of the element (or to transform
+#      for the mesh-level case).
+#
+# Notes:
+#   - exclude_vert_positions reuses `_vert_share_tol` (the same tolerance
+#     used by IntersectionCheck for vertex-share filtering).
+#   - Transform-level move uses xform on the parent transform.
+#   - Component-level moves (vtx/edge/face) use xform per vertex with
+#     world-space translation, in a single undo chunk.
+# ---------------------------------------------------------------------------
+
+_MOVE_EPS = 1.0e-5
+_DEFAULT_MOVE_OFFSET = [0.001]  # mutable shared default (cm)
+
+
+def _get_move_offset():
+    return _DEFAULT_MOVE_OFFSET[0]
+
+
+def _set_move_offset(v):
+    try:
+        v = float(v)
+    except Exception:
+        return
+    if v < 0.0:
+        v = 0.0
+    _DEFAULT_MOVE_OFFSET[0] = v
+
+
+class MoveToOriginCore(object):
+    """
+    Stateful core: holds an OriginRaycaster instance for one move pass.
+    """
+
+    def __init__(self, offset=None, target_shapes=None):
+        self.offset = float(_get_move_offset() if offset is None else offset)
+        self.raycaster = OriginRaycaster(target_shapes=target_shapes)
+        # counters for last batch
+        self.moved   = 0
+        self.skipped = 0
+
+    # -- internal: compute delta vector for a center & exclusion set ------
+    def _compute_delta(self, center, exclude_pts):
+        origin = (0.0, 0.0, 0.0)
+        to_o = (origin[0] - center[0],
+                origin[1] - center[1],
+                origin[2] - center[2])
+        dist_to_origin = math.sqrt(to_o[0] * to_o[0]
+                                   + to_o[1] * to_o[1]
+                                   + to_o[2] * to_o[2])
+        if dist_to_origin < _MOVE_EPS:
+            return (0.0, 0.0, 0.0), False  # skipped
+
+        inv = 1.0 / dist_to_origin
+        direction = (to_o[0] * inv, to_o[1] * inv, to_o[2] * inv)
+
+        hits = self.raycaster.cast(
+            center, direction,
+            exclude_vert_positions=exclude_pts,
+            max_distance=None)
+
+        # Origin is ALWAYS in candidates -> no branching for "no hit" case
+        candidates = list(hits)
+        candidates.append(dist_to_origin)
+
+        move_dist = min(candidates)
+        final_dist = move_dist - self.offset
+        if final_dist < 0.0:
+            final_dist = 0.0
+
+        delta = (direction[0] * final_dist,
+                 direction[1] * final_dist,
+                 direction[2] * final_dist)
+        return delta, True
+
+    # -- mesh (transform) -------------------------------------------------
+    def move_mesh(self, mesh_shape):
+        """Move the mesh's transform; element center = mesh bounding-box center."""
+        if not MAYA_AVAILABLE:
+            return
+        tr_node = MayaBridge.get_transform(mesh_shape)
+        if not tr_node:
+            self.skipped += 1
+            return
+        try:
+            bb = cmds.exactWorldBoundingBox(mesh_shape)
+            # bb = [xmin, ymin, zmin, xmax, ymax, zmax]
+            center = ((bb[0] + bb[3]) * 0.5,
+                      (bb[1] + bb[4]) * 0.5,
+                      (bb[2] + bb[5]) * 0.5)
+        except Exception:
+            self.skipped += 1
+            return
+
+        # Exclude all this mesh's bounding-box corners as "shared verts" so
+        # raycast can't pick its own faces near the start. (BBox corners
+        # are an over-approximation but safe.)
+        ex = [
+            (bb[0], bb[1], bb[2]), (bb[3], bb[1], bb[2]),
+            (bb[0], bb[4], bb[2]), (bb[3], bb[4], bb[2]),
+            (bb[0], bb[1], bb[5]), (bb[3], bb[1], bb[5]),
+            (bb[0], bb[4], bb[5]), (bb[3], bb[4], bb[5]),
+            center,
+        ]
+
+        delta, moved = self._compute_delta(center, ex)
+        if not moved:
+            self.skipped += 1
+            return
+        try:
+            # additive world-space translate
+            cmds.xform(tr_node, ws=True, r=True,
+                       t=(delta[0], delta[1], delta[2]))
+            self.moved += 1
+        except Exception:
+            self.skipped += 1
+
+    # -- vertices ---------------------------------------------------------
+    def move_vertices(self, mesh_shape, vert_indices):
+        """
+        Treat the vertex set as a SINGLE element (one center, one delta).
+        Equivalent to: select all listed vertices, compute their averaged
+        center, and translate them as a rigid group.
+        """
+        if not vert_indices:
+            return
+        pts = self._get_vert_positions(mesh_shape, vert_indices)
+        if not pts:
+            self.skipped += 1
+            return
+        center = _avg_point(pts)
+        # exclude the element vertices themselves
+        delta, moved = self._compute_delta(center, pts)
+        if not moved:
+            self.skipped += 1
+            return
+        self._translate_vertices(mesh_shape, vert_indices, delta)
+        self.moved += 1
+
+    def move_vertices_individually(self, mesh_shape, vert_indices):
+        """
+        Treat each vertex as its OWN element (separate raycast each).
+        Useful when the user wants per-vertex collapse rather than rigid
+        group move.
+        """
+        for vi in vert_indices:
+            pts = self._get_vert_positions(mesh_shape, [vi])
+            if not pts:
+                self.skipped += 1
+                continue
+            delta, moved = self._compute_delta(pts[0], pts)
+            if not moved:
+                self.skipped += 1
+                continue
+            self._translate_vertices(mesh_shape, [vi], delta)
+            self.moved += 1
+
+    # -- edges ------------------------------------------------------------
+    def move_edges(self, mesh_shape, edge_indices):
+        """
+        Each edge is one element. Center = midpoint of its 2 vertices.
+        Both endpoints receive the same delta.
+        """
+        for ei in edge_indices:
+            try:
+                vert_pair = cmds.polyListComponentConversion(
+                    "{0}.e[{1}]".format(mesh_shape, ei),
+                    fromEdge=True, toVertex=True) or []
+                vlist = cmds.ls(vert_pair, fl=True) or []
+                vidx = []
+                for v in vlist:
+                    try:
+                        vidx.append(int(v.split("[")[-1].rstrip("]")))
+                    except Exception:
+                        pass
+            except Exception:
+                vidx = []
+            if not vidx:
+                self.skipped += 1
+                continue
+            pts = self._get_vert_positions(mesh_shape, vidx)
+            if not pts:
+                self.skipped += 1
+                continue
+            center = _avg_point(pts)
+            delta, moved = self._compute_delta(center, pts)
+            if not moved:
+                self.skipped += 1
+                continue
+            self._translate_vertices(mesh_shape, vidx, delta)
+            self.moved += 1
+
+    # -- faces ------------------------------------------------------------
+    def move_faces(self, mesh_shape, face_indices):
+        """
+        Each face is one element. Center = average of its vertex positions.
+        All vertices of that face receive the same delta.
+        """
+        for fi in face_indices:
+            try:
+                vlist_raw = cmds.polyListComponentConversion(
+                    "{0}.f[{1}]".format(mesh_shape, fi),
+                    fromFace=True, toVertex=True) or []
+                vlist = cmds.ls(vlist_raw, fl=True) or []
+                vidx = []
+                for v in vlist:
+                    try:
+                        vidx.append(int(v.split("[")[-1].rstrip("]")))
+                    except Exception:
+                        pass
+            except Exception:
+                vidx = []
+            if not vidx:
+                self.skipped += 1
+                continue
+            pts = self._get_vert_positions(mesh_shape, vidx)
+            if not pts:
+                self.skipped += 1
+                continue
+            center = _avg_point(pts)
+            delta, moved = self._compute_delta(center, pts)
+            if not moved:
+                self.skipped += 1
+                continue
+            self._translate_vertices(mesh_shape, vidx, delta)
+            self.moved += 1
+
+    # -- helpers ----------------------------------------------------------
+    @staticmethod
+    def _get_vert_positions(mesh_shape, vert_indices):
+        out = []
+        for vi in vert_indices:
+            try:
+                p = cmds.xform("{0}.vtx[{1}]".format(mesh_shape, vi),
+                               q=True, ws=True, t=True)
+                out.append((p[0], p[1], p[2]))
+            except Exception:
+                pass
+        return out
+
+    @staticmethod
+    def _translate_vertices(mesh_shape, vert_indices, delta):
+        if not vert_indices:
+            return
+        comps = ["{0}.vtx[{1}]".format(mesh_shape, vi) for vi in vert_indices]
+        try:
+            cmds.xform(comps, ws=True, r=True,
+                       t=(delta[0], delta[1], delta[2]))
+        except Exception:
+            # fallback per-vertex if batched call fails
+            for c in comps:
+                try:
+                    cmds.xform(c, ws=True, r=True,
+                               t=(delta[0], delta[1], delta[2]))
+                except Exception:
+                    pass
+
+
+def _avg_point(pts):
+    sx = sy = sz = 0.0
+    for p in pts:
+        sx += p[0]; sy += p[1]; sz += p[2]
+    n = float(len(pts))
+    return (sx / n, sy / n, sz / n)

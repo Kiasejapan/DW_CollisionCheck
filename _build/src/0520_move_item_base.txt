@@ -1,0 +1,157 @@
+# ---------------------------------------------------------------------------
+# MoveItem base + Selection parsing for origin-move actions
+# ---------------------------------------------------------------------------
+# MoveItem inherits from CheckItem so it can be reused inside the existing
+# CheckItemWidget (same row layout: icon, label, badge, "Run" button).
+# Instead of detection, `check()` performs the actual scene mutation
+# wrapped in a single undo chunk, and reports a 1-line summary in
+# `self.issues[0]["detail"]`.
+# ---------------------------------------------------------------------------
+
+
+def _parse_selection_for_move():
+    """
+    Inspect the current Maya selection and return a dict:
+        {
+          "vertices": {mesh_shape: [vert_idx, ...], ...},
+          "edges":    {mesh_shape: [edge_idx, ...], ...},
+          "faces":    {mesh_shape: [face_idx, ...], ...},
+          "objects":  [mesh_shape, ...],
+        }
+    Each bucket is independent; the caller decides which to consume.
+    """
+    out = {"vertices": {}, "edges": {}, "faces": {}, "objects": []}
+    if not MAYA_AVAILABLE:
+        return out
+    try:
+        sel = cmds.ls(sl=True, fl=True, long=True) or []
+    except Exception:
+        sel = []
+    if not sel:
+        return out
+
+    seen_objs = set()
+    for it in sel:
+        if ".vtx[" in it:
+            shape, _, rest = it.partition(".vtx[")
+            try:
+                idx = int(rest.rstrip("]"))
+            except Exception:
+                continue
+            out["vertices"].setdefault(shape, []).append(idx)
+        elif ".e[" in it:
+            shape, _, rest = it.partition(".e[")
+            try:
+                idx = int(rest.rstrip("]"))
+            except Exception:
+                continue
+            out["edges"].setdefault(shape, []).append(idx)
+        elif ".f[" in it:
+            shape, _, rest = it.partition(".f[")
+            try:
+                idx = int(rest.rstrip("]"))
+            except Exception:
+                continue
+            out["faces"].setdefault(shape, []).append(idx)
+        else:
+            # transform or shape
+            try:
+                t = cmds.nodeType(it)
+            except Exception:
+                continue
+            if t == "transform":
+                # find mesh shapes under it
+                shapes = cmds.listRelatives(
+                    it, allDescendents=True, type="mesh",
+                    fullPath=True, ni=True) or []
+                for s in shapes:
+                    if s in seen_objs:
+                        continue
+                    try:
+                        if cmds.getAttr(s + ".intermediateObject"):
+                            continue
+                    except Exception:
+                        pass
+                    seen_objs.add(s)
+                    out["objects"].append(s)
+            elif t == "mesh":
+                if it in seen_objs:
+                    continue
+                try:
+                    if cmds.getAttr(it + ".intermediateObject"):
+                        continue
+                except Exception:
+                    pass
+                seen_objs.add(it)
+                out["objects"].append(it)
+    return out
+
+
+# ---------------------------------------------------------------------------
+class MoveItem(CheckItem):
+    """
+    Base class for move-to-origin actions. Reuses CheckItem's run_check()
+    flow so it can plug into CheckItemWidget without UI changes.
+
+    Subclasses must implement `_perform(parsed_selection, core)` and set
+    `label_key` / `desc_key`.
+    """
+    can_auto_fix    = False
+    default_enabled = True
+    accepts_kind    = None  # one of "vertices" / "edges" / "faces" / "objects"
+
+    def check(self):
+        """Perform the move on the current selection. Returns issues list
+        (used here as a status carrier)."""
+        parsed = _parse_selection_for_move()
+        bucket = parsed.get(self.accepts_kind, None) if self.accepts_kind else None
+        is_empty = (not bucket) if isinstance(bucket, dict) else (not bucket)
+        if is_empty:
+            return [{
+                "mesh_a": "", "mesh_b": "",
+                "face_a": -1, "face_b": -1,
+                "depth": 0.0, "point": None,
+                "detail": tr("move_status_no_selection"),
+            }]
+
+        offset = _get_move_offset()
+        cmds.undoInfo(openChunk=True, chunkName="DW_MoveToOrigin")
+        try:
+            core = MoveToOriginCore(offset=offset)
+            self._perform(parsed, core)
+        finally:
+            try:
+                cmds.undoInfo(closeChunk=True)
+            except Exception:
+                pass
+
+        moved = core.moved
+        skipped = core.skipped
+        if moved == 0 and skipped == 0:
+            return [{
+                "mesh_a": "", "mesh_b": "",
+                "face_a": -1, "face_b": -1,
+                "depth": 0.0, "point": None,
+                "detail": tr("move_status_no_selection"),
+            }]
+        # Use issues to carry the summary; status will be "fail" if any
+        # were skipped (so the badge shows skip count) or "pass" otherwise.
+        summary = tr("move_status_done", n=moved)
+        if skipped > 0:
+            summary += u"  /  " + tr("move_status_skipped", n=skipped)
+        # We return an empty list when fully successful (status -> "pass").
+        # We return one summary entry with skip info when partial.
+        if skipped > 0:
+            return [{
+                "mesh_a": "", "mesh_b": "",
+                "face_a": -1, "face_b": -1,
+                "depth": 0.0, "point": None,
+                "detail": summary,
+            }]
+        # All-good: show summary in status bar but no "issue" badge.
+        # We stash the summary on the instance for the UI to read.
+        self._last_summary = summary
+        return []
+
+    def _perform(self, parsed, core):
+        raise NotImplementedError
