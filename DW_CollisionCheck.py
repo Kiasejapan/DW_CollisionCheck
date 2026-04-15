@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.15.1401"
+VERSION = "2026.04.15.1410"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -2455,137 +2455,12 @@ class AnimResultWindow(QtWidgets.QDialog):
 # ---------------------------------------------------------------------------
 # Settings Dialogs
 # ---------------------------------------------------------------------------
-class StaticCheckSettingsDialog(QtWidgets.QDialog):
-    """Settings for mesh pairs and selection mode."""
-
-    def __init__(self, parent=None):
-        super(StaticCheckSettingsDialog, self).__init__(parent)
-        self.setWindowTitle(tr("settings_title_static"))
-        self.setFixedWidth(360)
-        self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
-        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
-        self.setStyleSheet(_DIALOG_SS)
-        self._build()
-        self._load_state()
-
-    def _build(self):
-        lo = QtWidgets.QVBoxLayout(self)
-        lo.setContentsMargins(10, 10, 10, 10)
-        lo.setSpacing(8)
-
-        # Detection options
-        det_grp = QtWidgets.QGroupBox(tr("settings_detection"))
-        det_lo  = QtWidgets.QVBoxLayout(det_grp)
-
-        self.cb_selected = QtWidgets.QCheckBox(tr("chk_selected_only"))
-        self.cb_selected.setChecked(_use_selected_only[0])
-        det_lo.addWidget(self.cb_selected)
-
-        # Vertex-share tolerance row
-        vst_row = QtWidgets.QHBoxLayout()
-        vst_row.setContentsMargins(0, 0, 0, 0)
-        vst_row.setSpacing(6)
-        self._lbl_vst = QtWidgets.QLabel(tr("lbl_vert_share_tol"))
-        self._lbl_vst.setToolTip(tr("tip_vert_share_tol"))
-        vst_row.addWidget(self._lbl_vst)
-        self.spin_vert_share_tol = QtWidgets.QDoubleSpinBox()
-        self.spin_vert_share_tol.setDecimals(6)
-        self.spin_vert_share_tol.setRange(0.0, 1.0)
-        self.spin_vert_share_tol.setSingleStep(0.0001)
-        self.spin_vert_share_tol.setValue(_get_vert_share_tolerance())
-        self.spin_vert_share_tol.setToolTip(tr("tip_vert_share_tol"))
-        self.spin_vert_share_tol.setFixedWidth(110)
-        vst_row.addWidget(self.spin_vert_share_tol)
-        vst_row.addStretch()
-        det_lo.addLayout(vst_row)
-
-        lo.addWidget(det_grp)
-
-        # Mesh pairs
-        pairs_grp = QtWidgets.QGroupBox(tr("settings_mesh_pairs"))
-        pairs_lo  = QtWidgets.QVBoxLayout(pairs_grp)
-
-        self.pair_list = QtWidgets.QListWidget()
-        self.pair_list.setFixedHeight(120)
-        pairs_lo.addWidget(self.pair_list)
-
-        btn_row = QtWidgets.QHBoxLayout()
-        self.btn_add = _mkbtn(tr("lbl_add_pair"), 24, "#4CAF50", "#388E3C", fs=10)
-        self.btn_add.setToolTip(
-            "Select exactly 2 meshes in viewport, then click.")
-        self.btn_add.clicked.connect(self._add_pair)
-        btn_row.addWidget(self.btn_add)
-
-        self.btn_remove = _mkbtn(tr("lbl_remove_pair"), 24, "#F44336", "#C62828", fs=10)
-        self.btn_remove.clicked.connect(self._remove_pair)
-        btn_row.addWidget(self.btn_remove)
-        btn_row.addStretch()
-        pairs_lo.addLayout(btn_row)
-
-        lo.addWidget(pairs_grp)
-
-        # OK / Cancel
-        bottom = QtWidgets.QHBoxLayout()
-        bottom.addStretch()
-        ok = _mkbtn("OK", 26, "#2196F3", "#1976D2")
-        ok.clicked.connect(self._save_and_close)
-        cancel = _mkbtn("Cancel", 26, "#555", "#444")
-        cancel.clicked.connect(self.reject)
-        bottom.addWidget(ok)
-        bottom.addWidget(cancel)
-        lo.addLayout(bottom)
-
-    def _load_state(self):
-        self.pair_list.clear()
-        for a, b in _mesh_pairs:
-            short_a = MayaBridge.get_short_name(a)
-            short_b = MayaBridge.get_short_name(b)
-            item = QtWidgets.QListWidgetItem(
-                "{0}  vs  {1}".format(short_a, short_b))
-            item.setData(QtCore.Qt.UserRole, (a, b))
-            self.pair_list.addItem(item)
-
-    def _add_pair(self):
-        if not MAYA_AVAILABLE:
-            QtWidgets.QMessageBox.warning(
-                self, "Warning", "Maya not available.")
-            return
-        sel = MayaBridge.get_selected_meshes()
-        if len(sel) < 2:
-            QtWidgets.QMessageBox.warning(
-                self, "Warning",
-                "Please select exactly 2 meshes in the viewport first.")
-            return
-        a, b = sel[0], sel[1]
-        # Avoid duplicates
-        for pa, pb in _mesh_pairs:
-            if (pa == a and pb == b) or (pa == b and pb == a):
-                return
-        _mesh_pairs.append((a, b))
-        short_a = MayaBridge.get_short_name(a)
-        short_b = MayaBridge.get_short_name(b)
-        item = QtWidgets.QListWidgetItem(
-            "{0}  vs  {1}".format(short_a, short_b))
-        item.setData(QtCore.Qt.UserRole, (a, b))
-        self.pair_list.addItem(item)
-
-    def _remove_pair(self):
-        row = self.pair_list.currentRow()
-        if row < 0:
-            return
-        self.pair_list.takeItem(row)
-        if row < len(_mesh_pairs):
-            _mesh_pairs.pop(row)
-
-    def _save_and_close(self):
-        _use_selected_only[0] = self.cb_selected.isChecked()
-        _set_vert_share_tolerance(self.spin_vert_share_tol.value())
-        self.accept()
-
-
-
 # ---------------------------------------------------------------------------
-# StaticResultWindow
+# StaticCheckSettingsDialog: REMOVED.
+# Vertex-share tolerance is now exposed inline in the main window
+# (below the depth threshold). Selected-only and self-intersect toggles
+# remain on the main window. Mesh-pairs feature is no longer available;
+# pair selection is implicit (selected meshes or whole scene).
 # ---------------------------------------------------------------------------
 class StaticResultWindow(QtWidgets.QDialog):
     """
@@ -2886,8 +2761,8 @@ class CheckItemWidget(QtWidgets.QFrame):
         self.check_requested.emit(self.check_item)
 
     def _open_settings(self):
-        dlg = StaticCheckSettingsDialog(parent=self)
-        dlg.exec_()
+        # Settings dialog removed; kept as no-op for backward compatibility.
+        pass
 
     def _update_ui(self):
         s = self.check_item.status
@@ -2903,7 +2778,7 @@ class CheckItemWidget(QtWidgets.QFrame):
             self._badge.setVisible(False)
 
     def refresh_labels(self):
-        self._title.setText("<b>{0}</b>".format(self.check_item.label))
+        self._title.setText(u"<b>{0}</b>".format(self.check_item.label))
         self._desc.setText(self.check_item.description)
         self._btn_check.setText(tr("btn_check"))
 
@@ -3112,7 +2987,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         # CheckItem widgets
         for cls in STATIC_CHECKS:
             inst = cls()
-            widget = CheckItemWidget(inst, has_settings=True)
+            widget = CheckItemWidget(inst, has_settings=False)
             widget.check_requested.connect(self._on_check_done)
             self._check_instances.append(inst)
             self._check_widgets.append(widget)
@@ -3136,6 +3011,28 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         thresh_row.addWidget(self._spin_depth)
         thresh_row.addStretch()
         static_lo.addLayout(thresh_row)
+
+        # Vertex-share tolerance row (below depth threshold)
+        vst_row = QtWidgets.QHBoxLayout()
+        self._lbl_vert_share_tol = QtWidgets.QLabel(tr("lbl_vert_share_tol"))
+        self._lbl_vert_share_tol.setStyleSheet("color:#AAA;font-size:10px")
+        self._lbl_vert_share_tol.setToolTip(tr("tip_vert_share_tol"))
+        vst_row.addWidget(self._lbl_vert_share_tol)
+        self._spin_vert_share_tol = QtWidgets.QDoubleSpinBox()
+        self._spin_vert_share_tol.setRange(0.0, 1.0)
+        self._spin_vert_share_tol.setDecimals(6)
+        self._spin_vert_share_tol.setSingleStep(0.0001)
+        self._spin_vert_share_tol.setValue(_get_vert_share_tolerance())
+        self._spin_vert_share_tol.setFixedWidth(85)
+        self._spin_vert_share_tol.setToolTip(tr("tip_vert_share_tol"))
+        self._spin_vert_share_tol.setStyleSheet(
+            "QDoubleSpinBox{background-color:#2B2B2B;color:#EEE;"
+            "border:1px solid #555;border-radius:3px;padding:1px;font-size:10px}")
+        self._spin_vert_share_tol.valueChanged.connect(
+            self._on_vert_share_tol_changed)
+        vst_row.addWidget(self._spin_vert_share_tol)
+        vst_row.addStretch()
+        static_lo.addLayout(vst_row)
 
         scroll_lo.addWidget(static_grp)
 
@@ -3291,6 +3188,9 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
 
     def _on_self_intersect_toggled(self, checked):
         _self_intersect[0] = checked
+
+    def _on_vert_share_tol_changed(self, value):
+        _set_vert_share_tolerance(value)
 
     def _run_all_static(self):
         self._status_bar.setText(tr("status_checking"))
@@ -3526,6 +3426,9 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         self._cb_selected_only.setText(tr("chk_selected_only"))
         self._cb_self_intersect.setText(tr("chk_self_intersect"))
         self._lbl_depth_thresh.setText(tr("lbl_depth_threshold"))
+        self._lbl_vert_share_tol.setText(tr("lbl_vert_share_tol"))
+        self._lbl_vert_share_tol.setToolTip(tr("tip_vert_share_tol"))
+        self._spin_vert_share_tol.setToolTip(tr("tip_vert_share_tol"))
         self._cb_use_timeline.setText(tr("chk_use_timeline"))
         self._lbl_fr.setText(tr("lbl_frame_range"))
         self._lbl_step.setText(tr("lbl_frame_step"))

@@ -180,7 +180,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         # CheckItem widgets
         for cls in STATIC_CHECKS:
             inst = cls()
-            widget = CheckItemWidget(inst, has_settings=True)
+            widget = CheckItemWidget(inst, has_settings=False)
             widget.check_requested.connect(self._on_check_done)
             self._check_instances.append(inst)
             self._check_widgets.append(widget)
@@ -204,6 +204,28 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         thresh_row.addWidget(self._spin_depth)
         thresh_row.addStretch()
         static_lo.addLayout(thresh_row)
+
+        # Vertex-share tolerance row (below depth threshold)
+        vst_row = QtWidgets.QHBoxLayout()
+        self._lbl_vert_share_tol = QtWidgets.QLabel(tr("lbl_vert_share_tol"))
+        self._lbl_vert_share_tol.setStyleSheet("color:#AAA;font-size:10px")
+        self._lbl_vert_share_tol.setToolTip(tr("tip_vert_share_tol"))
+        vst_row.addWidget(self._lbl_vert_share_tol)
+        self._spin_vert_share_tol = QtWidgets.QDoubleSpinBox()
+        self._spin_vert_share_tol.setRange(0.0, 1.0)
+        self._spin_vert_share_tol.setDecimals(6)
+        self._spin_vert_share_tol.setSingleStep(0.0001)
+        self._spin_vert_share_tol.setValue(_get_vert_share_tolerance())
+        self._spin_vert_share_tol.setFixedWidth(85)
+        self._spin_vert_share_tol.setToolTip(tr("tip_vert_share_tol"))
+        self._spin_vert_share_tol.setStyleSheet(
+            "QDoubleSpinBox{background-color:#2B2B2B;color:#EEE;"
+            "border:1px solid #555;border-radius:3px;padding:1px;font-size:10px}")
+        self._spin_vert_share_tol.valueChanged.connect(
+            self._on_vert_share_tol_changed)
+        vst_row.addWidget(self._spin_vert_share_tol)
+        vst_row.addStretch()
+        static_lo.addLayout(vst_row)
 
         scroll_lo.addWidget(static_grp)
 
@@ -359,6 +381,9 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
 
     def _on_self_intersect_toggled(self, checked):
         _self_intersect[0] = checked
+
+    def _on_vert_share_tol_changed(self, value):
+        _set_vert_share_tolerance(value)
 
     def _run_all_static(self):
         self._status_bar.setText(tr("status_checking"))
@@ -594,6 +619,9 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         self._cb_selected_only.setText(tr("chk_selected_only"))
         self._cb_self_intersect.setText(tr("chk_self_intersect"))
         self._lbl_depth_thresh.setText(tr("lbl_depth_threshold"))
+        self._lbl_vert_share_tol.setText(tr("lbl_vert_share_tol"))
+        self._lbl_vert_share_tol.setToolTip(tr("tip_vert_share_tol"))
+        self._spin_vert_share_tol.setToolTip(tr("tip_vert_share_tol"))
         self._cb_use_timeline.setText(tr("chk_use_timeline"))
         self._lbl_fr.setText(tr("lbl_frame_range"))
         self._lbl_step.setText(tr("lbl_frame_step"))

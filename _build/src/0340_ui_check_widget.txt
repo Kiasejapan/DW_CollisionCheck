@@ -106,8 +106,8 @@ class CheckItemWidget(QtWidgets.QFrame):
         self.check_requested.emit(self.check_item)
 
     def _open_settings(self):
-        dlg = StaticCheckSettingsDialog(parent=self)
-        dlg.exec_()
+        # Settings dialog removed; kept as no-op for backward compatibility.
+        pass
 
     def _update_ui(self):
         s = self.check_item.status
@@ -123,7 +123,7 @@ class CheckItemWidget(QtWidgets.QFrame):
             self._badge.setVisible(False)
 
     def refresh_labels(self):
-        self._title.setText("<b>{0}</b>".format(self.check_item.label))
+        self._title.setText(u"<b>{0}</b>".format(self.check_item.label))
         self._desc.setText(self.check_item.description)
         self._btn_check.setText(tr("btn_check"))
 
