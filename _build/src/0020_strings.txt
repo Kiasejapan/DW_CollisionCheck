@@ -68,7 +68,9 @@ _STRINGS = {
     "chk_ignore_static":    {"en": "Ignore baseline frame collisions",
                              "jp": u"\u30d9\u30fc\u30b9\u30e9\u30a4\u30f3\u30d5\u30ec\u30fc\u30e0\u306e\u5e72\u6e09\u3092\u7121\u8996"},
     "lbl_baseline_frame":   {"en": "Baseline frame:",               "jp": u"\u30d9\u30fc\u30b9\u30e9\u30a4\u30f3:"},
-    "anim_scanning":        {"en": "Scanning frame {frame}/{total}...",
+    "lbl_vert_share_tol":   {"en": "Vertex-share tolerance:",       "jp": u"\u540c\u4e00\u9802\u70b9\u3068\u307f\u306a\u3059\u8ddd\u96e2:"},
+    "tip_vert_share_tol":   {"en": "Triangles sharing a vertex within this distance are skipped from intersection testing.",
+                             "jp": u"\u3053\u306e\u8ddd\u96e2\u4ee5\u5185\u3067\u9802\u70b9\u3092\u5171\u6709\u3059\u308b\u4e09\u89d2\u5f62\u30da\u30a2\u306f\u4ea4\u5dee\u5224\u5b9a\u3092\u30b9\u30ad\u30c3\u30d7\u3057\u307e\u3059\u3002"},    "anim_scanning":        {"en": "Scanning frame {frame}/{total}...",
                              "jp": u"\u30d5\u30ec\u30fc\u30e0 {frame}/{total} \u3092\u30b9\u30ad\u30e3\u30f3\u4e2d..."},
     "anim_done":            {"en": "Animation scan done: {count} frame(s) with issues.",
                              "jp": u"\u30a2\u30cb\u30e1\u30b9\u30ad\u30e3\u30f3\u5b8c\u4e86: {count} \u30d5\u30ec\u30fc\u30e0\u3067\u554f\u984c\u691c\u51fa\u3002"},
@@ -100,12 +102,50 @@ _STRINGS = {
     },
 }
 
+# Python 2/3 unicode type compatibility for tr()
+try:
+    _TEXT_TYPE = unicode  # Python 2
+except NameError:
+    _TEXT_TYPE = str       # Python 3
+
+
+def _to_unicode(s):
+    """Force a value into unicode (Python 2) / str (Python 3).
+
+    On Maya 2018 + Japanese Windows (CP932 locale), str.format() with
+    a mix of bytes-str and unicode triggers ASCII auto-decoding which
+    fails for non-ASCII characters. Returning unicode-only from tr()
+    eliminates this entire class of error.
+    """
+    if isinstance(s, _TEXT_TYPE):
+        return s
+    if isinstance(s, bytes):
+        try:
+            return s.decode("utf-8")
+        except Exception:
+            return s.decode("utf-8", "replace")
+    # int / float / other -> stringify safely
+    try:
+        return _TEXT_TYPE(s)
+    except Exception:
+        return _TEXT_TYPE(repr(s))
+
+
 def tr(key, **kw):
     e = _STRINGS.get(key, {})
     if isinstance(e, dict) and ("en" in e or "jp" in e):
         t = e.get(_current_lang, e.get("en", key))
     else:
         t = key
-    return t.format(**kw) if kw else t
+    # Force unicode to avoid Python 2 str/unicode mixing errors
+    t = _to_unicode(t)
+    if kw:
+        # Also unicode-ify kw values so .format(...) stays unicode
+        kw = {k: _to_unicode(v) for k, v in kw.items()}
+        try:
+            t = t.format(**kw)
+        except Exception:
+            pass
+    return t
 
 

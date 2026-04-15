@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.15.1348"
+VERSION = "2026.04.15.1401"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -117,7 +117,9 @@ _STRINGS = {
     "chk_ignore_static":    {"en": "Ignore baseline frame collisions",
                              "jp": u"\u30d9\u30fc\u30b9\u30e9\u30a4\u30f3\u30d5\u30ec\u30fc\u30e0\u306e\u5e72\u6e09\u3092\u7121\u8996"},
     "lbl_baseline_frame":   {"en": "Baseline frame:",               "jp": u"\u30d9\u30fc\u30b9\u30e9\u30a4\u30f3:"},
-    "anim_scanning":        {"en": "Scanning frame {frame}/{total}...",
+    "lbl_vert_share_tol":   {"en": "Vertex-share tolerance:",       "jp": u"\u540c\u4e00\u9802\u70b9\u3068\u307f\u306a\u3059\u8ddd\u96e2:"},
+    "tip_vert_share_tol":   {"en": "Triangles sharing a vertex within this distance are skipped from intersection testing.",
+                             "jp": u"\u3053\u306e\u8ddd\u96e2\u4ee5\u5185\u3067\u9802\u70b9\u3092\u5171\u6709\u3059\u308b\u4e09\u89d2\u5f62\u30da\u30a2\u306f\u4ea4\u5dee\u5224\u5b9a\u3092\u30b9\u30ad\u30c3\u30d7\u3057\u307e\u3059\u3002"},    "anim_scanning":        {"en": "Scanning frame {frame}/{total}...",
                              "jp": u"\u30d5\u30ec\u30fc\u30e0 {frame}/{total} \u3092\u30b9\u30ad\u30e3\u30f3\u4e2d..."},
     "anim_done":            {"en": "Animation scan done: {count} frame(s) with issues.",
                              "jp": u"\u30a2\u30cb\u30e1\u30b9\u30ad\u30e3\u30f3\u5b8c\u4e86: {count} \u30d5\u30ec\u30fc\u30e0\u3067\u554f\u984c\u691c\u51fa\u3002"},
@@ -149,13 +151,51 @@ _STRINGS = {
     },
 }
 
+# Python 2/3 unicode type compatibility for tr()
+try:
+    _TEXT_TYPE = unicode  # Python 2
+except NameError:
+    _TEXT_TYPE = str       # Python 3
+
+
+def _to_unicode(s):
+    """Force a value into unicode (Python 2) / str (Python 3).
+
+    On Maya 2018 + Japanese Windows (CP932 locale), str.format() with
+    a mix of bytes-str and unicode triggers ASCII auto-decoding which
+    fails for non-ASCII characters. Returning unicode-only from tr()
+    eliminates this entire class of error.
+    """
+    if isinstance(s, _TEXT_TYPE):
+        return s
+    if isinstance(s, bytes):
+        try:
+            return s.decode("utf-8")
+        except Exception:
+            return s.decode("utf-8", "replace")
+    # int / float / other -> stringify safely
+    try:
+        return _TEXT_TYPE(s)
+    except Exception:
+        return _TEXT_TYPE(repr(s))
+
+
 def tr(key, **kw):
     e = _STRINGS.get(key, {})
     if isinstance(e, dict) and ("en" in e or "jp" in e):
         t = e.get(_current_lang, e.get("en", key))
     else:
         t = key
-    return t.format(**kw) if kw else t
+    # Force unicode to avoid Python 2 str/unicode mixing errors
+    t = _to_unicode(t)
+    if kw:
+        # Also unicode-ify kw values so .format(...) stays unicode
+        kw = {k: _to_unicode(v) for k, v in kw.items()}
+        try:
+            t = t.format(**kw)
+        except Exception:
+            pass
+    return t
 
 
 # ---------------------------------------------------------------------------
@@ -2441,6 +2481,24 @@ class StaticCheckSettingsDialog(QtWidgets.QDialog):
         self.cb_selected.setChecked(_use_selected_only[0])
         det_lo.addWidget(self.cb_selected)
 
+        # Vertex-share tolerance row
+        vst_row = QtWidgets.QHBoxLayout()
+        vst_row.setContentsMargins(0, 0, 0, 0)
+        vst_row.setSpacing(6)
+        self._lbl_vst = QtWidgets.QLabel(tr("lbl_vert_share_tol"))
+        self._lbl_vst.setToolTip(tr("tip_vert_share_tol"))
+        vst_row.addWidget(self._lbl_vst)
+        self.spin_vert_share_tol = QtWidgets.QDoubleSpinBox()
+        self.spin_vert_share_tol.setDecimals(6)
+        self.spin_vert_share_tol.setRange(0.0, 1.0)
+        self.spin_vert_share_tol.setSingleStep(0.0001)
+        self.spin_vert_share_tol.setValue(_get_vert_share_tolerance())
+        self.spin_vert_share_tol.setToolTip(tr("tip_vert_share_tol"))
+        self.spin_vert_share_tol.setFixedWidth(110)
+        vst_row.addWidget(self.spin_vert_share_tol)
+        vst_row.addStretch()
+        det_lo.addLayout(vst_row)
+
         lo.addWidget(det_grp)
 
         # Mesh pairs
@@ -2521,6 +2579,7 @@ class StaticCheckSettingsDialog(QtWidgets.QDialog):
 
     def _save_and_close(self):
         _use_selected_only[0] = self.cb_selected.isChecked()
+        _set_vert_share_tolerance(self.spin_vert_share_tol.value())
         self.accept()
 
 
@@ -2757,7 +2816,7 @@ class CheckItemWidget(QtWidgets.QFrame):
         hl.addWidget(self._icon)
 
         self._title = QtWidgets.QLabel(
-            "<b>{0}</b>".format(self.check_item.label))
+            u"<b>{0}</b>".format(self.check_item.label))
         self._title.setStyleSheet("color:#EEE;font-size:11px")
         hl.addWidget(self._title)
         hl.addStretch()
@@ -2919,7 +2978,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         header.setSpacing(4)
 
         self._title_lbl = QtWidgets.QLabel(
-            "<b>{0}</b> <span style='color:#888;font-size:10px'>v{1}</span>".format(
+            u"<b>{0}</b> <span style='color:#888;font-size:10px'>v{1}</span>".format(
                 tr("window_title"), VERSION))
         self._title_lbl.setStyleSheet(
             "color:#EEE;font-size:14px;padding:4px")
@@ -3254,7 +3313,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         total = 0
         for idx, widget in enumerate(enabled_widgets):
             self._static_progress.setFormat(
-                "{0} ({1}/{2})".format(widget.check_item.label, idx + 1, n_checks))
+                u"{0} ({1}/{2})".format(widget.check_item.label, idx + 1, n_checks))
             QtWidgets.QApplication.processEvents()
             widget.check_item.run_check()
             widget._update_ui()
@@ -3452,7 +3511,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
 
     def _refresh_labels(self):
         self._title_lbl.setText(
-            "<b>{0}</b> <span style='color:#888;font-size:10px'>v{1}</span>".format(
+            u"<b>{0}</b> <span style='color:#888;font-size:10px'>v{1}</span>".format(
                 tr("window_title"), VERSION))
         self.setWindowTitle(tr("window_title"))
         self._lang_btn.setText(tr("btn_lang"))

@@ -24,6 +24,24 @@ class StaticCheckSettingsDialog(QtWidgets.QDialog):
         self.cb_selected.setChecked(_use_selected_only[0])
         det_lo.addWidget(self.cb_selected)
 
+        # Vertex-share tolerance row
+        vst_row = QtWidgets.QHBoxLayout()
+        vst_row.setContentsMargins(0, 0, 0, 0)
+        vst_row.setSpacing(6)
+        self._lbl_vst = QtWidgets.QLabel(tr("lbl_vert_share_tol"))
+        self._lbl_vst.setToolTip(tr("tip_vert_share_tol"))
+        vst_row.addWidget(self._lbl_vst)
+        self.spin_vert_share_tol = QtWidgets.QDoubleSpinBox()
+        self.spin_vert_share_tol.setDecimals(6)
+        self.spin_vert_share_tol.setRange(0.0, 1.0)
+        self.spin_vert_share_tol.setSingleStep(0.0001)
+        self.spin_vert_share_tol.setValue(_get_vert_share_tolerance())
+        self.spin_vert_share_tol.setToolTip(tr("tip_vert_share_tol"))
+        self.spin_vert_share_tol.setFixedWidth(110)
+        vst_row.addWidget(self.spin_vert_share_tol)
+        vst_row.addStretch()
+        det_lo.addLayout(vst_row)
+
         lo.addWidget(det_grp)
 
         # Mesh pairs
@@ -104,6 +122,7 @@ class StaticCheckSettingsDialog(QtWidgets.QDialog):
 
     def _save_and_close(self):
         _use_selected_only[0] = self.cb_selected.isChecked()
+        _set_vert_share_tolerance(self.spin_vert_share_tol.value())
         self.accept()
 
 

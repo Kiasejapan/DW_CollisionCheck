@@ -36,7 +36,7 @@ class CheckItemWidget(QtWidgets.QFrame):
         hl.addWidget(self._icon)
 
         self._title = QtWidgets.QLabel(
-            "<b>{0}</b>".format(self.check_item.label))
+            u"<b>{0}</b>".format(self.check_item.label))
         self._title.setStyleSheet("color:#EEE;font-size:11px")
         hl.addWidget(self._title)
         hl.addStretch()

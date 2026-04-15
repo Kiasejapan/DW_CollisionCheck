@@ -46,7 +46,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         header.setSpacing(4)
 
         self._title_lbl = QtWidgets.QLabel(
-            "<b>{0}</b> <span style='color:#888;font-size:10px'>v{1}</span>".format(
+            u"<b>{0}</b> <span style='color:#888;font-size:10px'>v{1}</span>".format(
                 tr("window_title"), VERSION))
         self._title_lbl.setStyleSheet(
             "color:#EEE;font-size:14px;padding:4px")
@@ -381,7 +381,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         total = 0
         for idx, widget in enumerate(enabled_widgets):
             self._static_progress.setFormat(
-                "{0} ({1}/{2})".format(widget.check_item.label, idx + 1, n_checks))
+                u"{0} ({1}/{2})".format(widget.check_item.label, idx + 1, n_checks))
             QtWidgets.QApplication.processEvents()
             widget.check_item.run_check()
             widget._update_ui()
@@ -579,7 +579,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
 
     def _refresh_labels(self):
         self._title_lbl.setText(
-            "<b>{0}</b> <span style='color:#888;font-size:10px'>v{1}</span>".format(
+            u"<b>{0}</b> <span style='color:#888;font-size:10px'>v{1}</span>".format(
                 tr("window_title"), VERSION))
         self.setWindowTitle(tr("window_title"))
         self._lang_btn.setText(tr("btn_lang"))
