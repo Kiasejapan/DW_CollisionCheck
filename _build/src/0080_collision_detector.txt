@@ -3,15 +3,37 @@ class CollisionDetector(object):
     BVH-accelerated polygon collision detector.
     Maya-independent. Input: world-space triangle lists.
     triangles format: list of ( (x,y,z), (x,y,z), (x,y,z) )
+
+    Vertex-share skipping
+    ---------------------
+    Triangles that share at least one vertex are SKIPPED from intersection
+    testing. "Sharing" is determined by:
+
+      * Self-test:
+          - topological adjacency (same Maya vertex IDs), AND
+          - positional adjacency (vertices within `vert_share_tol` world
+            units, even if not welded into the same Maya vertex ID).
+
+      * Cross-mesh test:
+          - positional adjacency only (different meshes have independent
+            vertex IDs by definition).
+
+    The default `vert_share_tol` is read from the module-level setting
+    set by the UI (`_vert_share_tol[0]`), so callers usually don't need
+    to pass it.
     """
 
     def __init__(self, triangles_a, triangles_b, tri_vert_ids_a=None,
-                 bvh_a=None, bvh_b=None, tri_adj_a=None, cross_shared=None):
+                 bvh_a=None, bvh_b=None, tri_adj_a=None, cross_shared=None,
+                 vert_share_tol=None):
         """
         Optional bvh_a/bvh_b: pre-built BVH trees (e.g. refitted).
             If provided, skips building from scratch. Must match triangles_a/b.
-        Optional tri_adj_a: pre-built vertex-share adjacency for self-test.
+        Optional tri_adj_a: pre-built vertex-share adjacency for self-test
+            (topological, from Maya vertex IDs).
         Optional cross_shared: pre-built cross-mesh shared-vertex pair set.
+        Optional vert_share_tol: tolerance for positional vertex sharing.
+            None -> use module default.
         """
         self._tris_a = triangles_a
         self._tris_b = triangles_b
@@ -19,6 +41,7 @@ class CollisionDetector(object):
         self._tri_vert_ids_a = tri_vert_ids_a
         self._tri_adj_a = tri_adj_a
         self._cross_shared = cross_shared
+        self._vert_share_tol = vert_share_tol  # may be None
         if bvh_a is not None:
             self._bvh_a = bvh_a
         else:
@@ -39,19 +62,40 @@ class CollisionDetector(object):
         if self._bvh_a is None or self._bvh_b is None:
             return []
 
-        # Build triangle adjacency for self-test to skip neighboring tris
-        tri_adj = self._tri_adj_a
-        if self._self_test and tri_adj is None and self._tri_vert_ids_a is not None:
-            tri_adj = _build_tri_adjacency(self._tri_vert_ids_a)
+        # ---- Self-test adjacency ------------------------------------------
+        # Combine TWO sources of adjacency:
+        #   (1) topological  - same Maya vertex IDs   (existing behaviour)
+        #   (2) positional   - vertices within tolerance world distance
+        #                      (NEW: catches snapped-but-not-welded verts)
+        tri_adj = None
+        if self._self_test:
+            base_adj = self._tri_adj_a
+            if base_adj is None and self._tri_vert_ids_a is not None:
+                base_adj = _build_tri_adjacency(self._tri_vert_ids_a)
 
-        # For cross-mesh, build shared-vertex pair set (use cache if provided)
+            # Positional self-share (new)
+            pos_adj_pairs = _build_self_mesh_shared_verts_pos(
+                self._tris_a, tolerance=self._vert_share_tol)
+
+            # Merge into a single adjacency dict {ti: set(neighbours)}
+            tri_adj = {}
+            if base_adj:
+                for k, v in base_adj.items():
+                    tri_adj[k] = set(v)
+            for pair in pos_adj_pairs:
+                a, b = tuple(pair)
+                tri_adj.setdefault(a, set()).add(b)
+                tri_adj.setdefault(b, set()).add(a)
+
+        # ---- Cross-mesh shared-vertex pairs -------------------------------
         cross_shared = None
         if not self._self_test:
             if self._cross_shared is not None:
                 cross_shared = self._cross_shared
             else:
                 cross_shared = _build_cross_mesh_shared_verts(
-                    self._tris_a, self._tris_b)
+                    self._tris_a, self._tris_b,
+                    tolerance=self._vert_share_tol)
 
         raw = []
         _query_bvh(self._bvh_a, self._tris_a,

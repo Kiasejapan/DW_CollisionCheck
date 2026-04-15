@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.13.1541"
+VERSION = "2026.04.15.1348"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -625,74 +625,242 @@ def _build_tri_adjacency(tri_vert_ids):
     return adj
 
 # ---------------------------------------------------------------------------
-# Public API
+# Vertex-share adjacency (distance-based, tolerance-controlled)
 # ---------------------------------------------------------------------------
-def _build_cross_mesh_shared_verts(tris_a, tris_b, precision=3):
-    """
-    For cross-mesh checks, build a set of triangle pairs that share an
-    edge or vertex at the boundary. Two triangles from different meshes
-    are considered 'adjacent' (boundary-touching) if they share 2 or
-    more vertex positions (rounded to *precision* decimal places).
-    Sharing a single vertex is also skipped since it often indicates
-    a seam where meshes meet at a point.
-    Returns: set of (tri_idx_a, tri_idx_b)
-    """
-    # Build rounded-position set for each triangle in B
-    b_vert_sets = []
-    for tri in tris_b:
-        s = set()
-        for v in tri:
-            s.add((round(v[0], precision),
-                   round(v[1], precision),
-                   round(v[2], precision)))
-        b_vert_sets.append(s)
+# Two triangles are considered "vertex-shared" (and therefore SKIPPED from
+# intersection testing) if they share at least 1 vertex position within
+# `tolerance` world units.
+#
+# The default tolerance covers floating-point round-off introduced by
+# vertex snapping, transform composition, etc. (1e-4 in Maya cm units
+# = 0.001 mm). The UI exposes this so users can tune for very small or
+# very large scenes.
+# ---------------------------------------------------------------------------
 
-    # Map rounded vertex positions to triangle indices in B
+# Default vertex-share tolerance (world units, Maya cm).
+# Stored as 1-element list so the value can be mutated by UI / settings
+# without re-importing.
+_vert_share_tol = [1.0e-4]
+
+
+def _set_vert_share_tolerance(value):
+    """Setter used by the UI / settings layer."""
+    try:
+        v = float(value)
+    except Exception:
+        return
+    if v < 0.0:
+        v = 0.0
+    _vert_share_tol[0] = v
+
+
+def _get_vert_share_tolerance():
+    return _vert_share_tol[0]
+
+
+def _quantize_position(p, cell):
+    """Quantize a world-space point to a grid cell of size `cell`.
+    Two points within `cell` units MAY share the same key, but two points
+    farther than `cell` units MAY ALSO share a key if they straddle a
+    cell boundary. We compensate by also probing the 3x3x3 neighbour
+    cells when looking up matches.
+    """
+    if cell <= 0.0:
+        # exact match only
+        return (p[0], p[1], p[2])
+    inv = 1.0 / cell
+    return (int(round(p[0] * inv)),
+            int(round(p[1] * inv)),
+            int(round(p[2] * inv)))
+
+
+def _neighbour_cells(key):
+    """Yield the 27 (3x3x3) cell keys around `key` for tolerance lookup."""
+    x, y, z = key
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            for dz in (-1, 0, 1):
+                yield (x + dx, y + dy, z + dz)
+
+
+def _positions_close(a, b, tol):
+    """Squared-distance comparison (avoids sqrt)."""
+    dx = a[0] - b[0]
+    dy = a[1] - b[1]
+    dz = a[2] - b[2]
+    return (dx * dx + dy * dy + dz * dz) <= (tol * tol)
+
+
+def _build_cross_mesh_shared_verts(tris_a, tris_b, tolerance=None):
+    """
+    Build a set of (tri_idx_a, tri_idx_b) pairs whose triangles share AT
+    LEAST one vertex position within `tolerance` world units. Such pairs
+    are skipped during intersection testing because, by user convention,
+    "snapped" or coincident vertices indicate intentional contact, not
+    penetration.
+
+    Args:
+        tris_a, tris_b: lists of ((x,y,z), (x,y,z), (x,y,z))
+        tolerance:      world-unit distance; None -> use module default
+                        (`_vert_share_tol[0]`).
+
+    Returns:
+        set of (ti_a, ti_b)
+    """
+    if tolerance is None:
+        tolerance = _vert_share_tol[0]
+    if tolerance < 0.0:
+        tolerance = 0.0
+
+    # Cell size: spatial-hash bucket. Slightly larger than tolerance so
+    # that a true match within `tolerance` is at most 1 cell away in any
+    # axis (covered by the 3x3x3 neighbour scan).
+    cell = tolerance if tolerance > 0.0 else 0.0
+
+    # Build spatial hash for B vertices: cell_key -> list of (ti_b, vert_pos)
     pos_to_b = {}
-    for ti, tri in enumerate(tris_b):
+    for ti_b, tri in enumerate(tris_b):
         for v in tri:
-            key = (round(v[0], precision),
-                   round(v[1], precision),
-                   round(v[2], precision))
-            if key not in pos_to_b:
-                pos_to_b[key] = set()
-            pos_to_b[key].add(ti)
+            key = _quantize_position(v, cell)
+            bucket = pos_to_b.get(key)
+            if bucket is None:
+                bucket = []
+                pos_to_b[key] = bucket
+            bucket.append((ti_b, v))
 
     shared = set()
-    for ti_a, tri in enumerate(tris_a):
-        verts_a = set()
-        for v in tri:
-            verts_a.add((round(v[0], precision),
-                         round(v[1], precision),
-                         round(v[2], precision)))
+    tol_sq_ok = (tolerance > 0.0)
 
-        # Find candidate B-triangles that share at least one vertex
+    for ti_a, tri_a in enumerate(tris_a):
+        # gather candidate B-triangles by scanning neighbour cells
         candidates = set()
-        for va in verts_a:
-            if va in pos_to_b:
-                candidates.update(pos_to_b[va])
+        for v_a in tri_a:
+            key_a = _quantize_position(v_a, cell)
+            if cell > 0.0:
+                for nk in _neighbour_cells(key_a):
+                    bucket = pos_to_b.get(nk)
+                    if not bucket:
+                        continue
+                    for ti_b, v_b in bucket:
+                        if (ti_a, ti_b) in shared:
+                            continue
+                        if tol_sq_ok:
+                            if _positions_close(v_a, v_b, tolerance):
+                                candidates.add(ti_b)
+                        else:
+                            if v_a == v_b:
+                                candidates.add(ti_b)
+            else:
+                bucket = pos_to_b.get(key_a)
+                if not bucket:
+                    continue
+                for ti_b, v_b in bucket:
+                    if v_a == v_b:
+                        candidates.add(ti_b)
 
         for ti_b in candidates:
-            # Count how many vertex positions are shared
-            common = len(verts_a & b_vert_sets[ti_b])
-            if common >= 1:
-                shared.add((ti_a, ti_b))
+            shared.add((ti_a, ti_b))
+
     return shared
 
+
+def _build_self_mesh_shared_verts_pos(tris, tolerance=None):
+    """
+    Same idea as `_build_cross_mesh_shared_verts`, but for SELF-test:
+    detects pairs (ti_a, ti_b) within the same triangle list that share
+    at least one vertex POSITION within tolerance.
+
+    This complements the existing topological adjacency (built from
+    Maya vertex IDs in `_build_tri_adjacency`) by also catching the
+    case where two triangles have geometrically coincident vertices
+    that are NOT merged into the same Maya vertex ID (snapped but not
+    welded).
+
+    Returns:
+        set of frozenset({ti_a, ti_b})  (unordered pairs, ti_a != ti_b)
+    """
+    if tolerance is None:
+        tolerance = _vert_share_tol[0]
+    if tolerance < 0.0:
+        tolerance = 0.0
+
+    cell = tolerance if tolerance > 0.0 else 0.0
+
+    # Build spatial hash: cell_key -> list of (ti, vert_pos)
+    pos_to_t = {}
+    for ti, tri in enumerate(tris):
+        for v in tri:
+            key = _quantize_position(v, cell)
+            bucket = pos_to_t.get(key)
+            if bucket is None:
+                bucket = []
+                pos_to_t[key] = bucket
+            bucket.append((ti, v))
+
+    shared = set()
+    tol_sq_ok = (tolerance > 0.0)
+
+    for ti_a, tri_a in enumerate(tris):
+        for v_a in tri_a:
+            key_a = _quantize_position(v_a, cell)
+            if cell > 0.0:
+                cells_to_check = _neighbour_cells(key_a)
+            else:
+                cells_to_check = (key_a,)
+            for nk in cells_to_check:
+                bucket = pos_to_t.get(nk)
+                if not bucket:
+                    continue
+                for ti_b, v_b in bucket:
+                    if ti_b == ti_a:
+                        continue
+                    pair = frozenset((ti_a, ti_b))
+                    if pair in shared:
+                        continue
+                    if tol_sq_ok:
+                        if _positions_close(v_a, v_b, tolerance):
+                            shared.add(pair)
+                    else:
+                        if v_a == v_b:
+                            shared.add(pair)
+
+    return shared
 class CollisionDetector(object):
     """
     BVH-accelerated polygon collision detector.
     Maya-independent. Input: world-space triangle lists.
     triangles format: list of ( (x,y,z), (x,y,z), (x,y,z) )
+
+    Vertex-share skipping
+    ---------------------
+    Triangles that share at least one vertex are SKIPPED from intersection
+    testing. "Sharing" is determined by:
+
+      * Self-test:
+          - topological adjacency (same Maya vertex IDs), AND
+          - positional adjacency (vertices within `vert_share_tol` world
+            units, even if not welded into the same Maya vertex ID).
+
+      * Cross-mesh test:
+          - positional adjacency only (different meshes have independent
+            vertex IDs by definition).
+
+    The default `vert_share_tol` is read from the module-level setting
+    set by the UI (`_vert_share_tol[0]`), so callers usually don't need
+    to pass it.
     """
 
     def __init__(self, triangles_a, triangles_b, tri_vert_ids_a=None,
-                 bvh_a=None, bvh_b=None, tri_adj_a=None, cross_shared=None):
+                 bvh_a=None, bvh_b=None, tri_adj_a=None, cross_shared=None,
+                 vert_share_tol=None):
         """
         Optional bvh_a/bvh_b: pre-built BVH trees (e.g. refitted).
             If provided, skips building from scratch. Must match triangles_a/b.
-        Optional tri_adj_a: pre-built vertex-share adjacency for self-test.
+        Optional tri_adj_a: pre-built vertex-share adjacency for self-test
+            (topological, from Maya vertex IDs).
         Optional cross_shared: pre-built cross-mesh shared-vertex pair set.
+        Optional vert_share_tol: tolerance for positional vertex sharing.
+            None -> use module default.
         """
         self._tris_a = triangles_a
         self._tris_b = triangles_b
@@ -700,6 +868,7 @@ class CollisionDetector(object):
         self._tri_vert_ids_a = tri_vert_ids_a
         self._tri_adj_a = tri_adj_a
         self._cross_shared = cross_shared
+        self._vert_share_tol = vert_share_tol  # may be None
         if bvh_a is not None:
             self._bvh_a = bvh_a
         else:
@@ -720,19 +889,40 @@ class CollisionDetector(object):
         if self._bvh_a is None or self._bvh_b is None:
             return []
 
-        # Build triangle adjacency for self-test to skip neighboring tris
-        tri_adj = self._tri_adj_a
-        if self._self_test and tri_adj is None and self._tri_vert_ids_a is not None:
-            tri_adj = _build_tri_adjacency(self._tri_vert_ids_a)
+        # ---- Self-test adjacency ------------------------------------------
+        # Combine TWO sources of adjacency:
+        #   (1) topological  - same Maya vertex IDs   (existing behaviour)
+        #   (2) positional   - vertices within tolerance world distance
+        #                      (NEW: catches snapped-but-not-welded verts)
+        tri_adj = None
+        if self._self_test:
+            base_adj = self._tri_adj_a
+            if base_adj is None and self._tri_vert_ids_a is not None:
+                base_adj = _build_tri_adjacency(self._tri_vert_ids_a)
 
-        # For cross-mesh, build shared-vertex pair set (use cache if provided)
+            # Positional self-share (new)
+            pos_adj_pairs = _build_self_mesh_shared_verts_pos(
+                self._tris_a, tolerance=self._vert_share_tol)
+
+            # Merge into a single adjacency dict {ti: set(neighbours)}
+            tri_adj = {}
+            if base_adj:
+                for k, v in base_adj.items():
+                    tri_adj[k] = set(v)
+            for pair in pos_adj_pairs:
+                a, b = tuple(pair)
+                tri_adj.setdefault(a, set()).add(b)
+                tri_adj.setdefault(b, set()).add(a)
+
+        # ---- Cross-mesh shared-vertex pairs -------------------------------
         cross_shared = None
         if not self._self_test:
             if self._cross_shared is not None:
                 cross_shared = self._cross_shared
             else:
                 cross_shared = _build_cross_mesh_shared_verts(
-                    self._tris_a, self._tris_b)
+                    self._tris_a, self._tris_b,
+                    tolerance=self._vert_share_tol)
 
         raw = []
         _query_bvh(self._bvh_a, self._tris_a,
