@@ -1,34 +1,23 @@
 # ---------------------------------------------------------------------------
-# Move-to-Origin Core
+# Move-to-Origin Core (axis-constrained)
 # ---------------------------------------------------------------------------
 # Per-element move logic. Each element (mesh / vertex / edge / face) is
-# moved as a single unit toward the world origin, stopping just before
-# the nearest collision (with another mesh) or the origin itself.
+# moved as a single unit toward the world origin ALONG ONE AXIS (X, Y, or
+# Z). The sign is auto-determined by the element center: if center is on
+# the +axis side, motion is along -axis; if on the -axis side, motion is
+# along +axis. If center is exactly on the axis-plane (|coord| < EPSILON),
+# the element is skipped.
 #
-# Algorithm (per element):
-#   1. center        = element center (world space)
-#   2. distToOrigin  = |origin - center|
-#   3. if distToOrigin < EPSILON  -> skip (already at origin)
-#   4. direction     = normalize(origin - center)
-#   5. hits          = OriginRaycaster.cast(center, direction,
-#                          exclude_vert_positions = element_vertices)
-#   6. candidates    = hits + [distToOrigin]      # origin is virtual hit
-#   7. moveDist      = min(candidates)
-#   8. finalDist     = max(0, moveDist - offset)
-#   9. delta         = direction * finalDist
-#  10. apply delta to all vertices of the element (or to transform
-#      for the mesh-level case).
-#
-# Notes:
-#   - exclude_vert_positions reuses `_vert_share_tol` (the same tolerance
-#     used by IntersectionCheck for vertex-share filtering).
-#   - Transform-level move uses xform on the parent transform.
-#   - Component-level moves (vtx/edge/face) use xform per vertex with
-#     world-space translation, in a single undo chunk.
+# Two modes per item type:
+#   - "rigid"      : selection moves as ONE element (one center, one delta,
+#                    same delta applied to all member vertices)
+#   - "individual" : each sub-element (each vertex, each edge, each face)
+#                    moves independently
 # ---------------------------------------------------------------------------
 
 _MOVE_EPS = 1.0e-5
-_DEFAULT_MOVE_OFFSET = [0.001]  # mutable shared default (cm)
+_DEFAULT_MOVE_OFFSET = [0.001]   # cm
+_DEFAULT_MOVE_AXIS   = [0]       # 0=X, 1=Y, 2=Z
 
 
 def _get_move_offset():
@@ -45,42 +34,53 @@ def _set_move_offset(v):
     _DEFAULT_MOVE_OFFSET[0] = v
 
 
-class MoveToOriginCore(object):
-    """
-    Stateful core: holds an OriginRaycaster instance for one move pass.
-    """
+def _get_move_axis():
+    return _DEFAULT_MOVE_AXIS[0]
 
-    def __init__(self, offset=None, target_shapes=None):
+
+def _set_move_axis(idx):
+    try:
+        i = int(idx)
+    except Exception:
+        return
+    if i in (0, 1, 2):
+        _DEFAULT_MOVE_AXIS[0] = i
+
+
+# Mode constants
+MOVE_MODE_RIGID      = "rigid"
+MOVE_MODE_INDIVIDUAL = "individual"
+
+
+class MoveToOriginCore(object):
+    """Stateful core. axis: 0/1/2 (X/Y/Z). Sign auto from element center."""
+
+    def __init__(self, offset=None, axis=None, target_shapes=None):
         self.offset = float(_get_move_offset() if offset is None else offset)
+        self.axis   = int(_get_move_axis() if axis is None else axis)
+        if self.axis not in (0, 1, 2):
+            self.axis = 0
         self.raycaster = OriginRaycaster(target_shapes=target_shapes)
-        # counters for last batch
         self.moved   = 0
         self.skipped = 0
 
-    # -- internal: compute delta vector for a center & exclusion set ------
     def _compute_delta(self, center, exclude_pts):
-        origin = (0.0, 0.0, 0.0)
-        to_o = (origin[0] - center[0],
-                origin[1] - center[1],
-                origin[2] - center[2])
-        dist_to_origin = math.sqrt(to_o[0] * to_o[0]
-                                   + to_o[1] * to_o[1]
-                                   + to_o[2] * to_o[2])
-        if dist_to_origin < _MOVE_EPS:
-            return (0.0, 0.0, 0.0), False  # skipped
-
-        inv = 1.0 / dist_to_origin
-        direction = (to_o[0] * inv, to_o[1] * inv, to_o[2] * inv)
+        coord = center[self.axis]
+        if abs(coord) < _MOVE_EPS:
+            return (0.0, 0.0, 0.0), False
+        sign = -1.0 if coord > 0.0 else 1.0
+        direction = [0.0, 0.0, 0.0]
+        direction[self.axis] = sign
+        direction = tuple(direction)
+        dist_to_plane = abs(coord)
 
         hits = self.raycaster.cast(
             center, direction,
             exclude_vert_positions=exclude_pts,
             max_distance=None)
 
-        # Origin is ALWAYS in candidates -> no branching for "no hit" case
         candidates = list(hits)
-        candidates.append(dist_to_origin)
-
+        candidates.append(dist_to_plane)
         move_dist = min(candidates)
         final_dist = move_dist - self.offset
         if final_dist < 0.0:
@@ -91,9 +91,8 @@ class MoveToOriginCore(object):
                  direction[2] * final_dist)
         return delta, True
 
-    # -- mesh (transform) -------------------------------------------------
+    # ---- Mesh ---------------------------------------------------------
     def move_mesh(self, mesh_shape):
-        """Move the mesh's transform; element center = mesh bounding-box center."""
         if not MAYA_AVAILABLE:
             return
         tr_node = MayaBridge.get_transform(mesh_shape)
@@ -102,17 +101,12 @@ class MoveToOriginCore(object):
             return
         try:
             bb = cmds.exactWorldBoundingBox(mesh_shape)
-            # bb = [xmin, ymin, zmin, xmax, ymax, zmax]
             center = ((bb[0] + bb[3]) * 0.5,
                       (bb[1] + bb[4]) * 0.5,
                       (bb[2] + bb[5]) * 0.5)
         except Exception:
             self.skipped += 1
             return
-
-        # Exclude all this mesh's bounding-box corners as "shared verts" so
-        # raycast can't pick its own faces near the start. (BBox corners
-        # are an over-approximation but safe.)
         ex = [
             (bb[0], bb[1], bb[2]), (bb[3], bb[1], bb[2]),
             (bb[0], bb[4], bb[2]), (bb[3], bb[4], bb[2]),
@@ -120,26 +114,19 @@ class MoveToOriginCore(object):
             (bb[0], bb[4], bb[5]), (bb[3], bb[4], bb[5]),
             center,
         ]
-
         delta, moved = self._compute_delta(center, ex)
         if not moved:
             self.skipped += 1
             return
         try:
-            # additive world-space translate
             cmds.xform(tr_node, ws=True, r=True,
                        t=(delta[0], delta[1], delta[2]))
             self.moved += 1
         except Exception:
             self.skipped += 1
 
-    # -- vertices ---------------------------------------------------------
-    def move_vertices(self, mesh_shape, vert_indices):
-        """
-        Treat the vertex set as a SINGLE element (one center, one delta).
-        Equivalent to: select all listed vertices, compute their averaged
-        center, and translate them as a rigid group.
-        """
+    # ---- Vertices -----------------------------------------------------
+    def move_vertices_rigid(self, mesh_shape, vert_indices):
         if not vert_indices:
             return
         pts = self._get_vert_positions(mesh_shape, vert_indices)
@@ -147,7 +134,6 @@ class MoveToOriginCore(object):
             self.skipped += 1
             return
         center = _avg_point(pts)
-        # exclude the element vertices themselves
         delta, moved = self._compute_delta(center, pts)
         if not moved:
             self.skipped += 1
@@ -155,12 +141,7 @@ class MoveToOriginCore(object):
         self._translate_vertices(mesh_shape, vert_indices, delta)
         self.moved += 1
 
-    def move_vertices_individually(self, mesh_shape, vert_indices):
-        """
-        Treat each vertex as its OWN element (separate raycast each).
-        Useful when the user wants per-vertex collapse rather than rigid
-        group move.
-        """
+    def move_vertices_individual(self, mesh_shape, vert_indices):
         for vi in vert_indices:
             pts = self._get_vert_positions(mesh_shape, [vi])
             if not pts:
@@ -173,26 +154,29 @@ class MoveToOriginCore(object):
             self._translate_vertices(mesh_shape, [vi], delta)
             self.moved += 1
 
-    # -- edges ------------------------------------------------------------
-    def move_edges(self, mesh_shape, edge_indices):
-        """
-        Each edge is one element. Center = midpoint of its 2 vertices.
-        Both endpoints receive the same delta.
-        """
+    # ---- Edges --------------------------------------------------------
+    def move_edges_rigid(self, mesh_shape, edge_indices):
+        if not edge_indices:
+            return
+        vidx = self._verts_from_edges(mesh_shape, edge_indices)
+        if not vidx:
+            self.skipped += 1
+            return
+        pts = self._get_vert_positions(mesh_shape, vidx)
+        if not pts:
+            self.skipped += 1
+            return
+        center = _avg_point(pts)
+        delta, moved = self._compute_delta(center, pts)
+        if not moved:
+            self.skipped += 1
+            return
+        self._translate_vertices(mesh_shape, vidx, delta)
+        self.moved += 1
+
+    def move_edges_individual(self, mesh_shape, edge_indices):
         for ei in edge_indices:
-            try:
-                vert_pair = cmds.polyListComponentConversion(
-                    "{0}.e[{1}]".format(mesh_shape, ei),
-                    fromEdge=True, toVertex=True) or []
-                vlist = cmds.ls(vert_pair, fl=True) or []
-                vidx = []
-                for v in vlist:
-                    try:
-                        vidx.append(int(v.split("[")[-1].rstrip("]")))
-                    except Exception:
-                        pass
-            except Exception:
-                vidx = []
+            vidx = self._verts_from_edges(mesh_shape, [ei])
             if not vidx:
                 self.skipped += 1
                 continue
@@ -208,26 +192,29 @@ class MoveToOriginCore(object):
             self._translate_vertices(mesh_shape, vidx, delta)
             self.moved += 1
 
-    # -- faces ------------------------------------------------------------
-    def move_faces(self, mesh_shape, face_indices):
-        """
-        Each face is one element. Center = average of its vertex positions.
-        All vertices of that face receive the same delta.
-        """
+    # ---- Faces --------------------------------------------------------
+    def move_faces_rigid(self, mesh_shape, face_indices):
+        if not face_indices:
+            return
+        vidx = self._verts_from_faces(mesh_shape, face_indices)
+        if not vidx:
+            self.skipped += 1
+            return
+        pts = self._get_vert_positions(mesh_shape, vidx)
+        if not pts:
+            self.skipped += 1
+            return
+        center = _avg_point(pts)
+        delta, moved = self._compute_delta(center, pts)
+        if not moved:
+            self.skipped += 1
+            return
+        self._translate_vertices(mesh_shape, vidx, delta)
+        self.moved += 1
+
+    def move_faces_individual(self, mesh_shape, face_indices):
         for fi in face_indices:
-            try:
-                vlist_raw = cmds.polyListComponentConversion(
-                    "{0}.f[{1}]".format(mesh_shape, fi),
-                    fromFace=True, toVertex=True) or []
-                vlist = cmds.ls(vlist_raw, fl=True) or []
-                vidx = []
-                for v in vlist:
-                    try:
-                        vidx.append(int(v.split("[")[-1].rstrip("]")))
-                    except Exception:
-                        pass
-            except Exception:
-                vidx = []
+            vidx = self._verts_from_faces(mesh_shape, [fi])
             if not vidx:
                 self.skipped += 1
                 continue
@@ -243,7 +230,41 @@ class MoveToOriginCore(object):
             self._translate_vertices(mesh_shape, vidx, delta)
             self.moved += 1
 
-    # -- helpers ----------------------------------------------------------
+    # ---- helpers ------------------------------------------------------
+    @staticmethod
+    def _verts_from_edges(mesh_shape, edge_indices):
+        comps = ["{0}.e[{1}]".format(mesh_shape, ei) for ei in edge_indices]
+        try:
+            verts = cmds.polyListComponentConversion(
+                comps, fromEdge=True, toVertex=True) or []
+            verts = cmds.ls(verts, fl=True) or []
+        except Exception:
+            return []
+        out = []
+        for v in verts:
+            try:
+                out.append(int(v.split("[")[-1].rstrip("]")))
+            except Exception:
+                pass
+        return out
+
+    @staticmethod
+    def _verts_from_faces(mesh_shape, face_indices):
+        comps = ["{0}.f[{1}]".format(mesh_shape, fi) for fi in face_indices]
+        try:
+            verts = cmds.polyListComponentConversion(
+                comps, fromFace=True, toVertex=True) or []
+            verts = cmds.ls(verts, fl=True) or []
+        except Exception:
+            return []
+        out = []
+        for v in verts:
+            try:
+                out.append(int(v.split("[")[-1].rstrip("]")))
+            except Exception:
+                pass
+        return out
+
     @staticmethod
     def _get_vert_positions(mesh_shape, vert_indices):
         out = []
@@ -265,7 +286,6 @@ class MoveToOriginCore(object):
             cmds.xform(comps, ws=True, r=True,
                        t=(delta[0], delta[1], delta[2]))
         except Exception:
-            # fallback per-vertex if batched call fails
             for c in comps:
                 try:
                     cmds.xform(c, ws=True, r=True,

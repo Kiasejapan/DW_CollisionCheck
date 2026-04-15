@@ -143,12 +143,30 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         sel_row.addStretch()
         main_lo.addLayout(sel_row)
 
-        # ---- Scroll area ----
-        scroll = QtWidgets.QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll_w = QtWidgets.QWidget()
-        scroll_lo = QtWidgets.QVBoxLayout(scroll_w)
-        scroll_lo.setContentsMargins(0, 2, 0, 2)
+        # ---- Tab widget (Check / Other) ----
+        self._tabs = QtWidgets.QTabWidget()
+        self._tabs.setStyleSheet(
+            "QTabWidget::pane{border:1px solid #444;background-color:#2B2B2B;"
+            "border-radius:4px;top:-1px}"
+            "QTabBar::tab{background-color:#3C3C3C;color:#CCC;padding:6px 16px;"
+            "border:1px solid #444;border-bottom:none;"
+            "border-top-left-radius:4px;border-top-right-radius:4px;"
+            "font-size:10px}"
+            "QTabBar::tab:selected{background-color:#2B2B2B;color:#FFF;"
+            "border-color:#2196F3}"
+            "QTabBar::tab:hover{background-color:#4A4A4A}")
+
+        # ---- Check tab ----
+        check_tab = QtWidgets.QWidget()
+        check_tab_lo = QtWidgets.QVBoxLayout(check_tab)
+        check_tab_lo.setContentsMargins(0, 0, 0, 0)
+        check_tab_lo.setSpacing(0)
+        check_scroll = QtWidgets.QScrollArea()
+        check_scroll.setWidgetResizable(True)
+        check_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        check_scroll_w = QtWidgets.QWidget()
+        scroll_lo = QtWidgets.QVBoxLayout(check_scroll_w)
+        scroll_lo.setContentsMargins(4, 4, 4, 4)
         scroll_lo.setSpacing(8)
 
         # ---- Static Check Group (blue border) ----
@@ -229,7 +247,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
 
         scroll_lo.addWidget(static_grp)
 
-        # ---- Move-to-Origin Group (purple border) ----
+        # ---- Move-to-Origin Group (purple border) - placed in Other tab --
         move_grp = QtWidgets.QGroupBox()
         move_grp.setStyleSheet(
             "QGroupBox{border:1px solid #9C27B0;border-radius:6px;"
@@ -254,6 +272,35 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         self._btn_run_move_all.clicked.connect(self._run_all_move)
         move_header.addWidget(self._btn_run_move_all)
         move_lo.addLayout(move_header)
+
+        # Axis selector row (X / Y / Z radio)
+        axis_row = QtWidgets.QHBoxLayout()
+        self._lbl_move_axis = QtWidgets.QLabel(tr("lbl_move_axis"))
+        self._lbl_move_axis.setStyleSheet("color:#AAA;font-size:10px")
+        self._lbl_move_axis.setToolTip(tr("tip_move_axis"))
+        axis_row.addWidget(self._lbl_move_axis)
+        self._axis_group = QtWidgets.QButtonGroup(self)
+        self._rb_axis_x = QtWidgets.QRadioButton(tr("axis_x"))
+        self._rb_axis_y = QtWidgets.QRadioButton(tr("axis_y"))
+        self._rb_axis_z = QtWidgets.QRadioButton(tr("axis_z"))
+        for i, rb in enumerate(
+                (self._rb_axis_x, self._rb_axis_y, self._rb_axis_z)):
+            rb.setStyleSheet(
+                "QRadioButton{color:#EEE;font-size:11px;padding:0px 4px}"
+                "QRadioButton::indicator{width:11px;height:11px}")
+            rb.setToolTip(tr("tip_move_axis"))
+            self._axis_group.addButton(rb, i)
+            axis_row.addWidget(rb)
+        # default selection from module state
+        cur = _get_move_axis()
+        (self._rb_axis_x, self._rb_axis_y, self._rb_axis_z)[cur].setChecked(True)
+        try:
+            self._axis_group.idClicked.connect(self._on_axis_changed)
+        except AttributeError:
+            # PySide2 older signature fallback
+            self._axis_group.buttonClicked[int].connect(self._on_axis_changed)
+        axis_row.addStretch()
+        move_lo.addLayout(axis_row)
 
         # MoveItem widgets (re-use CheckItemWidget for consistent UI)
         self._move_instances = []
@@ -288,7 +335,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         off_row.addStretch()
         move_lo.addLayout(off_row)
 
-        scroll_lo.addWidget(move_grp)
+        # NOTE: move_grp is added to Other tab below, not to scroll_lo
 
         # ---- Animation Scan Group (amber border) ----
         anim_grp = QtWidgets.QGroupBox()
@@ -412,8 +459,30 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
 
         scroll_lo.addStretch()
 
-        scroll.setWidget(scroll_w)
-        main_lo.addWidget(scroll)
+        # Finalize Check tab
+        check_scroll.setWidget(check_scroll_w)
+        check_tab_lo.addWidget(check_scroll)
+        self._tabs.addTab(check_tab, tr("tab_check"))
+
+        # ---- Other tab (auxiliary tools, contains Move-to-Origin) ----
+        other_tab = QtWidgets.QWidget()
+        other_tab_lo = QtWidgets.QVBoxLayout(other_tab)
+        other_tab_lo.setContentsMargins(0, 0, 0, 0)
+        other_tab_lo.setSpacing(0)
+        other_scroll = QtWidgets.QScrollArea()
+        other_scroll.setWidgetResizable(True)
+        other_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        other_scroll_w = QtWidgets.QWidget()
+        other_scroll_lo = QtWidgets.QVBoxLayout(other_scroll_w)
+        other_scroll_lo.setContentsMargins(4, 4, 4, 4)
+        other_scroll_lo.setSpacing(8)
+        other_scroll_lo.addWidget(move_grp)
+        other_scroll_lo.addStretch()
+        other_scroll.setWidget(other_scroll_w)
+        other_tab_lo.addWidget(other_scroll)
+        self._tabs.addTab(other_tab, tr("tab_other"))
+
+        main_lo.addWidget(self._tabs)
 
         # ---- Status bar ----
         self._status_bar = QtWidgets.QLabel(tr("status_ready"))
@@ -449,6 +518,12 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
     # ---- Move-to-Origin handlers --------------------------------------
     def _on_move_offset_changed(self, value):
         _set_move_offset(value)
+
+    def _on_axis_changed(self, idx):
+        _set_move_axis(int(idx))
+
+    def _on_axis_changed(self, idx):
+        _set_move_axis(int(idx))
 
     def _run_all_move(self):
         """Run every move item that has a matching selection."""
@@ -725,6 +800,19 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         self._lbl_move_offset.setText(tr("lbl_move_offset"))
         self._lbl_move_offset.setToolTip(tr("tip_move_offset"))
         self._spin_move_offset.setToolTip(tr("tip_move_offset"))
+        self._lbl_move_axis.setText(tr("lbl_move_axis"))
+        self._lbl_move_axis.setToolTip(tr("tip_move_axis"))
+        self._rb_axis_x.setText(tr("axis_x"))
+        self._rb_axis_y.setText(tr("axis_y"))
+        self._rb_axis_z.setText(tr("axis_z"))
+        for rb in (self._rb_axis_x, self._rb_axis_y, self._rb_axis_z):
+            rb.setToolTip(tr("tip_move_axis"))
+        # Tab labels
+        try:
+            self._tabs.setTabText(0, tr("tab_check"))
+            self._tabs.setTabText(1, tr("tab_other"))
+        except Exception:
+            pass
         for w in self._move_widgets:
             w.refresh_labels()
         self._cb_use_timeline.setText(tr("chk_use_timeline"))
