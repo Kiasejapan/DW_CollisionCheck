@@ -287,110 +287,176 @@ class MoveToOriginCore(object):
             mesh_shape, all_vidx, all_vidx)
 
     # =================================================================
-    # Individual move with post-move collision check (binary search)
+    # Individual move with post-move collision check (per-vertex search)
     # =================================================================
     def _move_individual_with_collision_check(self, mesh_shape, vert_indices,
                                               all_involved_verts):
         """
         Move each vertex individually toward origin, then verify that the
-        resulting mesh does not intersect other meshes. If it does, scale
-        back ALL vertex deltas by a binary-searched factor until no
-        intersection remains.
+        resulting mesh does not intersect other meshes. Each vertex is
+        searched INDEPENDENTLY: vertices that can safely reach the origin
+        plane go there; vertices that would cause a collision are backed
+        off individually until the mesh no longer intersects.
 
-        Steps:
-          1. Compute per-vertex delta via raycast (individual distances).
-          2. Apply full deltas.
-          3. Run CollisionDetector (self mesh vs all other meshes).
-          4. If intersection found, undo the move, try with factor *= 0.5,
-             repeat (binary search up to 8 iterations).
-          5. Settle on the largest factor that causes no intersection.
+        Algorithm:
+          1. Compute per-vertex full delta via raycast.
+          2. Apply all full deltas.
+          3. If no collision, done.
+          4. Else, binary-search each vertex's factor independently,
+             in descending order of delta magnitude (biggest movers
+             are most likely to cause collisions).
         """
         if not vert_indices:
             return
 
-        # unique vertex indices
         vidx_unique = list(set(vert_indices))
 
-        # 1. Compute per-vertex deltas
-        pts_orig = {}  # {vi: (x,y,z)}
-        deltas   = {}  # {vi: (dx,dy,dz)}
-        any_moved = False
+        # 1. Compute per-vertex full deltas
+        pts_orig = {}    # {vi: (x,y,z)}
+        deltas_full = {} # {vi: (dx,dy,dz)}
         for vi in vidx_unique:
             p = self._get_vert_positions(mesh_shape, [vi])
             if not p:
                 continue
             pts_orig[vi] = p[0]
             d, ok = self._compute_delta(p[0], p, self_shape=mesh_shape)
-            if ok and (abs(d[0]) > _MOVE_EPS or abs(d[1]) > _MOVE_EPS
-                       or abs(d[2]) > _MOVE_EPS):
-                deltas[vi] = d
-                any_moved = True
+            if ok:
+                deltas_full[vi] = d
             else:
-                deltas[vi] = (0.0, 0.0, 0.0)
+                deltas_full[vi] = (0.0, 0.0, 0.0)
 
-        if not any_moved:
+        if not pts_orig:
             self.skipped += len(vidx_unique)
             return
 
-        # Get other mesh shapes for collision check
         other_shapes = []
         for s in MayaBridge.get_mesh_shapes():
             if s != mesh_shape:
                 other_shapes.append(s)
 
-        # 2. Binary search for safe factor
-        _MAX_ITER = 8
-        lo = 0.0
-        hi = 1.0
-        best_factor = 0.0  # 0.0 = no move (safe fallback)
-
-        for iteration in range(_MAX_ITER):
-            mid = (lo + hi) * 0.5
-
-            # Apply deltas at factor = mid
-            new_positions = {}
-            for vi in vidx_unique:
-                ox, oy, oz = pts_orig[vi]
-                dx, dy, dz = deltas[vi]
-                new_positions[vi] = (ox + dx * mid,
-                                     oy + dy * mid,
-                                     oz + dz * mid)
-            self._set_vertex_positions(mesh_shape, new_positions)
-
-            # 3. Check for intersection with other meshes
-            has_collision = self._check_collision_with_others(
-                mesh_shape, other_shapes)
-
-            if has_collision:
-                # Too far; reduce
-                hi = mid
-            else:
-                # Safe; try going further
-                best_factor = mid
-                lo = mid
-
-        # 4. Apply the best safe factor
-        final_positions = {}
+        # 2. Apply full deltas everywhere
+        factors = {}  # {vi: 0.0..1.0}
         for vi in vidx_unique:
-            ox, oy, oz = pts_orig[vi]
-            dx, dy, dz = deltas[vi]
-            final_positions[vi] = (ox + dx * best_factor,
-                                   oy + dy * best_factor,
-                                   oz + dz * best_factor)
-        self._set_vertex_positions(mesh_shape, final_positions)
+            factors[vi] = 1.0
+        self._apply_factored(mesh_shape, pts_orig, deltas_full, factors)
 
-        moved_count = sum(1 for vi in vidx_unique
-                          if abs(deltas[vi][0]) > _MOVE_EPS
-                          or abs(deltas[vi][1]) > _MOVE_EPS
-                          or abs(deltas[vi][2]) > _MOVE_EPS)
-        self.moved += moved_count if best_factor > _MOVE_EPS else 0
-        if best_factor <= _MOVE_EPS:
-            self.skipped += len(vidx_unique)
+        # 3. If no collision, done (fast path)
+        if not other_shapes or not self._check_collision_with_others(
+                mesh_shape, other_shapes):
+            moved_count = sum(
+                1 for vi in vidx_unique
+                if _delta_nonzero(deltas_full.get(vi, (0, 0, 0))))
+            self.moved += moved_count
+            self.skipped += len(vidx_unique) - moved_count
+            return
+
+        # 4. Per-vertex binary search
+        # Process vertices in descending order of delta magnitude
+        order = sorted(
+            vidx_unique,
+            key=lambda vi: -_delta_magnitude(deltas_full.get(vi, (0, 0, 0))))
+
+        _MAX_ITER = 6  # per-vertex
+
+        for vi in order:
+            if not _delta_nonzero(deltas_full[vi]):
+                continue
+
+            # Binary search factors[vi] in [0, current]
+            # Current factor = 1.0 initially; it may have been reduced
+            # already if this is a second pass (not in this impl).
+            lo = 0.0
+            hi = factors[vi]
+            if hi <= 0.0:
+                continue
+
+            # First test: is this vertex alone the cause? Test at lo.
+            factors[vi] = lo
+            self._apply_factored(mesh_shape, pts_orig, deltas_full, factors)
+            has_coll_at_0 = self._check_collision_with_others(
+                mesh_shape, other_shapes)
+            if has_coll_at_0:
+                # Collision persists even with this vertex at 0 -> some
+                # OTHER vertex is the cause. Restore this vertex to max.
+                factors[vi] = hi
+                self._apply_factored(mesh_shape, pts_orig, deltas_full, factors)
+                continue
+
+            # Not colliding at lo=0. Try hi first.
+            factors[vi] = hi
+            self._apply_factored(mesh_shape, pts_orig, deltas_full, factors)
+            if not self._check_collision_with_others(
+                    mesh_shape, other_shapes):
+                # Fully safe at hi; leave it.
+                continue
+
+            # Binary search between lo and hi
+            best = lo
+            for _iter in range(_MAX_ITER):
+                mid = (lo + hi) * 0.5
+                factors[vi] = mid
+                self._apply_factored(
+                    mesh_shape, pts_orig, deltas_full, factors)
+                if self._check_collision_with_others(
+                        mesh_shape, other_shapes):
+                    hi = mid
+                else:
+                    best = mid
+                    lo = mid
+            factors[vi] = best
+            self._apply_factored(mesh_shape, pts_orig, deltas_full, factors)
+
+        # After per-vertex search, there may still be a tiny residual
+        # collision if two vertices together cause it. Final global
+        # fallback: scale everyone equally if still colliding.
+        if self._check_collision_with_others(mesh_shape, other_shapes):
+            gf_lo, gf_hi = 0.0, 1.0
+            best_gf = 0.0
+            for _i in range(6):
+                mid = (gf_lo + gf_hi) * 0.5
+                for vi in vidx_unique:
+                    factors[vi] = min(factors[vi], 1.0) * mid / \
+                                  (1.0 if mid <= _MOVE_EPS else 1.0)
+                # Apply scaled factors (multiply by mid directly from 1.0
+                # for a clean interpretation)
+                scaled = {vi: factors[vi] * mid for vi in vidx_unique}
+                self._apply_factored(
+                    mesh_shape, pts_orig, deltas_full, scaled)
+                if self._check_collision_with_others(
+                        mesh_shape, other_shapes):
+                    gf_hi = mid
+                else:
+                    best_gf = mid
+                    gf_lo = mid
+            for vi in vidx_unique:
+                factors[vi] = factors[vi] * best_gf
+            self._apply_factored(mesh_shape, pts_orig, deltas_full, factors)
+
+        # count moved
+        moved_count = 0
+        for vi in vidx_unique:
+            fd = deltas_full.get(vi, (0, 0, 0))
+            f = factors.get(vi, 0.0)
+            if _delta_nonzero(fd) and f > _MOVE_EPS:
+                moved_count += 1
+        self.moved += moved_count
+        self.skipped += len(vidx_unique) - moved_count
+
+    @staticmethod
+    def _apply_factored(mesh_shape, pts_orig, deltas_full, factors):
+        """Set vertex positions to: pts_orig[vi] + deltas_full[vi] * factors[vi]."""
+        new_positions = {}
+        for vi, orig in pts_orig.items():
+            d = deltas_full.get(vi, (0.0, 0.0, 0.0))
+            f = factors.get(vi, 0.0)
+            new_positions[vi] = (orig[0] + d[0] * f,
+                                 orig[1] + d[1] * f,
+                                 orig[2] + d[2] * f)
+        MoveToOriginCore._set_vertex_positions(mesh_shape, new_positions)
 
     def _check_collision_with_others(self, mesh_shape, other_shapes):
         """Quick intersection check: mesh_shape vs each other_shape.
         Returns True if ANY intersection is found.
-        Uses CollisionDetector (existing BVH-based checker).
         """
         try:
             tris_a, map_a, vids_a = MayaBridge.get_triangles(mesh_shape)
@@ -398,6 +464,7 @@ class MoveToOriginCore(object):
             return False
         if not tris_a:
             return False
+        aabb_a = _compute_tris_aabb(tris_a)
 
         for other in other_shapes:
             try:
@@ -406,8 +473,6 @@ class MoveToOriginCore(object):
                 continue
             if not tris_b:
                 continue
-            # Quick AABB pre-check
-            aabb_a = _compute_tris_aabb(tris_a)
             aabb_b = _compute_tris_aabb(tris_b)
             if not _aabbs_overlap(aabb_a, aabb_b):
                 continue
@@ -426,6 +491,15 @@ class MoveToOriginCore(object):
                            ws=True, t=(pos[0], pos[1], pos[2]))
             except Exception:
                 pass
+
+
+def _delta_magnitude(d):
+    return math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2])
+
+
+def _delta_nonzero(d):
+    return (abs(d[0]) > _MOVE_EPS or abs(d[1]) > _MOVE_EPS
+            or abs(d[2]) > _MOVE_EPS)
 
     # ---- helpers ------------------------------------------------------
     @staticmethod
