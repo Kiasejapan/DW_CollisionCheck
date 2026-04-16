@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.15.1903"
+VERSION = "2026.04.16.0954"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -122,7 +122,7 @@ _STRINGS = {
                              "jp": u"\u3053\u306e\u8ddd\u96e2\u4ee5\u5185\u3067\u9802\u70b9\u3092\u5171\u6709\u3059\u308b\u4e09\u89d2\u5f62\u30da\u30a2\u306f\u4ea4\u5dee\u5224\u5b9a\u3092\u30b9\u30ad\u30c3\u30d7\u3057\u307e\u3059\u3002"},
 
     # ---- Move-to-Origin group ------------------------------------------
-    "grp_move":             {"en": "Move to Origin",                "jp": u"\u539f\u70b9\u79fb\u52d5"},
+    "grp_move":             {"en": "Move to Origin (BETA)",         "jp": u"\u539f\u70b9\u79fb\u52d5\uff08BETA\uff09"},
     "run_move_all":         {"en": "Run Move All",                  "jp": u"\u4e00\u62ec\u5b9f\u884c"},
     "lbl_move_offset":      {"en": "Stop offset:",                  "jp": u"\u505c\u6b62\u30aa\u30d5\u30bb\u30c3\u30c8:"},
     "tip_move_offset":      {"en": "Distance to keep between the moved element and the collision/origin.",
@@ -178,21 +178,39 @@ _STRINGS = {
     "help_text": {
         "en": "<h3>DW Collision Check</h3>"
               "<p>Detects polygon intersections (hair/cloth collisions) in the current frame or across an animation range.</p>"
-              "<h4>Static Checks</h4>"
+              "<h4>Check Tab</h4>"
               "<ul><li><b>Intersection Check</b>: Finds faces that physically penetrate each other.</li>"
-              "<li><b>Proximity Check</b>: Finds faces within the threshold distance.</li></ul>"
+              "<li><b>Overlap Check</b>: Finds coplanar overlapping faces (z-fighting / double faces).</li>"
+              "<li><b>Animation Scan</b>: Sweeps a frame range and reports collisions per frame, with optional baseline filtering.</li></ul>"
+              "<p><b>Depth threshold</b>: minimum penetration depth to report.<br>"
+              "<b>Vertex-share tolerance</b>: triangles sharing a vertex within this distance are skipped.</p>"
+              "<h4>Other Tab</h4>"
+              "<ul><li><b>Move to Origin (BETA)</b>: Moves the selection toward the world origin along the chosen axis (X/Y/Z), stopping just before another mesh or the origin.</li>"
+              "<ul><li><i>Keep Shape</i>: the entire selection moves as one rigid element.</li>"
+              "<li><i>Free</i>: each sub-element (vertex/edge/face) moves independently.</li>"
+              "<li><i>Stop offset</i>: distance kept between the moved element and the collision/origin.</li></ul></ul>"
               "<h4>Usage</h4>"
-              "<ol><li>Select meshes or define pairs in settings (⚙).</li>"
-              "<li>Click [Check] per item or [Run Static Checks] for all.</li>"
+              "<ol><li>Select meshes/components in the viewport.</li>"
+              "<li>For checks: click [Check] per item or [Run Static Checks].</li>"
+              "<li>For moves: pick the axis, mode, then click [Move] per item or [Run Move All].</li>"
               "<li>Click a result row to select the faces in the viewport.</li></ol>",
         "jp": u"<h3>DW \u5e72\u6e09\u30c1\u30a7\u30c3\u30af</h3>"
               u"<p>\u73fe\u5728\u30d5\u30ec\u30fc\u30e0\u307e\u305f\u306f\u30a2\u30cb\u30e1\u30fc\u30b7\u30e7\u30f3\u7bc4\u56f2\u5185\u3067\u30dd\u30ea\u30b4\u30f3\u306e\u5e72\u6e09\uff08\u9aea\u30fb\u5e03\u306e\u523a\u3055\u308a\uff09\u3092\u691c\u51fa\u3057\u307e\u3059\u3002</p>"
-              u"<h4>\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u30c1\u30a7\u30c3\u30af</h4>"
-              u"<ul><li><b>\u4ea4\u5dee\u30c1\u30a7\u30c3\u30af</b>: \u5b9f\u969b\u306b\u8cab\u901a\u3057\u3066\u3044\u308b\u30d5\u30a7\u30fc\u30b9\u3092\u691c\u51fa\u3002</li>"
-              u"<li><b>\u8fd1\u63a5\u30c1\u30a7\u30c3\u30af</b>: \u95be\u5024\u8ddd\u96e2\u4ee5\u5185\u306e\u30d5\u30a7\u30fc\u30b9\u3092\u691c\u51fa\u3002</li></ul>"
+              u"<h4>\u30c1\u30a7\u30c3\u30af\u30bf\u30d6</h4>"
+              u"<ul><li><b>\u4ea4\u5dee\u30c1\u30a7\u30c3\u30af</b>\uff1a\u5b9f\u969b\u306b\u8cab\u901a\u3057\u3066\u3044\u308b\u30d5\u30a7\u30fc\u30b9\u3092\u691c\u51fa\u3002</li>"
+              u"<li><b>\u91cd\u306a\u308a\u30c1\u30a7\u30c3\u30af</b>\uff1a\u540c\u4e00\u5e73\u9762\u4e0a\u3067\u91cd\u306a\u308b\u30d5\u30a7\u30fc\u30b9\uff08Z\u30d5\u30a1\u30a4\u30c8/\u4e8c\u91cd\u9762\uff09\u3092\u691c\u51fa\u3002</li>"
+              u"<li><b>\u30a2\u30cb\u30e1\u30fc\u30b7\u30e7\u30f3\u30b9\u30ad\u30e3\u30f3</b>\uff1a\u30d5\u30ec\u30fc\u30e0\u7bc4\u56f2\u3092\u8d70\u67fb\u3057\u3066\u30d5\u30ec\u30fc\u30e0\u3054\u3068\u306e\u5e72\u6e09\u3092\u8a18\u9332\u3002\u30d9\u30fc\u30b9\u30e9\u30a4\u30f3\u30d5\u30ec\u30fc\u30e0\u3092\u9664\u5916\u53ef\u80fd\u3002</li></ul>"
+              u"<p><b>\u6df1\u5ea6\u95be\u5024</b>\uff1a\u5831\u544a\u3059\u308b\u6700\u5c0f\u8cab\u5165\u6df1\u3055\u3002<br>"
+              u"<b>\u540c\u4e00\u9802\u70b9\u3068\u307f\u306a\u3059\u8ddd\u96e2</b>\uff1a\u3053\u306e\u8ddd\u96e2\u4ee5\u5185\u3067\u9802\u70b9\u3092\u5171\u6709\u3059\u308b\u4e09\u89d2\u5f62\u30da\u30a2\u306f\u4ea4\u5dee\u5224\u5b9a\u3092\u30b9\u30ad\u30c3\u30d7\u3002</p>"
+              u"<h4>\u305d\u306e\u4ed6\u30bf\u30d6</h4>"
+              u"<ul><li><b>\u539f\u70b9\u79fb\u52d5\uff08BETA\uff09</b>\uff1a\u9078\u629e\u3092\u6307\u5b9a\u8ef8\uff08X/Y/Z\uff09\u306b\u6cbf\u3063\u3066\u539f\u70b9\u65b9\u5411\u3078\u79fb\u52d5\u3057\u3001\u4ed6\u30e1\u30c3\u30b7\u30e5\u307e\u305f\u306f\u539f\u70b9\u306e\u624b\u524d\u3067\u505c\u6b62\u3002</li>"
+              u"<ul><li><i>\u5f62\u72b6\u7dad\u6301</i>\uff1a\u9078\u629e\u5168\u4f53\u3092\u4e00\u3064\u306e\u5264\u4f53\u3068\u3057\u3066\u79fb\u52d5\u3002</li>"
+              u"<li><i>\u500b\u5225\u5909\u5f62</i>\uff1a\u5404\u9802\u70b9/\u30a8\u30c3\u30b8/\u30d5\u30a7\u30fc\u30b9\u3092\u500b\u5225\u306b\u79fb\u52d5\u3002</li>"
+              u"<li><i>\u505c\u6b62\u30aa\u30d5\u30bb\u30c3\u30c8</i>\uff1a\u8870\u7a81\u9762\u30fb\u539f\u70b9\u3068\u306e\u9593\u306b\u6b8b\u3059\u9694\u305f\u308a\u8ddd\u96e2\u3002</li></ul></ul>"
               u"<h4>\u4f7f\u3044\u65b9</h4>"
-              u"<ol><li>\u30e1\u30c3\u30b7\u30e5\u3092\u9078\u629e\u3059\u308b\u304b\u3001\u8a2d\u5b9a(\u2699)\u3067\u30da\u30a2\u3092\u767b\u9332\u3002</li>"
-              u"<li>[Check] \u307e\u305f\u306f [\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u5b9f\u884c] \u3092\u30af\u30ea\u30c3\u30af\u3002</li>"
+              u"<ol><li>\u30d3\u30e5\u30fc\u30dd\u30fc\u30c8\u3067\u30e1\u30c3\u30b7\u30e5\u30fb\u30b3\u30f3\u30dd\u30fc\u30cd\u30f3\u30c8\u3092\u9078\u629e\u3002</li>"
+              u"<li>\u30c1\u30a7\u30c3\u30af\uff1a[\u30c1\u30a7\u30c3\u30af] \u307e\u305f\u306f [\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u5b9f\u884c]\u3002</li>"
+              u"<li>\u79fb\u52d5\uff1a\u8ef8\u3068\u30e2\u30fc\u30c9\u3092\u9078\u3093\u3067 [\u79fb\u52d5] \u307e\u305f\u306f [\u4e00\u62ec\u5b9f\u884c]\u3002</li>"
               u"<li>\u7d50\u679c\u884c\u3092\u30af\u30ea\u30c3\u30af\u3059\u308b\u3068\u30d3\u30e5\u30fc\u30dd\u30fc\u30c8\u3067\u30d5\u30a7\u30fc\u30b9\u3092\u9078\u629e\u3002</li></ol>",
     },
 }
@@ -3017,7 +3035,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
 
         main_lo.addLayout(header)
 
-        # ---- Selection mode row ----
+        # ---- Selection mode row (built here; placed inside Check tab below) ----
         sel_row = QtWidgets.QHBoxLayout()
         sel_row.setContentsMargins(4, 0, 4, 0)
         self._cb_selected_only = QtWidgets.QCheckBox(tr("chk_selected_only"))
@@ -3037,7 +3055,8 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         sel_row.addWidget(self._cb_self_intersect)
 
         sel_row.addStretch()
-        main_lo.addLayout(sel_row)
+        # NOTE: sel_row is added to the Check tab's scroll area below
+        #       (not to main_lo) so that the toggles only apply to checks.
 
         # ---- Tab widget (Check / Other) ----
         self._tabs = QtWidgets.QTabWidget()
@@ -3064,6 +3083,9 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         scroll_lo = QtWidgets.QVBoxLayout(check_scroll_w)
         scroll_lo.setContentsMargins(4, 4, 4, 4)
         scroll_lo.setSpacing(8)
+
+        # Selection toggles (moved here from outside the tabs)
+        scroll_lo.addLayout(sel_row)
 
         # ---- Static Check Group (blue border) ----
         static_grp = QtWidgets.QGroupBox()
@@ -3974,7 +3996,12 @@ class OriginRaycaster(object):
             hit_b2    = om.MFloatArray()
 
             try:
-                ok = fn.allIntersections(
+                # api1 allIntersections fills the output arrays in-place.
+                # The return value is unreliable across Maya versions
+                # (sometimes None, sometimes MStatus, sometimes self) -
+                # we MUST NOT branch on it. Instead we trust the output
+                # arrays.
+                fn.allIntersections(
                     ray_src, ray_dir,
                     None,            # faceIds filter
                     None,            # triIds filter
@@ -3988,9 +4015,7 @@ class OriginRaycaster(object):
                     _RAY_EPS,        # tolerance
                 )
             except Exception:
-                ok = False
-
-            if not ok:
+                # On a real failure we just skip this shape
                 continue
 
             n = hit_rps.length()

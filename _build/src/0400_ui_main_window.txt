@@ -121,7 +121,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
 
         main_lo.addLayout(header)
 
-        # ---- Selection mode row ----
+        # ---- Selection mode row (built here; placed inside Check tab below) ----
         sel_row = QtWidgets.QHBoxLayout()
         sel_row.setContentsMargins(4, 0, 4, 0)
         self._cb_selected_only = QtWidgets.QCheckBox(tr("chk_selected_only"))
@@ -141,7 +141,8 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         sel_row.addWidget(self._cb_self_intersect)
 
         sel_row.addStretch()
-        main_lo.addLayout(sel_row)
+        # NOTE: sel_row is added to the Check tab's scroll area below
+        #       (not to main_lo) so that the toggles only apply to checks.
 
         # ---- Tab widget (Check / Other) ----
         self._tabs = QtWidgets.QTabWidget()
@@ -168,6 +169,9 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         scroll_lo = QtWidgets.QVBoxLayout(check_scroll_w)
         scroll_lo.setContentsMargins(4, 4, 4, 4)
         scroll_lo.setSpacing(8)
+
+        # Selection toggles (moved here from outside the tabs)
+        scroll_lo.addLayout(sel_row)
 
         # ---- Static Check Group (blue border) ----
         static_grp = QtWidgets.QGroupBox()

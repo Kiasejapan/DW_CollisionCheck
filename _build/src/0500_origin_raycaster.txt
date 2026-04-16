@@ -148,7 +148,12 @@ class OriginRaycaster(object):
             hit_b2    = om.MFloatArray()
 
             try:
-                ok = fn.allIntersections(
+                # api1 allIntersections fills the output arrays in-place.
+                # The return value is unreliable across Maya versions
+                # (sometimes None, sometimes MStatus, sometimes self) -
+                # we MUST NOT branch on it. Instead we trust the output
+                # arrays.
+                fn.allIntersections(
                     ray_src, ray_dir,
                     None,            # faceIds filter
                     None,            # triIds filter
@@ -162,9 +167,7 @@ class OriginRaycaster(object):
                     _RAY_EPS,        # tolerance
                 )
             except Exception:
-                ok = False
-
-            if not ok:
+                # On a real failure we just skip this shape
                 continue
 
             n = hit_rps.length()
