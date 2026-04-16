@@ -229,8 +229,20 @@ class MoveToOriginCore(object):
         self.moved += 1
 
     def move_vertices_individual(self, mesh_shape, vert_indices):
-        self._move_individual_with_collision_check(
-            mesh_shape, vert_indices, vert_indices)
+        """Each vertex is its own element; cast a ray from each vertex
+        toward origin along the chosen axis."""
+        for vi in vert_indices:
+            p = self._get_vert_positions(mesh_shape, [vi])
+            if not p:
+                self.skipped += 1
+                continue
+            delta, moved = self._compute_delta(p[0], p,
+                                               self_shape=mesh_shape)
+            if not moved:
+                self.skipped += 1
+                continue
+            self._translate_vertices(mesh_shape, [vi], delta)
+            self.moved += 1
 
     # ---- Edges --------------------------------------------------------
     def move_edges_rigid(self, mesh_shape, edge_indices):
@@ -252,12 +264,24 @@ class MoveToOriginCore(object):
         self.moved += 1
 
     def move_edges_individual(self, mesh_shape, edge_indices):
-        all_vidx = self._verts_from_edges(mesh_shape, edge_indices)
-        if not all_vidx:
-            self.skipped += 1
-            return
-        self._move_individual_with_collision_check(
-            mesh_shape, all_vidx, all_vidx)
+        """Each edge is its own element (its two endpoints share one delta)."""
+        for ei in edge_indices:
+            vidx = self._verts_from_edges(mesh_shape, [ei])
+            if not vidx:
+                self.skipped += 1
+                continue
+            pts = self._get_vert_positions(mesh_shape, vidx)
+            if not pts:
+                self.skipped += 1
+                continue
+            # Use the leading endpoint for raycast, apply same delta to both
+            delta, moved = self._compute_rigid_delta(pts,
+                                                     self_shape=mesh_shape)
+            if not moved:
+                self.skipped += 1
+                continue
+            self._translate_vertices(mesh_shape, vidx, delta)
+            self.moved += 1
 
     # ---- Faces --------------------------------------------------------
     def move_faces_rigid(self, mesh_shape, face_indices):
@@ -279,12 +303,34 @@ class MoveToOriginCore(object):
         self.moved += 1
 
     def move_faces_individual(self, mesh_shape, face_indices):
-        all_vidx = self._verts_from_faces(mesh_shape, face_indices)
-        if not all_vidx:
-            self.skipped += 1
-            return
-        self._move_individual_with_collision_check(
-            mesh_shape, all_vidx, all_vidx)
+        """Each face is its own element; all its vertices share one delta
+        computed from the rigid algorithm (every vertex's ray is considered)."""
+        for fi in face_indices:
+            vidx = self._verts_from_faces(mesh_shape, [fi])
+            if not vidx:
+                self.skipped += 1
+                continue
+            pts = self._get_vert_positions(mesh_shape, vidx)
+            if not pts:
+                self.skipped += 1
+                continue
+            delta, moved = self._compute_rigid_delta(pts,
+                                                     self_shape=mesh_shape)
+            if not moved:
+                self.skipped += 1
+                continue
+            self._translate_vertices(mesh_shape, vidx, delta)
+            self.moved += 1
+
+    # =================================================================
+    # (Previously: per-vertex collision-check binary search)
+    # Now disabled: the simple per-vertex independent move above is the
+    # intended behaviour. Post-move wall-avoidance is handled by the fact
+    # that each vertex stops at its OWN wall during raycast. Mesh-face
+    # penetration for tilted quads is an inherent limitation of component
+    # moves and would require an NxN vertex search that is too slow to
+    # do inside a single click.
+    # =================================================================
 
     # =================================================================
     # Individual move with post-move collision check (per-vertex search)

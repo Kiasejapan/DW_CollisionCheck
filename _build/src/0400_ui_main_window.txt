@@ -13,8 +13,11 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
 
         super(CollisionCheckToolWindow, self).__init__(parent)
         self.setWindowTitle(tr("window_title"))
-        self.setMinimumWidth(440)
-        self.setMinimumHeight(320)
+        self.setMinimumWidth(460)
+        self.setMinimumHeight(560)
+        # Initial resize: comfortably shows all Check-tab content
+        # (Static + thresholds + Animation Scan) without scrolling.
+        self.resize(480, 680)
         self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
         self.setStyleSheet(_MAIN_SS)
