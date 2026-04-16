@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.16.1034"
+VERSION = "2026.04.16.1043"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -4172,9 +4172,7 @@ class MoveToOriginCore(object):
         return delta, True
 
     def _find_leading_point(self, pts):
-        """Among `pts`, return the one closest to the origin along self.axis.
-        This is the point that will hit a wall first when moving toward origin.
-        """
+        """Among `pts`, return the one closest to the origin along self.axis."""
         ax = self.axis
         best = None
         best_abs = None
@@ -4188,43 +4186,72 @@ class MoveToOriginCore(object):
     def _compute_rigid_delta(self, pts, self_shape=None):
         """Compute a single delta for rigid-body move of a set of points.
 
-        Strategy: find the vertex that is CLOSEST to the axis-plane (the
-        "leading" vertex that will hit a wall first). Raycast from THAT
-        vertex. Apply the resulting distance to ALL vertices.
+        Strategy: cast a ray from EVERY vertex toward the origin along the
+        chosen axis. For each vertex, collect the shortest hit distance
+        (including the dist-to-origin-plane as a virtual hit). Then take
+        the MINIMUM across ALL vertices. This guarantees no vertex will
+        penetrate any wall.
 
-        This guarantees that no vertex penetrates the wall, because the
-        leading vertex stops at the wall, and all other vertices are
-        further from the origin (so they stay on the safe side).
+        The distance for each vertex is measured from *that* vertex's own
+        axis-coordinate, so we convert each per-vertex safe-distance into
+        a "move distance from the leading point" to keep them comparable.
         """
         if not pts:
             return (0.0, 0.0, 0.0), False
 
+        ax = self.axis
+
+        # Determine sign from the leading vertex (closest to 0)
         leader = self._find_leading_point(pts)
         if leader is None:
             return (0.0, 0.0, 0.0), False
+        leader_coord = leader[ax]
+        if abs(leader_coord) < _MOVE_EPS:
+            return (0.0, 0.0, 0.0), False
 
-        coord = leader[self.axis]
-        if abs(coord) < _MOVE_EPS:
-            return (0.0, 0.0, 0.0), False  # already on the plane
-
-        sign = -1.0 if coord > 0.0 else 1.0
+        sign = -1.0 if leader_coord > 0.0 else 1.0
         direction = [0.0, 0.0, 0.0]
-        direction[self.axis] = sign
+        direction[ax] = sign
         direction = tuple(direction)
 
-        dist_to_plane = abs(coord)
+        # For each vertex, compute its own safe travel distance.
+        # safe_travel = (shortest hit dist from vertex) - offset
+        # Then convert to how far the *whole group* can move:
+        #   group_move_limit = safe_travel
+        # because all vertices move the same delta along the axis.
 
-        # Raycast from the leading vertex
-        hits = self.raycaster.cast(
-            leader, direction,
-            exclude_vert_positions=pts,
-            max_distance=None,
-            self_shape=self_shape)
+        min_safe = None
+        for p in pts:
+            p_coord = p[ax]
+            if abs(p_coord) < _MOVE_EPS:
+                # This vertex is already on the plane -> group can't move
+                return (0.0, 0.0, 0.0), False
 
-        candidates = list(hits)
-        candidates.append(dist_to_plane)
-        move_dist = min(candidates)
-        final_dist = move_dist - self.offset
+            # Check this vertex faces the same direction as the group
+            p_sign = -1.0 if p_coord > 0.0 else 1.0
+            if p_sign != sign:
+                # Mixed sides of the origin; skip this vertex
+                continue
+
+            dist_to_plane = abs(p_coord)
+
+            hits = self.raycaster.cast(
+                p, direction,
+                exclude_vert_positions=pts,
+                max_distance=None,
+                self_shape=self_shape)
+
+            candidates = list(hits)
+            candidates.append(dist_to_plane)
+            vertex_safe = min(candidates)
+
+            if min_safe is None or vertex_safe < min_safe:
+                min_safe = vertex_safe
+
+        if min_safe is None:
+            return (0.0, 0.0, 0.0), False
+
+        final_dist = min_safe - self.offset
         if final_dist < 0.0:
             final_dist = 0.0
 
