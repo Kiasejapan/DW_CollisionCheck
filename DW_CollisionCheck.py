@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.16.1005"
+VERSION = "2026.04.16.1034"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -4171,6 +4171,68 @@ class MoveToOriginCore(object):
                  direction[2] * final_dist)
         return delta, True
 
+    def _find_leading_point(self, pts):
+        """Among `pts`, return the one closest to the origin along self.axis.
+        This is the point that will hit a wall first when moving toward origin.
+        """
+        ax = self.axis
+        best = None
+        best_abs = None
+        for p in pts:
+            a = abs(p[ax])
+            if best_abs is None or a < best_abs:
+                best = p
+                best_abs = a
+        return best
+
+    def _compute_rigid_delta(self, pts, self_shape=None):
+        """Compute a single delta for rigid-body move of a set of points.
+
+        Strategy: find the vertex that is CLOSEST to the axis-plane (the
+        "leading" vertex that will hit a wall first). Raycast from THAT
+        vertex. Apply the resulting distance to ALL vertices.
+
+        This guarantees that no vertex penetrates the wall, because the
+        leading vertex stops at the wall, and all other vertices are
+        further from the origin (so they stay on the safe side).
+        """
+        if not pts:
+            return (0.0, 0.0, 0.0), False
+
+        leader = self._find_leading_point(pts)
+        if leader is None:
+            return (0.0, 0.0, 0.0), False
+
+        coord = leader[self.axis]
+        if abs(coord) < _MOVE_EPS:
+            return (0.0, 0.0, 0.0), False  # already on the plane
+
+        sign = -1.0 if coord > 0.0 else 1.0
+        direction = [0.0, 0.0, 0.0]
+        direction[self.axis] = sign
+        direction = tuple(direction)
+
+        dist_to_plane = abs(coord)
+
+        # Raycast from the leading vertex
+        hits = self.raycaster.cast(
+            leader, direction,
+            exclude_vert_positions=pts,
+            max_distance=None,
+            self_shape=self_shape)
+
+        candidates = list(hits)
+        candidates.append(dist_to_plane)
+        move_dist = min(candidates)
+        final_dist = move_dist - self.offset
+        if final_dist < 0.0:
+            final_dist = 0.0
+
+        delta = (direction[0] * final_dist,
+                 direction[1] * final_dist,
+                 direction[2] * final_dist)
+        return delta, True
+
     # ---- Mesh ---------------------------------------------------------
     def move_mesh(self, mesh_shape):
         if not MAYA_AVAILABLE:
@@ -4181,20 +4243,18 @@ class MoveToOriginCore(object):
             return
         try:
             bb = cmds.exactWorldBoundingBox(mesh_shape)
-            center = ((bb[0] + bb[3]) * 0.5,
-                      (bb[1] + bb[4]) * 0.5,
-                      (bb[2] + bb[5]) * 0.5)
         except Exception:
             self.skipped += 1
             return
-        ex = [
+
+        # Build 8 bounding-box corners + center as representative points
+        corners = [
             (bb[0], bb[1], bb[2]), (bb[3], bb[1], bb[2]),
             (bb[0], bb[4], bb[2]), (bb[3], bb[4], bb[2]),
             (bb[0], bb[1], bb[5]), (bb[3], bb[1], bb[5]),
             (bb[0], bb[4], bb[5]), (bb[3], bb[4], bb[5]),
-            center,
         ]
-        delta, moved = self._compute_delta(center, ex, self_shape=mesh_shape)
+        delta, moved = self._compute_rigid_delta(corners, self_shape=mesh_shape)
         if not moved:
             self.skipped += 1
             return
@@ -4213,8 +4273,7 @@ class MoveToOriginCore(object):
         if not pts:
             self.skipped += 1
             return
-        center = _avg_point(pts)
-        delta, moved = self._compute_delta(center, pts, self_shape=mesh_shape)
+        delta, moved = self._compute_rigid_delta(pts, self_shape=mesh_shape)
         if not moved:
             self.skipped += 1
             return
@@ -4246,8 +4305,7 @@ class MoveToOriginCore(object):
         if not pts:
             self.skipped += 1
             return
-        center = _avg_point(pts)
-        delta, moved = self._compute_delta(center, pts, self_shape=mesh_shape)
+        delta, moved = self._compute_rigid_delta(pts, self_shape=mesh_shape)
         if not moved:
             self.skipped += 1
             return
@@ -4284,8 +4342,7 @@ class MoveToOriginCore(object):
         if not pts:
             self.skipped += 1
             return
-        center = _avg_point(pts)
-        delta, moved = self._compute_delta(center, pts, self_shape=mesh_shape)
+        delta, moved = self._compute_rigid_delta(pts, self_shape=mesh_shape)
         if not moved:
             self.skipped += 1
             return
