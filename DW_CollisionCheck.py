@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.16.1044"
+VERSION = "2026.04.16.1055"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -4308,17 +4308,8 @@ class MoveToOriginCore(object):
         self.moved += 1
 
     def move_vertices_individual(self, mesh_shape, vert_indices):
-        for vi in vert_indices:
-            pts = self._get_vert_positions(mesh_shape, [vi])
-            if not pts:
-                self.skipped += 1
-                continue
-            delta, moved = self._compute_delta(pts[0], pts, self_shape=mesh_shape)
-            if not moved:
-                self.skipped += 1
-                continue
-            self._translate_vertices(mesh_shape, [vi], delta)
-            self.moved += 1
+        self._move_individual_with_collision_check(
+            mesh_shape, vert_indices, vert_indices)
 
     # ---- Edges --------------------------------------------------------
     def move_edges_rigid(self, mesh_shape, edge_indices):
@@ -4340,22 +4331,12 @@ class MoveToOriginCore(object):
         self.moved += 1
 
     def move_edges_individual(self, mesh_shape, edge_indices):
-        for ei in edge_indices:
-            vidx = self._verts_from_edges(mesh_shape, [ei])
-            if not vidx:
-                self.skipped += 1
-                continue
-            pts = self._get_vert_positions(mesh_shape, vidx)
-            if not pts:
-                self.skipped += 1
-                continue
-            center = _avg_point(pts)
-            delta, moved = self._compute_delta(center, pts, self_shape=mesh_shape)
-            if not moved:
-                self.skipped += 1
-                continue
-            self._translate_vertices(mesh_shape, vidx, delta)
-            self.moved += 1
+        all_vidx = self._verts_from_edges(mesh_shape, edge_indices)
+        if not all_vidx:
+            self.skipped += 1
+            return
+        self._move_individual_with_collision_check(
+            mesh_shape, all_vidx, all_vidx)
 
     # ---- Faces --------------------------------------------------------
     def move_faces_rigid(self, mesh_shape, face_indices):
@@ -4377,22 +4358,153 @@ class MoveToOriginCore(object):
         self.moved += 1
 
     def move_faces_individual(self, mesh_shape, face_indices):
-        for fi in face_indices:
-            vidx = self._verts_from_faces(mesh_shape, [fi])
-            if not vidx:
-                self.skipped += 1
+        all_vidx = self._verts_from_faces(mesh_shape, face_indices)
+        if not all_vidx:
+            self.skipped += 1
+            return
+        self._move_individual_with_collision_check(
+            mesh_shape, all_vidx, all_vidx)
+
+    # =================================================================
+    # Individual move with post-move collision check (binary search)
+    # =================================================================
+    def _move_individual_with_collision_check(self, mesh_shape, vert_indices,
+                                              all_involved_verts):
+        """
+        Move each vertex individually toward origin, then verify that the
+        resulting mesh does not intersect other meshes. If it does, scale
+        back ALL vertex deltas by a binary-searched factor until no
+        intersection remains.
+
+        Steps:
+          1. Compute per-vertex delta via raycast (individual distances).
+          2. Apply full deltas.
+          3. Run CollisionDetector (self mesh vs all other meshes).
+          4. If intersection found, undo the move, try with factor *= 0.5,
+             repeat (binary search up to 8 iterations).
+          5. Settle on the largest factor that causes no intersection.
+        """
+        if not vert_indices:
+            return
+
+        # unique vertex indices
+        vidx_unique = list(set(vert_indices))
+
+        # 1. Compute per-vertex deltas
+        pts_orig = {}  # {vi: (x,y,z)}
+        deltas   = {}  # {vi: (dx,dy,dz)}
+        any_moved = False
+        for vi in vidx_unique:
+            p = self._get_vert_positions(mesh_shape, [vi])
+            if not p:
                 continue
-            pts = self._get_vert_positions(mesh_shape, vidx)
-            if not pts:
-                self.skipped += 1
+            pts_orig[vi] = p[0]
+            d, ok = self._compute_delta(p[0], p, self_shape=mesh_shape)
+            if ok and (abs(d[0]) > _MOVE_EPS or abs(d[1]) > _MOVE_EPS
+                       or abs(d[2]) > _MOVE_EPS):
+                deltas[vi] = d
+                any_moved = True
+            else:
+                deltas[vi] = (0.0, 0.0, 0.0)
+
+        if not any_moved:
+            self.skipped += len(vidx_unique)
+            return
+
+        # Get other mesh shapes for collision check
+        other_shapes = []
+        for s in MayaBridge.get_mesh_shapes():
+            if s != mesh_shape:
+                other_shapes.append(s)
+
+        # 2. Binary search for safe factor
+        _MAX_ITER = 8
+        lo = 0.0
+        hi = 1.0
+        best_factor = 0.0  # 0.0 = no move (safe fallback)
+
+        for iteration in range(_MAX_ITER):
+            mid = (lo + hi) * 0.5
+
+            # Apply deltas at factor = mid
+            new_positions = {}
+            for vi in vidx_unique:
+                ox, oy, oz = pts_orig[vi]
+                dx, dy, dz = deltas[vi]
+                new_positions[vi] = (ox + dx * mid,
+                                     oy + dy * mid,
+                                     oz + dz * mid)
+            self._set_vertex_positions(mesh_shape, new_positions)
+
+            # 3. Check for intersection with other meshes
+            has_collision = self._check_collision_with_others(
+                mesh_shape, other_shapes)
+
+            if has_collision:
+                # Too far; reduce
+                hi = mid
+            else:
+                # Safe; try going further
+                best_factor = mid
+                lo = mid
+
+        # 4. Apply the best safe factor
+        final_positions = {}
+        for vi in vidx_unique:
+            ox, oy, oz = pts_orig[vi]
+            dx, dy, dz = deltas[vi]
+            final_positions[vi] = (ox + dx * best_factor,
+                                   oy + dy * best_factor,
+                                   oz + dz * best_factor)
+        self._set_vertex_positions(mesh_shape, final_positions)
+
+        moved_count = sum(1 for vi in vidx_unique
+                          if abs(deltas[vi][0]) > _MOVE_EPS
+                          or abs(deltas[vi][1]) > _MOVE_EPS
+                          or abs(deltas[vi][2]) > _MOVE_EPS)
+        self.moved += moved_count if best_factor > _MOVE_EPS else 0
+        if best_factor <= _MOVE_EPS:
+            self.skipped += len(vidx_unique)
+
+    def _check_collision_with_others(self, mesh_shape, other_shapes):
+        """Quick intersection check: mesh_shape vs each other_shape.
+        Returns True if ANY intersection is found.
+        Uses CollisionDetector (existing BVH-based checker).
+        """
+        try:
+            tris_a, map_a, vids_a = MayaBridge.get_triangles(mesh_shape)
+        except Exception:
+            return False
+        if not tris_a:
+            return False
+
+        for other in other_shapes:
+            try:
+                tris_b, map_b, vids_b = MayaBridge.get_triangles(other)
+            except Exception:
                 continue
-            center = _avg_point(pts)
-            delta, moved = self._compute_delta(center, pts, self_shape=mesh_shape)
-            if not moved:
-                self.skipped += 1
+            if not tris_b:
                 continue
-            self._translate_vertices(mesh_shape, vidx, delta)
-            self.moved += 1
+            # Quick AABB pre-check
+            aabb_a = _compute_tris_aabb(tris_a)
+            aabb_b = _compute_tris_aabb(tris_b)
+            if not _aabbs_overlap(aabb_a, aabb_b):
+                continue
+            det = CollisionDetector(tris_a, tris_b)
+            hits = det.check(threshold=0.0, backface_cull=True)
+            if hits:
+                return True
+        return False
+
+    @staticmethod
+    def _set_vertex_positions(mesh_shape, vi_to_pos):
+        """Set absolute world-space positions for multiple vertices."""
+        for vi, pos in vi_to_pos.items():
+            try:
+                cmds.xform("{0}.vtx[{1}]".format(mesh_shape, vi),
+                           ws=True, t=(pos[0], pos[1], pos[2]))
+            except Exception:
+                pass
 
     # ---- helpers ------------------------------------------------------
     @staticmethod
