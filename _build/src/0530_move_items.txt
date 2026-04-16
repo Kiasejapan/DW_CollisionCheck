@@ -1,15 +1,13 @@
 # ---------------------------------------------------------------------------
 # Concrete MoveItem subclasses (Mesh / Vertex / Edge / Face)
-# Each item has a `mode` ("rigid" or "individual") that the UI can toggle.
-# Mesh has only "rigid" semantics (each transform is one element).
+# Rigid (shape-preserving) move only; no per-vertex individual mode.
 # ---------------------------------------------------------------------------
 
 
 class MoveMeshToOrigin(MoveItem):
-    label_key      = "move_mesh"
-    desc_key       = "move_mesh_desc"
-    accepts_kind   = "objects"
-    supports_modes = False  # Mesh = always per-transform
+    label_key    = "move_mesh"
+    desc_key     = "move_mesh_desc"
+    accepts_kind = "objects"
 
     def _perform(self, parsed, core):
         for shape in parsed["objects"]:
@@ -17,45 +15,33 @@ class MoveMeshToOrigin(MoveItem):
 
 
 class MoveVertexToOrigin(MoveItem):
-    label_key      = "move_vertex"
-    desc_key       = "move_vertex_desc"
-    accepts_kind   = "vertices"
-    supports_modes = True
+    label_key    = "move_vertex"
+    desc_key     = "move_vertex_desc"
+    accepts_kind = "vertices"
 
     def _perform(self, parsed, core):
         for shape, idxs in parsed["vertices"].items():
-            if self.mode == MOVE_MODE_INDIVIDUAL:
-                core.move_vertices_individual(shape, idxs)
-            else:
-                core.move_vertices_rigid(shape, idxs)
+            core.move_vertices_rigid(shape, idxs)
 
 
 class MoveEdgeToOrigin(MoveItem):
-    label_key      = "move_edge"
-    desc_key       = "move_edge_desc"
-    accepts_kind   = "edges"
-    supports_modes = True
+    label_key    = "move_edge"
+    desc_key     = "move_edge_desc"
+    accepts_kind = "edges"
 
     def _perform(self, parsed, core):
         for shape, idxs in parsed["edges"].items():
-            if self.mode == MOVE_MODE_INDIVIDUAL:
-                core.move_edges_individual(shape, idxs)
-            else:
-                core.move_edges_rigid(shape, idxs)
+            core.move_edges_rigid(shape, idxs)
 
 
 class MoveFaceToOrigin(MoveItem):
-    label_key      = "move_face"
-    desc_key       = "move_face_desc"
-    accepts_kind   = "faces"
-    supports_modes = True
+    label_key    = "move_face"
+    desc_key     = "move_face_desc"
+    accepts_kind = "faces"
 
     def _perform(self, parsed, core):
         for shape, idxs in parsed["faces"].items():
-            if self.mode == MOVE_MODE_INDIVIDUAL:
-                core.move_faces_individual(shape, idxs)
-            else:
-                core.move_faces_rigid(shape, idxs)
+            core.move_faces_rigid(shape, idxs)
 
 
 # Registry consumed by the main window

@@ -81,25 +81,17 @@ class MoveItem(CheckItem):
     Base for move-to-origin actions. Subclasses implement `_perform`.
 
     Class attributes:
-        accepts_kind   : "objects" / "vertices" / "edges" / "faces"
-        supports_modes : True if user can toggle rigid/individual
-        is_action      : True (used by CheckItemWidget to switch button label)
+        accepts_kind : "objects" / "vertices" / "edges" / "faces"
+        is_action    : True (used by CheckItemWidget to switch button label)
     """
     can_auto_fix    = False
     default_enabled = True
     accepts_kind    = None
-    supports_modes  = False
     is_action       = True
-    _default_mode   = MOVE_MODE_RIGID
 
     def __init__(self):
         super(MoveItem, self).__init__()
-        self.mode = self._default_mode  # "rigid" or "individual"
         self._last_summary = u""
-
-    def set_mode(self, mode):
-        if mode in (MOVE_MODE_RIGID, MOVE_MODE_INDIVIDUAL):
-            self.mode = mode
 
     def check(self):
         """Performs the move; returns issues list as a status carrier."""

@@ -111,12 +111,7 @@ _STRINGS = {
     "axis_z":               {"en": "Z",                             "jp": u"Z"},
 
     "btn_move":             {"en": "Move",                          "jp": u"\u79fb\u52d5"},
-    "mode_rigid":           {"en": "Keep Shape",                    "jp": u"\u5f62\u72b6\u7dad\u6301"},
-    "mode_individual":      {"en": "Free",                          "jp": u"\u500b\u5225\u5909\u5f62"},
-    "tip_mode_rigid":       {"en": "Move the entire selection as ONE rigid element (preserves shape).",
-                             "jp": u"\u9078\u629e\u5168\u4f53\u3092\u4e00\u3064\u306e\u5264\u4f53\u3068\u3057\u3066\u79fb\u52d5\uff08\u5f62\u72b6\u3092\u4fdd\u3061\u307e\u3059\uff09\u3002"},
-    "tip_mode_individual":  {"en": "Move each sub-element (vertex/edge/face) independently (shape may collapse).",
-                             "jp": u"\u5404\u8981\u7d20\uff08\u9802\u70b9/\u30a8\u30c3\u30b8/\u30d5\u30a7\u30fc\u30b9\uff09\u3092\u500b\u5225\u306b\u79fb\u52d5\uff08\u5f62\u72b6\u306f\u5d29\u308c\u308b\u53ef\u80fd\u6027\u3042\u308a\uff09\u3002"},    "anim_scanning":        {"en": "Scanning frame {frame}/{total}...",
+    "anim_scanning":        {"en": "Scanning frame {frame}/{total}...",
                              "jp": u"\u30d5\u30ec\u30fc\u30e0 {frame}/{total} \u3092\u30b9\u30ad\u30e3\u30f3\u4e2d..."},
     "anim_done":            {"en": "Animation scan done: {count} frame(s) with issues.",
                              "jp": u"\u30a2\u30cb\u30e1\u30b9\u30ad\u30e3\u30f3\u5b8c\u4e86: {count} \u30d5\u30ec\u30fc\u30e0\u3067\u554f\u984c\u691c\u51fa\u3002"},
@@ -137,8 +132,7 @@ _STRINGS = {
               "<b>Vertex-share tolerance</b>: triangles sharing a vertex within this distance are skipped.</p>"
               "<h4>Other Tab</h4>"
               "<ul><li><b>Move to Origin (BETA)</b>: Moves the selection toward the world origin along the chosen axis (X/Y/Z), stopping just before another mesh or the origin.</li>"
-              "<ul><li><i>Keep Shape</i>: the entire selection moves as one rigid element.</li>"
-              "<li><i>Free</i>: each sub-element (vertex/edge/face) moves independently.</li>"
+              "<ul><li><i>Shape is preserved</i>: the entire selection moves as ONE rigid element; the most-forward vertex stops just before the nearest collision.</li>"
               "<li><i>Stop offset</i>: distance kept between the moved element and the collision/origin.</li></ul></ul>"
               "<h4>Usage</h4>"
               "<ol><li>Select meshes/components in the viewport.</li>"
@@ -155,13 +149,12 @@ _STRINGS = {
               u"<b>\u540c\u4e00\u9802\u70b9\u3068\u307f\u306a\u3059\u8ddd\u96e2</b>\uff1a\u3053\u306e\u8ddd\u96e2\u4ee5\u5185\u3067\u9802\u70b9\u3092\u5171\u6709\u3059\u308b\u4e09\u89d2\u5f62\u30da\u30a2\u306f\u4ea4\u5dee\u5224\u5b9a\u3092\u30b9\u30ad\u30c3\u30d7\u3002</p>"
               u"<h4>\u305d\u306e\u4ed6\u30bf\u30d6</h4>"
               u"<ul><li><b>\u539f\u70b9\u79fb\u52d5\uff08BETA\uff09</b>\uff1a\u9078\u629e\u3092\u6307\u5b9a\u8ef8\uff08X/Y/Z\uff09\u306b\u6cbf\u3063\u3066\u539f\u70b9\u65b9\u5411\u3078\u79fb\u52d5\u3057\u3001\u4ed6\u30e1\u30c3\u30b7\u30e5\u307e\u305f\u306f\u539f\u70b9\u306e\u624b\u524d\u3067\u505c\u6b62\u3002</li>"
-              u"<ul><li><i>\u5f62\u72b6\u7dad\u6301</i>\uff1a\u9078\u629e\u5168\u4f53\u3092\u4e00\u3064\u306e\u5264\u4f53\u3068\u3057\u3066\u79fb\u52d5\u3002</li>"
-              u"<li><i>\u500b\u5225\u5909\u5f62</i>\uff1a\u5404\u9802\u70b9/\u30a8\u30c3\u30b8/\u30d5\u30a7\u30fc\u30b9\u3092\u500b\u5225\u306b\u79fb\u52d5\u3002</li>"
+              u"<ul><li><i>\u5f62\u72b6\u3092\u4fdd\u3063\u305f\u307e\u307e\u79fb\u52d5</i>\uff1a\u9078\u629e\u5168\u4f53\u3092\u4e00\u3064\u306e\u5264\u4f53\u3068\u3057\u3066\u79fb\u52d5\u3057\u3001\u6700\u3082\u524d\u306e\u9802\u70b9\u304c\u6700\u8fd1\u306e\u58c1\u624b\u524d\u3067\u505c\u6b62\u3057\u307e\u3059\u3002</li>"
               u"<li><i>\u505c\u6b62\u30aa\u30d5\u30bb\u30c3\u30c8</i>\uff1a\u8870\u7a81\u9762\u30fb\u539f\u70b9\u3068\u306e\u9593\u306b\u6b8b\u3059\u9694\u305f\u308a\u8ddd\u96e2\u3002</li></ul></ul>"
               u"<h4>\u4f7f\u3044\u65b9</h4>"
               u"<ol><li>\u30d3\u30e5\u30fc\u30dd\u30fc\u30c8\u3067\u30e1\u30c3\u30b7\u30e5\u30fb\u30b3\u30f3\u30dd\u30fc\u30cd\u30f3\u30c8\u3092\u9078\u629e\u3002</li>"
               u"<li>\u30c1\u30a7\u30c3\u30af\uff1a[\u30c1\u30a7\u30c3\u30af] \u307e\u305f\u306f [\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u5b9f\u884c]\u3002</li>"
-              u"<li>\u79fb\u52d5\uff1a\u8ef8\u3068\u30e2\u30fc\u30c9\u3092\u9078\u3093\u3067 [\u79fb\u52d5] \u307e\u305f\u306f [\u4e00\u62ec\u5b9f\u884c]\u3002</li>"
+              u"<li>\u79fb\u52d5\uff1a\u8ef8\u3092\u9078\u3093\u3067 [\u79fb\u52d5] \u307e\u305f\u306f [\u4e00\u62ec\u5b9f\u884c]\u3002</li>"
               u"<li>\u7d50\u679c\u884c\u3092\u30af\u30ea\u30c3\u30af\u3059\u308b\u3068\u30d3\u30e5\u30fc\u30dd\u30fc\u30c8\u3067\u30d5\u30a7\u30fc\u30b9\u3092\u9078\u629e\u3002</li></ol>",
     },
 }

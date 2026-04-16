@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.16.1605"
+VERSION = "2026.04.16.1631"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -160,12 +160,7 @@ _STRINGS = {
     "axis_z":               {"en": "Z",                             "jp": u"Z"},
 
     "btn_move":             {"en": "Move",                          "jp": u"\u79fb\u52d5"},
-    "mode_rigid":           {"en": "Keep Shape",                    "jp": u"\u5f62\u72b6\u7dad\u6301"},
-    "mode_individual":      {"en": "Free",                          "jp": u"\u500b\u5225\u5909\u5f62"},
-    "tip_mode_rigid":       {"en": "Move the entire selection as ONE rigid element (preserves shape).",
-                             "jp": u"\u9078\u629e\u5168\u4f53\u3092\u4e00\u3064\u306e\u5264\u4f53\u3068\u3057\u3066\u79fb\u52d5\uff08\u5f62\u72b6\u3092\u4fdd\u3061\u307e\u3059\uff09\u3002"},
-    "tip_mode_individual":  {"en": "Move each sub-element (vertex/edge/face) independently (shape may collapse).",
-                             "jp": u"\u5404\u8981\u7d20\uff08\u9802\u70b9/\u30a8\u30c3\u30b8/\u30d5\u30a7\u30fc\u30b9\uff09\u3092\u500b\u5225\u306b\u79fb\u52d5\uff08\u5f62\u72b6\u306f\u5d29\u308c\u308b\u53ef\u80fd\u6027\u3042\u308a\uff09\u3002"},    "anim_scanning":        {"en": "Scanning frame {frame}/{total}...",
+    "anim_scanning":        {"en": "Scanning frame {frame}/{total}...",
                              "jp": u"\u30d5\u30ec\u30fc\u30e0 {frame}/{total} \u3092\u30b9\u30ad\u30e3\u30f3\u4e2d..."},
     "anim_done":            {"en": "Animation scan done: {count} frame(s) with issues.",
                              "jp": u"\u30a2\u30cb\u30e1\u30b9\u30ad\u30e3\u30f3\u5b8c\u4e86: {count} \u30d5\u30ec\u30fc\u30e0\u3067\u554f\u984c\u691c\u51fa\u3002"},
@@ -186,8 +181,7 @@ _STRINGS = {
               "<b>Vertex-share tolerance</b>: triangles sharing a vertex within this distance are skipped.</p>"
               "<h4>Other Tab</h4>"
               "<ul><li><b>Move to Origin (BETA)</b>: Moves the selection toward the world origin along the chosen axis (X/Y/Z), stopping just before another mesh or the origin.</li>"
-              "<ul><li><i>Keep Shape</i>: the entire selection moves as one rigid element.</li>"
-              "<li><i>Free</i>: each sub-element (vertex/edge/face) moves independently.</li>"
+              "<ul><li><i>Shape is preserved</i>: the entire selection moves as ONE rigid element; the most-forward vertex stops just before the nearest collision.</li>"
               "<li><i>Stop offset</i>: distance kept between the moved element and the collision/origin.</li></ul></ul>"
               "<h4>Usage</h4>"
               "<ol><li>Select meshes/components in the viewport.</li>"
@@ -204,13 +198,12 @@ _STRINGS = {
               u"<b>\u540c\u4e00\u9802\u70b9\u3068\u307f\u306a\u3059\u8ddd\u96e2</b>\uff1a\u3053\u306e\u8ddd\u96e2\u4ee5\u5185\u3067\u9802\u70b9\u3092\u5171\u6709\u3059\u308b\u4e09\u89d2\u5f62\u30da\u30a2\u306f\u4ea4\u5dee\u5224\u5b9a\u3092\u30b9\u30ad\u30c3\u30d7\u3002</p>"
               u"<h4>\u305d\u306e\u4ed6\u30bf\u30d6</h4>"
               u"<ul><li><b>\u539f\u70b9\u79fb\u52d5\uff08BETA\uff09</b>\uff1a\u9078\u629e\u3092\u6307\u5b9a\u8ef8\uff08X/Y/Z\uff09\u306b\u6cbf\u3063\u3066\u539f\u70b9\u65b9\u5411\u3078\u79fb\u52d5\u3057\u3001\u4ed6\u30e1\u30c3\u30b7\u30e5\u307e\u305f\u306f\u539f\u70b9\u306e\u624b\u524d\u3067\u505c\u6b62\u3002</li>"
-              u"<ul><li><i>\u5f62\u72b6\u7dad\u6301</i>\uff1a\u9078\u629e\u5168\u4f53\u3092\u4e00\u3064\u306e\u5264\u4f53\u3068\u3057\u3066\u79fb\u52d5\u3002</li>"
-              u"<li><i>\u500b\u5225\u5909\u5f62</i>\uff1a\u5404\u9802\u70b9/\u30a8\u30c3\u30b8/\u30d5\u30a7\u30fc\u30b9\u3092\u500b\u5225\u306b\u79fb\u52d5\u3002</li>"
+              u"<ul><li><i>\u5f62\u72b6\u3092\u4fdd\u3063\u305f\u307e\u307e\u79fb\u52d5</i>\uff1a\u9078\u629e\u5168\u4f53\u3092\u4e00\u3064\u306e\u5264\u4f53\u3068\u3057\u3066\u79fb\u52d5\u3057\u3001\u6700\u3082\u524d\u306e\u9802\u70b9\u304c\u6700\u8fd1\u306e\u58c1\u624b\u524d\u3067\u505c\u6b62\u3057\u307e\u3059\u3002</li>"
               u"<li><i>\u505c\u6b62\u30aa\u30d5\u30bb\u30c3\u30c8</i>\uff1a\u8870\u7a81\u9762\u30fb\u539f\u70b9\u3068\u306e\u9593\u306b\u6b8b\u3059\u9694\u305f\u308a\u8ddd\u96e2\u3002</li></ul></ul>"
               u"<h4>\u4f7f\u3044\u65b9</h4>"
               u"<ol><li>\u30d3\u30e5\u30fc\u30dd\u30fc\u30c8\u3067\u30e1\u30c3\u30b7\u30e5\u30fb\u30b3\u30f3\u30dd\u30fc\u30cd\u30f3\u30c8\u3092\u9078\u629e\u3002</li>"
               u"<li>\u30c1\u30a7\u30c3\u30af\uff1a[\u30c1\u30a7\u30c3\u30af] \u307e\u305f\u306f [\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u5b9f\u884c]\u3002</li>"
-              u"<li>\u79fb\u52d5\uff1a\u8ef8\u3068\u30e2\u30fc\u30c9\u3092\u9078\u3093\u3067 [\u79fb\u52d5] \u307e\u305f\u306f [\u4e00\u62ec\u5b9f\u884c]\u3002</li>"
+              u"<li>\u79fb\u52d5\uff1a\u8ef8\u3092\u9078\u3093\u3067 [\u79fb\u52d5] \u307e\u305f\u306f [\u4e00\u62ec\u5b9f\u884c]\u3002</li>"
               u"<li>\u7d50\u679c\u884c\u3092\u30af\u30ea\u30c3\u30af\u3059\u308b\u3068\u30d3\u30e5\u30fc\u30dd\u30fc\u30c8\u3067\u30d5\u30a7\u30fc\u30b9\u3092\u9078\u629e\u3002</li></ol>",
     },
 }
@@ -2776,24 +2769,6 @@ class CheckItemWidget(QtWidgets.QFrame):
             self._btn_settings.clicked.connect(self._open_settings)
             hl.addWidget(self._btn_settings)
 
-        # Mode toggle (Rigid/Indiv) - only for items declaring supports_modes
-        self._btn_mode = None
-        if getattr(self.check_item, "supports_modes", False):
-            self._btn_mode = QtWidgets.QPushButton(self._mode_label())
-            self._btn_mode.setFixedSize(74, 22)
-            self._btn_mode.setCheckable(True)
-            self._btn_mode.setChecked(
-                getattr(self.check_item, "mode", u"") == u"individual")
-            self._btn_mode.setStyleSheet(
-                "QPushButton{background-color:#455A64;color:#EEE;"
-                "border:1px solid #607D8B;border-radius:3px;font-size:10px}"
-                "QPushButton:hover{background-color:#546E7A}"
-                "QPushButton:checked{background-color:#FF7043;color:white;"
-                "border-color:#FF8A65}")
-            self._btn_mode.setToolTip(self._mode_tip())
-            self._btn_mode.toggled.connect(self._on_mode_toggled)
-            hl.addWidget(self._btn_mode)
-
         self._btn_check = QtWidgets.QPushButton(self._action_button_label())
         self._btn_check.setFixedSize(60, 22)
         self._btn_check.setStyleSheet(
@@ -2863,31 +2838,12 @@ class CheckItemWidget(QtWidgets.QFrame):
         self._title.setText(u"<b>{0}</b>".format(self.check_item.label))
         self._desc.setText(self.check_item.description)
         self._btn_check.setText(self._action_button_label())
-        if self._btn_mode is not None:
-            self._btn_mode.setText(self._mode_label())
-            self._btn_mode.setToolTip(self._mode_tip())
 
     def _action_button_label(self):
         # Move/action items use btn_move; checks use btn_check
         if getattr(self.check_item, "is_action", False):
             return tr("btn_move")
         return tr("btn_check")
-
-    def _mode_label(self):
-        m = getattr(self.check_item, "mode", u"rigid")
-        return tr("mode_individual" if m == u"individual" else "mode_rigid")
-
-    def _mode_tip(self):
-        m = getattr(self.check_item, "mode", u"rigid")
-        return tr("tip_mode_individual" if m == u"individual" else "tip_mode_rigid")
-
-    def _on_mode_toggled(self, checked):
-        new_mode = u"individual" if checked else u"rigid"
-        if hasattr(self.check_item, "set_mode"):
-            self.check_item.set_mode(new_mode)
-        if self._btn_mode is not None:
-            self._btn_mode.setText(self._mode_label())
-            self._btn_mode.setToolTip(self._mode_tip())
 
     def reset(self):
         self.check_item.status = "unchecked"
@@ -4081,25 +4037,37 @@ def _is_finite(v):
 def _is_finite_vec(v):
     return _is_finite(v[0]) and _is_finite(v[1]) and _is_finite(v[2])
 # ---------------------------------------------------------------------------
-# Move-to-Origin Core (axis-constrained)
+# Move-to-Origin Core (rigid, axis-constrained)
 # ---------------------------------------------------------------------------
-# Per-element move logic. Each element (mesh / vertex / edge / face) is
-# moved as a single unit toward the world origin ALONG ONE AXIS (X, Y, or
-# Z). The sign is auto-determined by the element center: if center is on
-# the +axis side, motion is along -axis; if on the -axis side, motion is
-# along +axis. If center is exactly on the axis-plane (|coord| < EPSILON),
-# the element is skipped.
+# Per-element move logic. Each selected element (mesh / vertex / edge / face)
+# is moved as ONE RIGID UNIT toward the world origin ALONG ONE AXIS
+# (X, Y, or Z). The sign is auto-determined from the "leading" vertex:
+# if the nearest vertex to the axis plane is on the +side, the whole
+# group moves in -axis direction (toward 0).
 #
-# Two modes per item type:
-#   - "rigid"      : selection moves as ONE element (one center, one delta,
-#                    same delta applied to all member vertices)
-#   - "individual" : each sub-element (each vertex, each edge, each face)
-#                    moves independently
+# Algorithm:
+#   1. For every vertex of the element, cast a ray toward the origin
+#      along the chosen axis.
+#   2. For each vertex, compute its safe travel distance:
+#         safe(v) = min( hit distances, |v.coord[axis]| )
+#      (The axis-plane itself is always included as a virtual hit so
+#       we never move past the origin.)
+#   3. The whole group moves by:
+#         move = max( 0, min(safe over all vertices) - offset )
+#      -> guarantees the most-forward vertex stops at (or just before)
+#         the nearest wall, keeping shape intact.
+#   4. Apply the resulting delta to every vertex of the element
+#      (or the transform, for the "mesh" operation).
+#
+# There is no "individual" mode: the tool always preserves shape.
 # ---------------------------------------------------------------------------
 
 _MOVE_EPS = 1.0e-5
 _DEFAULT_MOVE_OFFSET = [0.001]   # cm
 _DEFAULT_MOVE_AXIS   = [0]       # 0=X, 1=Y, 2=Z
+
+# Backwards-compatible mode constant (only rigid is used now)
+MOVE_MODE_RIGID = "rigid"
 
 
 def _get_move_offset():
@@ -4129,53 +4097,31 @@ def _set_move_axis(idx):
         _DEFAULT_MOVE_AXIS[0] = i
 
 
-# Mode constants
-MOVE_MODE_RIGID      = "rigid"
-MOVE_MODE_INDIVIDUAL = "individual"
+def _avg_point(pts):
+    sx = sy = sz = 0.0
+    for p in pts:
+        sx += p[0]; sy += p[1]; sz += p[2]
+    n = float(len(pts))
+    return (sx / n, sy / n, sz / n)
 
 
+# ===========================================================================
 class MoveToOriginCore(object):
     """Stateful core. axis: 0/1/2 (X/Y/Z). Sign auto from element center."""
 
     def __init__(self, offset=None, axis=None, target_shapes=None):
         self.offset = float(_get_move_offset() if offset is None else offset)
-        self.axis   = int(_get_move_axis() if axis is None else axis)
+        self.axis = int(_get_move_axis() if axis is None else axis)
         if self.axis not in (0, 1, 2):
             self.axis = 0
         self.raycaster = OriginRaycaster(target_shapes=target_shapes)
-        self.moved   = 0
+        self.moved = 0
         self.skipped = 0
 
-    def _compute_delta(self, center, exclude_pts, self_shape=None):
-        coord = center[self.axis]
-        if abs(coord) < _MOVE_EPS:
-            return (0.0, 0.0, 0.0), False
-        sign = -1.0 if coord > 0.0 else 1.0
-        direction = [0.0, 0.0, 0.0]
-        direction[self.axis] = sign
-        direction = tuple(direction)
-        dist_to_plane = abs(coord)
-
-        hits = self.raycaster.cast(
-            center, direction,
-            exclude_vert_positions=exclude_pts,
-            max_distance=None,
-            self_shape=self_shape)
-
-        candidates = list(hits)
-        candidates.append(dist_to_plane)
-        move_dist = min(candidates)
-        final_dist = move_dist - self.offset
-        if final_dist < 0.0:
-            final_dist = 0.0
-
-        delta = (direction[0] * final_dist,
-                 direction[1] * final_dist,
-                 direction[2] * final_dist)
-        return delta, True
-
+    # -------------------------------------------------------------- core
     def _find_leading_point(self, pts):
-        """Among `pts`, return the one closest to the origin along self.axis."""
+        """Return the vertex with the smallest |coord[axis]| (closest to
+        the origin plane). Returns None if `pts` is empty."""
         ax = self.axis
         best = None
         best_abs = None
@@ -4187,24 +4133,21 @@ class MoveToOriginCore(object):
         return best
 
     def _compute_rigid_delta(self, pts, self_shape=None):
-        """Compute a single delta for rigid-body move of a set of points.
+        """Compute ONE delta for rigid-body move of a set of points.
 
-        Strategy: cast a ray from EVERY vertex toward the origin along the
-        chosen axis. For each vertex, collect the shortest hit distance
-        (including the dist-to-origin-plane as a virtual hit). Then take
-        the MINIMUM across ALL vertices. This guarantees no vertex will
-        penetrate any wall.
+        Cast a ray from EVERY vertex toward the origin along the chosen
+        axis. For each vertex, take the minimum of (its hits, its own
+        distance to the axis plane). Then take the GROUP minimum.
 
-        The distance for each vertex is measured from *that* vertex's own
-        axis-coordinate, so we convert each per-vertex safe-distance into
-        a "move distance from the leading point" to keep them comparable.
+        Returns: (delta_tuple, moved_bool)
+          moved_bool is False when the element is already on the plane.
         """
         if not pts:
             return (0.0, 0.0, 0.0), False
 
         ax = self.axis
 
-        # Determine sign from the leading vertex (closest to 0)
+        # Determine sign from leading vertex
         leader = self._find_leading_point(pts)
         if leader is None:
             return (0.0, 0.0, 0.0), False
@@ -4217,12 +4160,6 @@ class MoveToOriginCore(object):
         direction[ax] = sign
         direction = tuple(direction)
 
-        # For each vertex, compute its own safe travel distance.
-        # safe_travel = (shortest hit dist from vertex) - offset
-        # Then convert to how far the *whole group* can move:
-        #   group_move_limit = safe_travel
-        # because all vertices move the same delta along the axis.
-
         min_safe = None
         for p in pts:
             p_coord = p[ax]
@@ -4230,20 +4167,18 @@ class MoveToOriginCore(object):
                 # This vertex is already on the plane -> group can't move
                 return (0.0, 0.0, 0.0), False
 
-            # Check this vertex faces the same direction as the group
+            # Skip vertices on the opposite side of origin (shouldn't
+            # happen in practice, but guard)
             p_sign = -1.0 if p_coord > 0.0 else 1.0
             if p_sign != sign:
-                # Mixed sides of the origin; skip this vertex
                 continue
 
             dist_to_plane = abs(p_coord)
-
             hits = self.raycaster.cast(
                 p, direction,
                 exclude_vert_positions=pts,
                 max_distance=None,
                 self_shape=self_shape)
-
             candidates = list(hits)
             candidates.append(dist_to_plane)
             vertex_safe = min(candidates)
@@ -4263,7 +4198,7 @@ class MoveToOriginCore(object):
                  direction[2] * final_dist)
         return delta, True
 
-    # ---- Mesh ---------------------------------------------------------
+    # ---------------------------------------------------------- Mesh
     def move_mesh(self, mesh_shape):
         if not MAYA_AVAILABLE:
             return
@@ -4276,15 +4211,14 @@ class MoveToOriginCore(object):
         except Exception:
             self.skipped += 1
             return
-
-        # Build 8 bounding-box corners + center as representative points
         corners = [
             (bb[0], bb[1], bb[2]), (bb[3], bb[1], bb[2]),
             (bb[0], bb[4], bb[2]), (bb[3], bb[4], bb[2]),
             (bb[0], bb[1], bb[5]), (bb[3], bb[1], bb[5]),
             (bb[0], bb[4], bb[5]), (bb[3], bb[4], bb[5]),
         ]
-        delta, moved = self._compute_rigid_delta(corners, self_shape=mesh_shape)
+        delta, moved = self._compute_rigid_delta(corners,
+                                                  self_shape=mesh_shape)
         if not moved:
             self.skipped += 1
             return
@@ -4295,7 +4229,7 @@ class MoveToOriginCore(object):
         except Exception:
             self.skipped += 1
 
-    # ---- Vertices -----------------------------------------------------
+    # ---------------------------------------------------------- Vertices
     def move_vertices_rigid(self, mesh_shape, vert_indices):
         if not vert_indices:
             return
@@ -4303,30 +4237,15 @@ class MoveToOriginCore(object):
         if not pts:
             self.skipped += 1
             return
-        delta, moved = self._compute_rigid_delta(pts, self_shape=mesh_shape)
+        delta, moved = self._compute_rigid_delta(pts,
+                                                  self_shape=mesh_shape)
         if not moved:
             self.skipped += 1
             return
         self._translate_vertices(mesh_shape, vert_indices, delta)
         self.moved += 1
 
-    def move_vertices_individual(self, mesh_shape, vert_indices):
-        """Each vertex is its own element; cast a ray from each vertex
-        toward origin along the chosen axis."""
-        for vi in vert_indices:
-            p = self._get_vert_positions(mesh_shape, [vi])
-            if not p:
-                self.skipped += 1
-                continue
-            delta, moved = self._compute_delta(p[0], p,
-                                               self_shape=mesh_shape)
-            if not moved:
-                self.skipped += 1
-                continue
-            self._translate_vertices(mesh_shape, [vi], delta)
-            self.moved += 1
-
-    # ---- Edges --------------------------------------------------------
+    # ---------------------------------------------------------- Edges
     def move_edges_rigid(self, mesh_shape, edge_indices):
         if not edge_indices:
             return
@@ -4338,34 +4257,15 @@ class MoveToOriginCore(object):
         if not pts:
             self.skipped += 1
             return
-        delta, moved = self._compute_rigid_delta(pts, self_shape=mesh_shape)
+        delta, moved = self._compute_rigid_delta(pts,
+                                                  self_shape=mesh_shape)
         if not moved:
             self.skipped += 1
             return
         self._translate_vertices(mesh_shape, vidx, delta)
         self.moved += 1
 
-    def move_edges_individual(self, mesh_shape, edge_indices):
-        """Each edge is its own element (its two endpoints share one delta)."""
-        for ei in edge_indices:
-            vidx = self._verts_from_edges(mesh_shape, [ei])
-            if not vidx:
-                self.skipped += 1
-                continue
-            pts = self._get_vert_positions(mesh_shape, vidx)
-            if not pts:
-                self.skipped += 1
-                continue
-            # Use the leading endpoint for raycast, apply same delta to both
-            delta, moved = self._compute_rigid_delta(pts,
-                                                     self_shape=mesh_shape)
-            if not moved:
-                self.skipped += 1
-                continue
-            self._translate_vertices(mesh_shape, vidx, delta)
-            self.moved += 1
-
-    # ---- Faces --------------------------------------------------------
+    # ---------------------------------------------------------- Faces
     def move_faces_rigid(self, mesh_shape, face_indices):
         if not face_indices:
             return
@@ -4377,259 +4277,15 @@ class MoveToOriginCore(object):
         if not pts:
             self.skipped += 1
             return
-        delta, moved = self._compute_rigid_delta(pts, self_shape=mesh_shape)
+        delta, moved = self._compute_rigid_delta(pts,
+                                                  self_shape=mesh_shape)
         if not moved:
             self.skipped += 1
             return
         self._translate_vertices(mesh_shape, vidx, delta)
         self.moved += 1
 
-    def move_faces_individual(self, mesh_shape, face_indices):
-        """Each face is its own element; all its vertices share one delta
-        computed from the rigid algorithm (every vertex's ray is considered)."""
-        for fi in face_indices:
-            vidx = self._verts_from_faces(mesh_shape, [fi])
-            if not vidx:
-                self.skipped += 1
-                continue
-            pts = self._get_vert_positions(mesh_shape, vidx)
-            if not pts:
-                self.skipped += 1
-                continue
-            delta, moved = self._compute_rigid_delta(pts,
-                                                     self_shape=mesh_shape)
-            if not moved:
-                self.skipped += 1
-                continue
-            self._translate_vertices(mesh_shape, vidx, delta)
-            self.moved += 1
-
-    # =================================================================
-    # (Previously: per-vertex collision-check binary search)
-    # Now disabled: the simple per-vertex independent move above is the
-    # intended behaviour. Post-move wall-avoidance is handled by the fact
-    # that each vertex stops at its OWN wall during raycast. Mesh-face
-    # penetration for tilted quads is an inherent limitation of component
-    # moves and would require an NxN vertex search that is too slow to
-    # do inside a single click.
-    # =================================================================
-
-    # =================================================================
-    # Individual move with post-move collision check (per-vertex search)
-    # =================================================================
-    def _move_individual_with_collision_check(self, mesh_shape, vert_indices,
-                                              all_involved_verts):
-        """
-        Move each vertex individually toward origin, then verify that the
-        resulting mesh does not intersect other meshes. Each vertex is
-        searched INDEPENDENTLY: vertices that can safely reach the origin
-        plane go there; vertices that would cause a collision are backed
-        off individually until the mesh no longer intersects.
-
-        Algorithm:
-          1. Compute per-vertex full delta via raycast.
-          2. Apply all full deltas.
-          3. If no collision, done.
-          4. Else, binary-search each vertex's factor independently,
-             in descending order of delta magnitude (biggest movers
-             are most likely to cause collisions).
-        """
-        if not vert_indices:
-            return
-
-        vidx_unique = list(set(vert_indices))
-
-        # 1. Compute per-vertex full deltas
-        pts_orig = {}    # {vi: (x,y,z)}
-        deltas_full = {} # {vi: (dx,dy,dz)}
-        for vi in vidx_unique:
-            p = self._get_vert_positions(mesh_shape, [vi])
-            if not p:
-                continue
-            pts_orig[vi] = p[0]
-            d, ok = self._compute_delta(p[0], p, self_shape=mesh_shape)
-            if ok:
-                deltas_full[vi] = d
-            else:
-                deltas_full[vi] = (0.0, 0.0, 0.0)
-
-        if not pts_orig:
-            self.skipped += len(vidx_unique)
-            return
-
-        other_shapes = []
-        for s in MayaBridge.get_mesh_shapes():
-            if s != mesh_shape:
-                other_shapes.append(s)
-
-        # 2. Apply full deltas everywhere
-        factors = {}  # {vi: 0.0..1.0}
-        for vi in vidx_unique:
-            factors[vi] = 1.0
-        self._apply_factored(mesh_shape, pts_orig, deltas_full, factors)
-
-        # 3. If no collision, done (fast path)
-        if not other_shapes or not self._check_collision_with_others(
-                mesh_shape, other_shapes):
-            moved_count = sum(
-                1 for vi in vidx_unique
-                if _delta_nonzero(deltas_full.get(vi, (0, 0, 0))))
-            self.moved += moved_count
-            self.skipped += len(vidx_unique) - moved_count
-            return
-
-        # 4. Per-vertex binary search
-        # Process vertices in descending order of delta magnitude
-        order = sorted(
-            vidx_unique,
-            key=lambda vi: -_delta_magnitude(deltas_full.get(vi, (0, 0, 0))))
-
-        _MAX_ITER = 6  # per-vertex
-
-        for vi in order:
-            if not _delta_nonzero(deltas_full[vi]):
-                continue
-
-            # Binary search factors[vi] in [0, current]
-            # Current factor = 1.0 initially; it may have been reduced
-            # already if this is a second pass (not in this impl).
-            lo = 0.0
-            hi = factors[vi]
-            if hi <= 0.0:
-                continue
-
-            # First test: is this vertex alone the cause? Test at lo.
-            factors[vi] = lo
-            self._apply_factored(mesh_shape, pts_orig, deltas_full, factors)
-            has_coll_at_0 = self._check_collision_with_others(
-                mesh_shape, other_shapes)
-            if has_coll_at_0:
-                # Collision persists even with this vertex at 0 -> some
-                # OTHER vertex is the cause. Restore this vertex to max.
-                factors[vi] = hi
-                self._apply_factored(mesh_shape, pts_orig, deltas_full, factors)
-                continue
-
-            # Not colliding at lo=0. Try hi first.
-            factors[vi] = hi
-            self._apply_factored(mesh_shape, pts_orig, deltas_full, factors)
-            if not self._check_collision_with_others(
-                    mesh_shape, other_shapes):
-                # Fully safe at hi; leave it.
-                continue
-
-            # Binary search between lo and hi
-            best = lo
-            for _iter in range(_MAX_ITER):
-                mid = (lo + hi) * 0.5
-                factors[vi] = mid
-                self._apply_factored(
-                    mesh_shape, pts_orig, deltas_full, factors)
-                if self._check_collision_with_others(
-                        mesh_shape, other_shapes):
-                    hi = mid
-                else:
-                    best = mid
-                    lo = mid
-            factors[vi] = best
-            self._apply_factored(mesh_shape, pts_orig, deltas_full, factors)
-
-        # After per-vertex search, there may still be a tiny residual
-        # collision if two vertices together cause it. Final global
-        # fallback: scale everyone equally if still colliding.
-        if self._check_collision_with_others(mesh_shape, other_shapes):
-            gf_lo, gf_hi = 0.0, 1.0
-            best_gf = 0.0
-            for _i in range(6):
-                mid = (gf_lo + gf_hi) * 0.5
-                for vi in vidx_unique:
-                    factors[vi] = min(factors[vi], 1.0) * mid / \
-                                  (1.0 if mid <= _MOVE_EPS else 1.0)
-                # Apply scaled factors (multiply by mid directly from 1.0
-                # for a clean interpretation)
-                scaled = {vi: factors[vi] * mid for vi in vidx_unique}
-                self._apply_factored(
-                    mesh_shape, pts_orig, deltas_full, scaled)
-                if self._check_collision_with_others(
-                        mesh_shape, other_shapes):
-                    gf_hi = mid
-                else:
-                    best_gf = mid
-                    gf_lo = mid
-            for vi in vidx_unique:
-                factors[vi] = factors[vi] * best_gf
-            self._apply_factored(mesh_shape, pts_orig, deltas_full, factors)
-
-        # count moved
-        moved_count = 0
-        for vi in vidx_unique:
-            fd = deltas_full.get(vi, (0, 0, 0))
-            f = factors.get(vi, 0.0)
-            if _delta_nonzero(fd) and f > _MOVE_EPS:
-                moved_count += 1
-        self.moved += moved_count
-        self.skipped += len(vidx_unique) - moved_count
-
-    @staticmethod
-    def _apply_factored(mesh_shape, pts_orig, deltas_full, factors):
-        """Set vertex positions to: pts_orig[vi] + deltas_full[vi] * factors[vi]."""
-        new_positions = {}
-        for vi, orig in pts_orig.items():
-            d = deltas_full.get(vi, (0.0, 0.0, 0.0))
-            f = factors.get(vi, 0.0)
-            new_positions[vi] = (orig[0] + d[0] * f,
-                                 orig[1] + d[1] * f,
-                                 orig[2] + d[2] * f)
-        MoveToOriginCore._set_vertex_positions(mesh_shape, new_positions)
-
-    def _check_collision_with_others(self, mesh_shape, other_shapes):
-        """Quick intersection check: mesh_shape vs each other_shape.
-        Returns True if ANY intersection is found.
-        """
-        try:
-            tris_a, map_a, vids_a = MayaBridge.get_triangles(mesh_shape)
-        except Exception:
-            return False
-        if not tris_a:
-            return False
-        aabb_a = _compute_tris_aabb(tris_a)
-
-        for other in other_shapes:
-            try:
-                tris_b, map_b, vids_b = MayaBridge.get_triangles(other)
-            except Exception:
-                continue
-            if not tris_b:
-                continue
-            aabb_b = _compute_tris_aabb(tris_b)
-            if not _aabbs_overlap(aabb_a, aabb_b):
-                continue
-            det = CollisionDetector(tris_a, tris_b)
-            hits = det.check(threshold=0.0, backface_cull=True)
-            if hits:
-                return True
-        return False
-
-    @staticmethod
-    def _set_vertex_positions(mesh_shape, vi_to_pos):
-        """Set absolute world-space positions for multiple vertices."""
-        for vi, pos in vi_to_pos.items():
-            try:
-                cmds.xform("{0}.vtx[{1}]".format(mesh_shape, vi),
-                           ws=True, t=(pos[0], pos[1], pos[2]))
-            except Exception:
-                pass
-
-
-def _delta_magnitude(d):
-    return math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2])
-
-
-def _delta_nonzero(d):
-    return (abs(d[0]) > _MOVE_EPS or abs(d[1]) > _MOVE_EPS
-            or abs(d[2]) > _MOVE_EPS)
-
-    # ---- helpers ------------------------------------------------------
+    # ====================================================== Helpers
     @staticmethod
     def _verts_from_edges(mesh_shape, edge_indices):
         comps = ["{0}.e[{1}]".format(mesh_shape, ei) for ei in edge_indices]
@@ -4691,14 +4347,6 @@ def _delta_nonzero(d):
                                t=(delta[0], delta[1], delta[2]))
                 except Exception:
                     pass
-
-
-def _avg_point(pts):
-    sx = sy = sz = 0.0
-    for p in pts:
-        sx += p[0]; sy += p[1]; sz += p[2]
-    n = float(len(pts))
-    return (sx / n, sy / n, sz / n)
 # ---------------------------------------------------------------------------
 # MoveItem base + Selection parsing
 # ---------------------------------------------------------------------------
@@ -4782,25 +4430,17 @@ class MoveItem(CheckItem):
     Base for move-to-origin actions. Subclasses implement `_perform`.
 
     Class attributes:
-        accepts_kind   : "objects" / "vertices" / "edges" / "faces"
-        supports_modes : True if user can toggle rigid/individual
-        is_action      : True (used by CheckItemWidget to switch button label)
+        accepts_kind : "objects" / "vertices" / "edges" / "faces"
+        is_action    : True (used by CheckItemWidget to switch button label)
     """
     can_auto_fix    = False
     default_enabled = True
     accepts_kind    = None
-    supports_modes  = False
     is_action       = True
-    _default_mode   = MOVE_MODE_RIGID
 
     def __init__(self):
         super(MoveItem, self).__init__()
-        self.mode = self._default_mode  # "rigid" or "individual"
         self._last_summary = u""
-
-    def set_mode(self, mode):
-        if mode in (MOVE_MODE_RIGID, MOVE_MODE_INDIVIDUAL):
-            self.mode = mode
 
     def check(self):
         """Performs the move; returns issues list as a status carrier."""
@@ -4851,16 +4491,14 @@ class MoveItem(CheckItem):
         raise NotImplementedError
 # ---------------------------------------------------------------------------
 # Concrete MoveItem subclasses (Mesh / Vertex / Edge / Face)
-# Each item has a `mode` ("rigid" or "individual") that the UI can toggle.
-# Mesh has only "rigid" semantics (each transform is one element).
+# Rigid (shape-preserving) move only; no per-vertex individual mode.
 # ---------------------------------------------------------------------------
 
 
 class MoveMeshToOrigin(MoveItem):
-    label_key      = "move_mesh"
-    desc_key       = "move_mesh_desc"
-    accepts_kind   = "objects"
-    supports_modes = False  # Mesh = always per-transform
+    label_key    = "move_mesh"
+    desc_key     = "move_mesh_desc"
+    accepts_kind = "objects"
 
     def _perform(self, parsed, core):
         for shape in parsed["objects"]:
@@ -4868,45 +4506,33 @@ class MoveMeshToOrigin(MoveItem):
 
 
 class MoveVertexToOrigin(MoveItem):
-    label_key      = "move_vertex"
-    desc_key       = "move_vertex_desc"
-    accepts_kind   = "vertices"
-    supports_modes = True
+    label_key    = "move_vertex"
+    desc_key     = "move_vertex_desc"
+    accepts_kind = "vertices"
 
     def _perform(self, parsed, core):
         for shape, idxs in parsed["vertices"].items():
-            if self.mode == MOVE_MODE_INDIVIDUAL:
-                core.move_vertices_individual(shape, idxs)
-            else:
-                core.move_vertices_rigid(shape, idxs)
+            core.move_vertices_rigid(shape, idxs)
 
 
 class MoveEdgeToOrigin(MoveItem):
-    label_key      = "move_edge"
-    desc_key       = "move_edge_desc"
-    accepts_kind   = "edges"
-    supports_modes = True
+    label_key    = "move_edge"
+    desc_key     = "move_edge_desc"
+    accepts_kind = "edges"
 
     def _perform(self, parsed, core):
         for shape, idxs in parsed["edges"].items():
-            if self.mode == MOVE_MODE_INDIVIDUAL:
-                core.move_edges_individual(shape, idxs)
-            else:
-                core.move_edges_rigid(shape, idxs)
+            core.move_edges_rigid(shape, idxs)
 
 
 class MoveFaceToOrigin(MoveItem):
-    label_key      = "move_face"
-    desc_key       = "move_face_desc"
-    accepts_kind   = "faces"
-    supports_modes = True
+    label_key    = "move_face"
+    desc_key     = "move_face_desc"
+    accepts_kind = "faces"
 
     def _perform(self, parsed, core):
         for shape, idxs in parsed["faces"].items():
-            if self.mode == MOVE_MODE_INDIVIDUAL:
-                core.move_faces_individual(shape, idxs)
-            else:
-                core.move_faces_rigid(shape, idxs)
+            core.move_faces_rigid(shape, idxs)
 
 
 # Registry consumed by the main window

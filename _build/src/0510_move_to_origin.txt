@@ -1,23 +1,35 @@
 # ---------------------------------------------------------------------------
-# Move-to-Origin Core (axis-constrained)
+# Move-to-Origin Core (rigid, axis-constrained)
 # ---------------------------------------------------------------------------
-# Per-element move logic. Each element (mesh / vertex / edge / face) is
-# moved as a single unit toward the world origin ALONG ONE AXIS (X, Y, or
-# Z). The sign is auto-determined by the element center: if center is on
-# the +axis side, motion is along -axis; if on the -axis side, motion is
-# along +axis. If center is exactly on the axis-plane (|coord| < EPSILON),
-# the element is skipped.
+# Per-element move logic. Each selected element (mesh / vertex / edge / face)
+# is moved as ONE RIGID UNIT toward the world origin ALONG ONE AXIS
+# (X, Y, or Z). The sign is auto-determined from the "leading" vertex:
+# if the nearest vertex to the axis plane is on the +side, the whole
+# group moves in -axis direction (toward 0).
 #
-# Two modes per item type:
-#   - "rigid"      : selection moves as ONE element (one center, one delta,
-#                    same delta applied to all member vertices)
-#   - "individual" : each sub-element (each vertex, each edge, each face)
-#                    moves independently
+# Algorithm:
+#   1. For every vertex of the element, cast a ray toward the origin
+#      along the chosen axis.
+#   2. For each vertex, compute its safe travel distance:
+#         safe(v) = min( hit distances, |v.coord[axis]| )
+#      (The axis-plane itself is always included as a virtual hit so
+#       we never move past the origin.)
+#   3. The whole group moves by:
+#         move = max( 0, min(safe over all vertices) - offset )
+#      -> guarantees the most-forward vertex stops at (or just before)
+#         the nearest wall, keeping shape intact.
+#   4. Apply the resulting delta to every vertex of the element
+#      (or the transform, for the "mesh" operation).
+#
+# There is no "individual" mode: the tool always preserves shape.
 # ---------------------------------------------------------------------------
 
 _MOVE_EPS = 1.0e-5
 _DEFAULT_MOVE_OFFSET = [0.001]   # cm
 _DEFAULT_MOVE_AXIS   = [0]       # 0=X, 1=Y, 2=Z
+
+# Backwards-compatible mode constant (only rigid is used now)
+MOVE_MODE_RIGID = "rigid"
 
 
 def _get_move_offset():
@@ -47,53 +59,31 @@ def _set_move_axis(idx):
         _DEFAULT_MOVE_AXIS[0] = i
 
 
-# Mode constants
-MOVE_MODE_RIGID      = "rigid"
-MOVE_MODE_INDIVIDUAL = "individual"
+def _avg_point(pts):
+    sx = sy = sz = 0.0
+    for p in pts:
+        sx += p[0]; sy += p[1]; sz += p[2]
+    n = float(len(pts))
+    return (sx / n, sy / n, sz / n)
 
 
+# ===========================================================================
 class MoveToOriginCore(object):
     """Stateful core. axis: 0/1/2 (X/Y/Z). Sign auto from element center."""
 
     def __init__(self, offset=None, axis=None, target_shapes=None):
         self.offset = float(_get_move_offset() if offset is None else offset)
-        self.axis   = int(_get_move_axis() if axis is None else axis)
+        self.axis = int(_get_move_axis() if axis is None else axis)
         if self.axis not in (0, 1, 2):
             self.axis = 0
         self.raycaster = OriginRaycaster(target_shapes=target_shapes)
-        self.moved   = 0
+        self.moved = 0
         self.skipped = 0
 
-    def _compute_delta(self, center, exclude_pts, self_shape=None):
-        coord = center[self.axis]
-        if abs(coord) < _MOVE_EPS:
-            return (0.0, 0.0, 0.0), False
-        sign = -1.0 if coord > 0.0 else 1.0
-        direction = [0.0, 0.0, 0.0]
-        direction[self.axis] = sign
-        direction = tuple(direction)
-        dist_to_plane = abs(coord)
-
-        hits = self.raycaster.cast(
-            center, direction,
-            exclude_vert_positions=exclude_pts,
-            max_distance=None,
-            self_shape=self_shape)
-
-        candidates = list(hits)
-        candidates.append(dist_to_plane)
-        move_dist = min(candidates)
-        final_dist = move_dist - self.offset
-        if final_dist < 0.0:
-            final_dist = 0.0
-
-        delta = (direction[0] * final_dist,
-                 direction[1] * final_dist,
-                 direction[2] * final_dist)
-        return delta, True
-
+    # -------------------------------------------------------------- core
     def _find_leading_point(self, pts):
-        """Among `pts`, return the one closest to the origin along self.axis."""
+        """Return the vertex with the smallest |coord[axis]| (closest to
+        the origin plane). Returns None if `pts` is empty."""
         ax = self.axis
         best = None
         best_abs = None
@@ -105,24 +95,21 @@ class MoveToOriginCore(object):
         return best
 
     def _compute_rigid_delta(self, pts, self_shape=None):
-        """Compute a single delta for rigid-body move of a set of points.
+        """Compute ONE delta for rigid-body move of a set of points.
 
-        Strategy: cast a ray from EVERY vertex toward the origin along the
-        chosen axis. For each vertex, collect the shortest hit distance
-        (including the dist-to-origin-plane as a virtual hit). Then take
-        the MINIMUM across ALL vertices. This guarantees no vertex will
-        penetrate any wall.
+        Cast a ray from EVERY vertex toward the origin along the chosen
+        axis. For each vertex, take the minimum of (its hits, its own
+        distance to the axis plane). Then take the GROUP minimum.
 
-        The distance for each vertex is measured from *that* vertex's own
-        axis-coordinate, so we convert each per-vertex safe-distance into
-        a "move distance from the leading point" to keep them comparable.
+        Returns: (delta_tuple, moved_bool)
+          moved_bool is False when the element is already on the plane.
         """
         if not pts:
             return (0.0, 0.0, 0.0), False
 
         ax = self.axis
 
-        # Determine sign from the leading vertex (closest to 0)
+        # Determine sign from leading vertex
         leader = self._find_leading_point(pts)
         if leader is None:
             return (0.0, 0.0, 0.0), False
@@ -135,12 +122,6 @@ class MoveToOriginCore(object):
         direction[ax] = sign
         direction = tuple(direction)
 
-        # For each vertex, compute its own safe travel distance.
-        # safe_travel = (shortest hit dist from vertex) - offset
-        # Then convert to how far the *whole group* can move:
-        #   group_move_limit = safe_travel
-        # because all vertices move the same delta along the axis.
-
         min_safe = None
         for p in pts:
             p_coord = p[ax]
@@ -148,20 +129,18 @@ class MoveToOriginCore(object):
                 # This vertex is already on the plane -> group can't move
                 return (0.0, 0.0, 0.0), False
 
-            # Check this vertex faces the same direction as the group
+            # Skip vertices on the opposite side of origin (shouldn't
+            # happen in practice, but guard)
             p_sign = -1.0 if p_coord > 0.0 else 1.0
             if p_sign != sign:
-                # Mixed sides of the origin; skip this vertex
                 continue
 
             dist_to_plane = abs(p_coord)
-
             hits = self.raycaster.cast(
                 p, direction,
                 exclude_vert_positions=pts,
                 max_distance=None,
                 self_shape=self_shape)
-
             candidates = list(hits)
             candidates.append(dist_to_plane)
             vertex_safe = min(candidates)
@@ -181,7 +160,7 @@ class MoveToOriginCore(object):
                  direction[2] * final_dist)
         return delta, True
 
-    # ---- Mesh ---------------------------------------------------------
+    # ---------------------------------------------------------- Mesh
     def move_mesh(self, mesh_shape):
         if not MAYA_AVAILABLE:
             return
@@ -194,15 +173,14 @@ class MoveToOriginCore(object):
         except Exception:
             self.skipped += 1
             return
-
-        # Build 8 bounding-box corners + center as representative points
         corners = [
             (bb[0], bb[1], bb[2]), (bb[3], bb[1], bb[2]),
             (bb[0], bb[4], bb[2]), (bb[3], bb[4], bb[2]),
             (bb[0], bb[1], bb[5]), (bb[3], bb[1], bb[5]),
             (bb[0], bb[4], bb[5]), (bb[3], bb[4], bb[5]),
         ]
-        delta, moved = self._compute_rigid_delta(corners, self_shape=mesh_shape)
+        delta, moved = self._compute_rigid_delta(corners,
+                                                  self_shape=mesh_shape)
         if not moved:
             self.skipped += 1
             return
@@ -213,7 +191,7 @@ class MoveToOriginCore(object):
         except Exception:
             self.skipped += 1
 
-    # ---- Vertices -----------------------------------------------------
+    # ---------------------------------------------------------- Vertices
     def move_vertices_rigid(self, mesh_shape, vert_indices):
         if not vert_indices:
             return
@@ -221,30 +199,15 @@ class MoveToOriginCore(object):
         if not pts:
             self.skipped += 1
             return
-        delta, moved = self._compute_rigid_delta(pts, self_shape=mesh_shape)
+        delta, moved = self._compute_rigid_delta(pts,
+                                                  self_shape=mesh_shape)
         if not moved:
             self.skipped += 1
             return
         self._translate_vertices(mesh_shape, vert_indices, delta)
         self.moved += 1
 
-    def move_vertices_individual(self, mesh_shape, vert_indices):
-        """Each vertex is its own element; cast a ray from each vertex
-        toward origin along the chosen axis."""
-        for vi in vert_indices:
-            p = self._get_vert_positions(mesh_shape, [vi])
-            if not p:
-                self.skipped += 1
-                continue
-            delta, moved = self._compute_delta(p[0], p,
-                                               self_shape=mesh_shape)
-            if not moved:
-                self.skipped += 1
-                continue
-            self._translate_vertices(mesh_shape, [vi], delta)
-            self.moved += 1
-
-    # ---- Edges --------------------------------------------------------
+    # ---------------------------------------------------------- Edges
     def move_edges_rigid(self, mesh_shape, edge_indices):
         if not edge_indices:
             return
@@ -256,34 +219,15 @@ class MoveToOriginCore(object):
         if not pts:
             self.skipped += 1
             return
-        delta, moved = self._compute_rigid_delta(pts, self_shape=mesh_shape)
+        delta, moved = self._compute_rigid_delta(pts,
+                                                  self_shape=mesh_shape)
         if not moved:
             self.skipped += 1
             return
         self._translate_vertices(mesh_shape, vidx, delta)
         self.moved += 1
 
-    def move_edges_individual(self, mesh_shape, edge_indices):
-        """Each edge is its own element (its two endpoints share one delta)."""
-        for ei in edge_indices:
-            vidx = self._verts_from_edges(mesh_shape, [ei])
-            if not vidx:
-                self.skipped += 1
-                continue
-            pts = self._get_vert_positions(mesh_shape, vidx)
-            if not pts:
-                self.skipped += 1
-                continue
-            # Use the leading endpoint for raycast, apply same delta to both
-            delta, moved = self._compute_rigid_delta(pts,
-                                                     self_shape=mesh_shape)
-            if not moved:
-                self.skipped += 1
-                continue
-            self._translate_vertices(mesh_shape, vidx, delta)
-            self.moved += 1
-
-    # ---- Faces --------------------------------------------------------
+    # ---------------------------------------------------------- Faces
     def move_faces_rigid(self, mesh_shape, face_indices):
         if not face_indices:
             return
@@ -295,259 +239,15 @@ class MoveToOriginCore(object):
         if not pts:
             self.skipped += 1
             return
-        delta, moved = self._compute_rigid_delta(pts, self_shape=mesh_shape)
+        delta, moved = self._compute_rigid_delta(pts,
+                                                  self_shape=mesh_shape)
         if not moved:
             self.skipped += 1
             return
         self._translate_vertices(mesh_shape, vidx, delta)
         self.moved += 1
 
-    def move_faces_individual(self, mesh_shape, face_indices):
-        """Each face is its own element; all its vertices share one delta
-        computed from the rigid algorithm (every vertex's ray is considered)."""
-        for fi in face_indices:
-            vidx = self._verts_from_faces(mesh_shape, [fi])
-            if not vidx:
-                self.skipped += 1
-                continue
-            pts = self._get_vert_positions(mesh_shape, vidx)
-            if not pts:
-                self.skipped += 1
-                continue
-            delta, moved = self._compute_rigid_delta(pts,
-                                                     self_shape=mesh_shape)
-            if not moved:
-                self.skipped += 1
-                continue
-            self._translate_vertices(mesh_shape, vidx, delta)
-            self.moved += 1
-
-    # =================================================================
-    # (Previously: per-vertex collision-check binary search)
-    # Now disabled: the simple per-vertex independent move above is the
-    # intended behaviour. Post-move wall-avoidance is handled by the fact
-    # that each vertex stops at its OWN wall during raycast. Mesh-face
-    # penetration for tilted quads is an inherent limitation of component
-    # moves and would require an NxN vertex search that is too slow to
-    # do inside a single click.
-    # =================================================================
-
-    # =================================================================
-    # Individual move with post-move collision check (per-vertex search)
-    # =================================================================
-    def _move_individual_with_collision_check(self, mesh_shape, vert_indices,
-                                              all_involved_verts):
-        """
-        Move each vertex individually toward origin, then verify that the
-        resulting mesh does not intersect other meshes. Each vertex is
-        searched INDEPENDENTLY: vertices that can safely reach the origin
-        plane go there; vertices that would cause a collision are backed
-        off individually until the mesh no longer intersects.
-
-        Algorithm:
-          1. Compute per-vertex full delta via raycast.
-          2. Apply all full deltas.
-          3. If no collision, done.
-          4. Else, binary-search each vertex's factor independently,
-             in descending order of delta magnitude (biggest movers
-             are most likely to cause collisions).
-        """
-        if not vert_indices:
-            return
-
-        vidx_unique = list(set(vert_indices))
-
-        # 1. Compute per-vertex full deltas
-        pts_orig = {}    # {vi: (x,y,z)}
-        deltas_full = {} # {vi: (dx,dy,dz)}
-        for vi in vidx_unique:
-            p = self._get_vert_positions(mesh_shape, [vi])
-            if not p:
-                continue
-            pts_orig[vi] = p[0]
-            d, ok = self._compute_delta(p[0], p, self_shape=mesh_shape)
-            if ok:
-                deltas_full[vi] = d
-            else:
-                deltas_full[vi] = (0.0, 0.0, 0.0)
-
-        if not pts_orig:
-            self.skipped += len(vidx_unique)
-            return
-
-        other_shapes = []
-        for s in MayaBridge.get_mesh_shapes():
-            if s != mesh_shape:
-                other_shapes.append(s)
-
-        # 2. Apply full deltas everywhere
-        factors = {}  # {vi: 0.0..1.0}
-        for vi in vidx_unique:
-            factors[vi] = 1.0
-        self._apply_factored(mesh_shape, pts_orig, deltas_full, factors)
-
-        # 3. If no collision, done (fast path)
-        if not other_shapes or not self._check_collision_with_others(
-                mesh_shape, other_shapes):
-            moved_count = sum(
-                1 for vi in vidx_unique
-                if _delta_nonzero(deltas_full.get(vi, (0, 0, 0))))
-            self.moved += moved_count
-            self.skipped += len(vidx_unique) - moved_count
-            return
-
-        # 4. Per-vertex binary search
-        # Process vertices in descending order of delta magnitude
-        order = sorted(
-            vidx_unique,
-            key=lambda vi: -_delta_magnitude(deltas_full.get(vi, (0, 0, 0))))
-
-        _MAX_ITER = 6  # per-vertex
-
-        for vi in order:
-            if not _delta_nonzero(deltas_full[vi]):
-                continue
-
-            # Binary search factors[vi] in [0, current]
-            # Current factor = 1.0 initially; it may have been reduced
-            # already if this is a second pass (not in this impl).
-            lo = 0.0
-            hi = factors[vi]
-            if hi <= 0.0:
-                continue
-
-            # First test: is this vertex alone the cause? Test at lo.
-            factors[vi] = lo
-            self._apply_factored(mesh_shape, pts_orig, deltas_full, factors)
-            has_coll_at_0 = self._check_collision_with_others(
-                mesh_shape, other_shapes)
-            if has_coll_at_0:
-                # Collision persists even with this vertex at 0 -> some
-                # OTHER vertex is the cause. Restore this vertex to max.
-                factors[vi] = hi
-                self._apply_factored(mesh_shape, pts_orig, deltas_full, factors)
-                continue
-
-            # Not colliding at lo=0. Try hi first.
-            factors[vi] = hi
-            self._apply_factored(mesh_shape, pts_orig, deltas_full, factors)
-            if not self._check_collision_with_others(
-                    mesh_shape, other_shapes):
-                # Fully safe at hi; leave it.
-                continue
-
-            # Binary search between lo and hi
-            best = lo
-            for _iter in range(_MAX_ITER):
-                mid = (lo + hi) * 0.5
-                factors[vi] = mid
-                self._apply_factored(
-                    mesh_shape, pts_orig, deltas_full, factors)
-                if self._check_collision_with_others(
-                        mesh_shape, other_shapes):
-                    hi = mid
-                else:
-                    best = mid
-                    lo = mid
-            factors[vi] = best
-            self._apply_factored(mesh_shape, pts_orig, deltas_full, factors)
-
-        # After per-vertex search, there may still be a tiny residual
-        # collision if two vertices together cause it. Final global
-        # fallback: scale everyone equally if still colliding.
-        if self._check_collision_with_others(mesh_shape, other_shapes):
-            gf_lo, gf_hi = 0.0, 1.0
-            best_gf = 0.0
-            for _i in range(6):
-                mid = (gf_lo + gf_hi) * 0.5
-                for vi in vidx_unique:
-                    factors[vi] = min(factors[vi], 1.0) * mid / \
-                                  (1.0 if mid <= _MOVE_EPS else 1.0)
-                # Apply scaled factors (multiply by mid directly from 1.0
-                # for a clean interpretation)
-                scaled = {vi: factors[vi] * mid for vi in vidx_unique}
-                self._apply_factored(
-                    mesh_shape, pts_orig, deltas_full, scaled)
-                if self._check_collision_with_others(
-                        mesh_shape, other_shapes):
-                    gf_hi = mid
-                else:
-                    best_gf = mid
-                    gf_lo = mid
-            for vi in vidx_unique:
-                factors[vi] = factors[vi] * best_gf
-            self._apply_factored(mesh_shape, pts_orig, deltas_full, factors)
-
-        # count moved
-        moved_count = 0
-        for vi in vidx_unique:
-            fd = deltas_full.get(vi, (0, 0, 0))
-            f = factors.get(vi, 0.0)
-            if _delta_nonzero(fd) and f > _MOVE_EPS:
-                moved_count += 1
-        self.moved += moved_count
-        self.skipped += len(vidx_unique) - moved_count
-
-    @staticmethod
-    def _apply_factored(mesh_shape, pts_orig, deltas_full, factors):
-        """Set vertex positions to: pts_orig[vi] + deltas_full[vi] * factors[vi]."""
-        new_positions = {}
-        for vi, orig in pts_orig.items():
-            d = deltas_full.get(vi, (0.0, 0.0, 0.0))
-            f = factors.get(vi, 0.0)
-            new_positions[vi] = (orig[0] + d[0] * f,
-                                 orig[1] + d[1] * f,
-                                 orig[2] + d[2] * f)
-        MoveToOriginCore._set_vertex_positions(mesh_shape, new_positions)
-
-    def _check_collision_with_others(self, mesh_shape, other_shapes):
-        """Quick intersection check: mesh_shape vs each other_shape.
-        Returns True if ANY intersection is found.
-        """
-        try:
-            tris_a, map_a, vids_a = MayaBridge.get_triangles(mesh_shape)
-        except Exception:
-            return False
-        if not tris_a:
-            return False
-        aabb_a = _compute_tris_aabb(tris_a)
-
-        for other in other_shapes:
-            try:
-                tris_b, map_b, vids_b = MayaBridge.get_triangles(other)
-            except Exception:
-                continue
-            if not tris_b:
-                continue
-            aabb_b = _compute_tris_aabb(tris_b)
-            if not _aabbs_overlap(aabb_a, aabb_b):
-                continue
-            det = CollisionDetector(tris_a, tris_b)
-            hits = det.check(threshold=0.0, backface_cull=True)
-            if hits:
-                return True
-        return False
-
-    @staticmethod
-    def _set_vertex_positions(mesh_shape, vi_to_pos):
-        """Set absolute world-space positions for multiple vertices."""
-        for vi, pos in vi_to_pos.items():
-            try:
-                cmds.xform("{0}.vtx[{1}]".format(mesh_shape, vi),
-                           ws=True, t=(pos[0], pos[1], pos[2]))
-            except Exception:
-                pass
-
-
-def _delta_magnitude(d):
-    return math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2])
-
-
-def _delta_nonzero(d):
-    return (abs(d[0]) > _MOVE_EPS or abs(d[1]) > _MOVE_EPS
-            or abs(d[2]) > _MOVE_EPS)
-
-    # ---- helpers ------------------------------------------------------
+    # ====================================================== Helpers
     @staticmethod
     def _verts_from_edges(mesh_shape, edge_indices):
         comps = ["{0}.e[{1}]".format(mesh_shape, ei) for ei in edge_indices]
@@ -609,11 +309,3 @@ def _delta_nonzero(d):
                                t=(delta[0], delta[1], delta[2]))
                 except Exception:
                     pass
-
-
-def _avg_point(pts):
-    sx = sy = sz = 0.0
-    for p in pts:
-        sx += p[0]; sy += p[1]; sz += p[2]
-    n = float(len(pts))
-    return (sx / n, sy / n, sz / n)
