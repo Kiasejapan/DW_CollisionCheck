@@ -1,6 +1,0 @@
-# -*- coding: utf-8 -*-
-# ============================================================================
-# 0530_move_items.txt
-# REMOVED: MoveMesh/Vertex/Edge/Face subclasses + MOVE_ITEMS registry —
-# replaced by Mesh Landing (0360_mesh_landing.txt).
-# ============================================================================

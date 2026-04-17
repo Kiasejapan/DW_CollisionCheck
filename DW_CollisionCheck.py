@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.17.1920"
+VERSION = "2026.04.17.1928"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -5506,31 +5506,6 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
             self._set_update_btn_state("unknown")
 
 
-# -*- coding: utf-8 -*-
-# ============================================================================
-# 0500_origin_raycaster.txt
-# REMOVED: OriginRaycaster was used only by the old Move-to-Origin tool.
-# The new Mesh Landing feature (0360_mesh_landing.txt) has its own
-# MeshLandingRaycaster class and does not depend on this module.
-# This file is intentionally empty to keep the build file list stable.
-# ============================================================================
-# -*- coding: utf-8 -*-
-# ============================================================================
-# 0510_move_to_origin.txt
-# REMOVED: MoveToOriginCore — replaced by Mesh Landing (0360_mesh_landing.txt).
-# ============================================================================
-# -*- coding: utf-8 -*-
-# ============================================================================
-# 0520_move_item_base.txt
-# REMOVED: MoveItem base + selection parsing — replaced by Mesh Landing
-# (0360_mesh_landing.txt).
-# ============================================================================
-# -*- coding: utf-8 -*-
-# ============================================================================
-# 0530_move_items.txt
-# REMOVED: MoveMesh/Vertex/Edge/Face subclasses + MOVE_ITEMS registry —
-# replaced by Mesh Landing (0360_mesh_landing.txt).
-# ============================================================================
 def _url_read(url, timeout=10):
     """Read a URL and return the decoded string. Py2/3 compatible."""
     if PY2:

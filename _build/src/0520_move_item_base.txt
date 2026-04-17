@@ -1,6 +1,0 @@
-# -*- coding: utf-8 -*-
-# ============================================================================
-# 0520_move_item_base.txt
-# REMOVED: MoveItem base + selection parsing — replaced by Mesh Landing
-# (0360_mesh_landing.txt).
-# ============================================================================

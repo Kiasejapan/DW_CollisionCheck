@@ -1,8 +1,0 @@
-# -*- coding: utf-8 -*-
-# ============================================================================
-# 0500_origin_raycaster.txt
-# REMOVED: OriginRaycaster was used only by the old Move-to-Origin tool.
-# The new Mesh Landing feature (0360_mesh_landing.txt) has its own
-# MeshLandingRaycaster class and does not depend on this module.
-# This file is intentionally empty to keep the build file list stable.
-# ============================================================================
