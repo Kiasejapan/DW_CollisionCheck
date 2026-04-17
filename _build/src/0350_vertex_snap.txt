@@ -386,7 +386,7 @@ class VertexSnapResultWindow(QtWidgets.QDialog):
         self._table.verticalHeader().setVisible(False)
         self._table.verticalHeader().setDefaultSectionSize(22)
         self._table.setStyleSheet(_VS_TABLE_SS)
-        self._table.currentCellChanged.connect(self._on_row_changed)
+        self._table.itemSelectionChanged.connect(self._on_selection_changed)
         lo.addWidget(self._table, 1)
 
         # Snap direction buttons
@@ -538,16 +538,27 @@ class VertexSnapResultWindow(QtWidgets.QDialog):
         self._spin.blockSignals(False)
         self._refilter()
 
-    # -- Row click -> select pair in Maya --
-    def _on_row_changed(self, row, col, pr, pc):
-        if not MAYA_AVAILABLE or row < 0 or row >= len(self._row_to_pair):
+    # -- Row selection -> highlight all selected pairs' vertices in Maya --
+    def _on_selection_changed(self):
+        if not MAYA_AVAILABLE:
             return
-        pi = self._row_to_pair[row]
-        p = self._pairs[pi]
-        try:
-            cmds.select([p[0], p[4]], r=True)
-        except Exception:
-            pass
+        rows = sorted(set(i.row() for i in
+                          self._table.selectionModel().selectedRows()))
+        if not rows:
+            return
+        comps = []
+        for row in rows:
+            if row < 0 or row >= len(self._row_to_pair):
+                continue
+            pi = self._row_to_pair[row]
+            p = self._pairs[pi]
+            comps.append(p[0])  # vertex A
+            comps.append(p[4])  # vertex B
+        if comps:
+            try:
+                cmds.select(comps, r=True)
+            except Exception:
+                pass
 
     # -- Snap (logged, not finalized until Confirm) --
     def _on_snap(self, direction):

@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.17.1605"
+VERSION = "2026.04.17.1637"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -2661,6 +2661,13 @@ class AnimResultWindow(QtWidgets.QDialog):
 # remain on the main window. Mesh-pairs feature is no longer available;
 # pair selection is implicit (selected meshes or whole scene).
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# StaticCheckSettingsDialog: REMOVED.
+# Vertex-share tolerance is now exposed inline in the main window
+# (below the depth threshold). Selected-only and self-intersect toggles
+# remain on the main window. Mesh-pairs feature is no longer available;
+# pair selection is implicit (selected meshes or whole scene).
+# ---------------------------------------------------------------------------
 class StaticResultWindow(QtWidgets.QDialog):
     """
     Displays intersection / proximity issues in a table.
@@ -2709,13 +2716,13 @@ class StaticResultWindow(QtWidgets.QDialog):
         self._table.setWordWrap(True)
         self._table.verticalHeader().setDefaultSectionSize(28)
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self._table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self._table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self._table.setAlternatingRowColors(True)
         self._table.setStyleSheet(
             _TABLE_SS + "QTableWidget{alternate-background-color:#323232}")
         self._table.verticalHeader().setVisible(False)
-        self._table.currentCellChanged.connect(self._on_row_changed)
+        self._table.itemSelectionChanged.connect(self._on_selection_changed)
         lo.addWidget(self._table)
 
         # Bottom bar
@@ -2797,46 +2804,63 @@ class StaticResultWindow(QtWidgets.QDialog):
             + "  |  {0} issue(s)".format(total_issues)
             + elapsed_str)
 
-    def _on_row_changed(self, row, col, prev_row, prev_col):
-        if row < 0 or row >= len(self._rows):
-            return
-        self._highlight_row(row)
-
-    def _highlight_row(self, row):
-        """Select the grouped faces stored in the issue."""
+    def _on_selection_changed(self):
+        """Highlight faces for ALL currently selected rows in Maya."""
         if not MAYA_AVAILABLE:
             return
-        data = self._rows[row]
-        issue = data["issue"]
-        mesh_a = issue.get("mesh_a", "")
-        mesh_b = issue.get("mesh_b", "")
+        rows = sorted(set(i.row() for i in
+                          self._table.selectionModel().selectedRows()))
+        if not rows:
+            return
+        self._highlight_rows(rows)
 
-        # Use pre-grouped faces if available, fall back to single face
-        faces_a = issue.get("faces_a", [])
-        faces_b = issue.get("faces_b", [])
-        if not faces_a:
-            fa = issue.get("face_a", -1)
-            if fa >= 0:
-                faces_a = [fa]
-        if not faces_b:
-            fb = issue.get("face_b", -1)
-            if fb >= 0:
-                faces_b = [fb]
+    def _highlight_rows(self, rows):
+        """Collect faces from every row in `rows` and select in ONE call."""
+        if not MAYA_AVAILABLE:
+            return
+        comps = []
+        for row in rows:
+            if row < 0 or row >= len(self._rows):
+                continue
+            data = self._rows[row]
+            issue = data.get("issue", {})
+            mesh_a = issue.get("mesh_a", "")
+            mesh_b = issue.get("mesh_b", "")
 
-        if faces_a and mesh_a:
-            MayaBridge.select_faces(mesh_a, faces_a)
-        if faces_b and mesh_b:
+            faces_a = list(issue.get("faces_a", []) or [])
+            if not faces_a:
+                fa = issue.get("face_a", -1)
+                if fa >= 0:
+                    faces_a = [fa]
+            faces_b = list(issue.get("faces_b", []) or [])
+            if not faces_b:
+                fb = issue.get("face_b", -1)
+                if fb >= 0:
+                    faces_b = [fb]
+
+            for fa in faces_a:
+                if mesh_a and fa >= 0:
+                    comps.append(u"{0}.f[{1}]".format(mesh_a, fa))
             for fb in faces_b:
-                try:
-                    cmds.select(
-                        "{0}.f[{1}]".format(mesh_b, fb), add=True)
-                except Exception:
-                    pass
+                if mesh_b and fb >= 0:
+                    comps.append(u"{0}.f[{1}]".format(mesh_b, fb))
+
+        if comps:
+            try:
+                cmds.select(comps, r=True)
+            except Exception:
+                pass
 
     def _select_current_faces(self):
-        row = self._table.currentRow()
-        if row >= 0:
-            self._highlight_row(row)
+        """[Select Faces] button: honor all selected rows (fallback: current)."""
+        rows = sorted(set(i.row() for i in
+                          self._table.selectionModel().selectedRows()))
+        if not rows:
+            r = self._table.currentRow()
+            if r >= 0:
+                rows = [r]
+        if rows:
+            self._highlight_rows(rows)
 
     def refresh_labels(self):
         """Re-apply localized strings (called on language toggle)."""
@@ -2847,11 +2871,6 @@ class StaticResultWindow(QtWidgets.QDialog):
             self._table.horizontalHeaderItem(i).setText(h)
         self._btn_select.setText(tr("btn_select_faces"))
 
-
-
-# ---------------------------------------------------------------------------
-# CheckItemWidget  (reusable row widget — matches reference architecture)
-# ---------------------------------------------------------------------------
 class CheckItemWidget(QtWidgets.QFrame):
     check_requested = QtCore.Signal(object)   # emits the CheckItem instance
 
@@ -3398,7 +3417,7 @@ class VertexSnapResultWindow(QtWidgets.QDialog):
         self._table.verticalHeader().setVisible(False)
         self._table.verticalHeader().setDefaultSectionSize(22)
         self._table.setStyleSheet(_VS_TABLE_SS)
-        self._table.currentCellChanged.connect(self._on_row_changed)
+        self._table.itemSelectionChanged.connect(self._on_selection_changed)
         lo.addWidget(self._table, 1)
 
         # Snap direction buttons
@@ -3550,16 +3569,27 @@ class VertexSnapResultWindow(QtWidgets.QDialog):
         self._spin.blockSignals(False)
         self._refilter()
 
-    # -- Row click -> select pair in Maya --
-    def _on_row_changed(self, row, col, pr, pc):
-        if not MAYA_AVAILABLE or row < 0 or row >= len(self._row_to_pair):
+    # -- Row selection -> highlight all selected pairs' vertices in Maya --
+    def _on_selection_changed(self):
+        if not MAYA_AVAILABLE:
             return
-        pi = self._row_to_pair[row]
-        p = self._pairs[pi]
-        try:
-            cmds.select([p[0], p[4]], r=True)
-        except Exception:
-            pass
+        rows = sorted(set(i.row() for i in
+                          self._table.selectionModel().selectedRows()))
+        if not rows:
+            return
+        comps = []
+        for row in rows:
+            if row < 0 or row >= len(self._row_to_pair):
+                continue
+            pi = self._row_to_pair[row]
+            p = self._pairs[pi]
+            comps.append(p[0])  # vertex A
+            comps.append(p[4])  # vertex B
+        if comps:
+            try:
+                cmds.select(comps, r=True)
+            except Exception:
+                pass
 
     # -- Snap (logged, not finalized until Confirm) --
     def _on_snap(self, direction):
