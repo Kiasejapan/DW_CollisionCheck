@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.17.1541"
+VERSION = "2026.04.17.1605"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -170,41 +170,147 @@ _STRINGS = {
     "btn_goto_frame":       {"en": "Go to Frame",                   "jp": u"\u30d5\u30ec\u30fc\u30e0\u3078\u79fb\u52d5"},
     "lbl_anim_summary":     {"en": "{total} issues across {frames} frame(s)",
                              "jp": u"{frames} \u30d5\u30ec\u30fc\u30e0\u3067 {total} \u4ef6\u306e\u554f\u984c"},
-    "help_text": {
-        "en": "<h3>DW Collision Check</h3>"
-              "<p>Detects polygon intersections (hair/cloth collisions) in the current frame or across an animation range.</p>"
-              "<h4>Check Tab</h4>"
-              "<ul><li><b>Intersection Check</b>: Finds faces that physically penetrate each other.</li>"
-              "<li><b>Overlap Check</b>: Finds coplanar overlapping faces (z-fighting / double faces).</li>"
-              "<li><b>Animation Scan</b>: Sweeps a frame range and reports collisions per frame, with optional baseline filtering.</li></ul>"
+    # ---- Help (per-tab) ----------------------------------------------
+    "help_title":           {"en": "Help \u2014 DW Collision Check",
+                             "jp": u"\u30d8\u30eb\u30d7 \u2014 DW \u5e72\u6e09\u30c1\u30a7\u30c3\u30af"},
+    "help_body_check": {
+        "en": "<h2>Check Tab</h2>"
+              "<p>Detects polygon intersections and overlaps at the current frame "
+              "or across an animation range.</p>"
+              "<h3>Static Checks</h3>"
+              "<ul>"
+              "<li><b>Intersection Check</b>: Faces that physically penetrate each other.</li>"
+              "<li><b>Overlap Check</b>: Coplanar overlapping faces (z-fighting / double faces).</li>"
+              "</ul>"
               "<p><b>Depth threshold</b>: minimum penetration depth to report.<br>"
               "<b>Vertex-share tolerance</b>: triangles sharing a vertex within this distance are skipped.</p>"
-              "<h4>Other Tab</h4>"
-              "<ul><li><b>Move to Origin (BETA)</b>: Moves the selection toward the world origin along the chosen axis (X/Y/Z), stopping just before another mesh or the origin.</li>"
-              "<ul><li><i>Shape is preserved</i>: the entire selection moves as ONE rigid element; the most-forward vertex stops just before the nearest collision.</li>"
-              "<li><i>Stop offset</i>: distance kept between the moved element and the collision/origin.</li></ul></ul>"
-              "<h4>Usage</h4>"
-              "<ol><li>Select meshes/components in the viewport.</li>"
-              "<li>For checks: click [Check] per item or [Run Static Checks].</li>"
-              "<li>For moves: pick the axis, mode, then click [Move] per item or [Run Move All].</li>"
-              "<li>Click a result row to select the faces in the viewport.</li></ol>",
-        "jp": u"<h3>DW \u5e72\u6e09\u30c1\u30a7\u30c3\u30af</h3>"
-              u"<p>\u73fe\u5728\u30d5\u30ec\u30fc\u30e0\u307e\u305f\u306f\u30a2\u30cb\u30e1\u30fc\u30b7\u30e7\u30f3\u7bc4\u56f2\u5185\u3067\u30dd\u30ea\u30b4\u30f3\u306e\u5e72\u6e09\uff08\u9aea\u30fb\u5e03\u306e\u523a\u3055\u308a\uff09\u3092\u691c\u51fa\u3057\u307e\u3059\u3002</p>"
-              u"<h4>\u30c1\u30a7\u30c3\u30af\u30bf\u30d6</h4>"
-              u"<ul><li><b>\u4ea4\u5dee\u30c1\u30a7\u30c3\u30af</b>\uff1a\u5b9f\u969b\u306b\u8cab\u901a\u3057\u3066\u3044\u308b\u30d5\u30a7\u30fc\u30b9\u3092\u691c\u51fa\u3002</li>"
-              u"<li><b>\u91cd\u306a\u308a\u30c1\u30a7\u30c3\u30af</b>\uff1a\u540c\u4e00\u5e73\u9762\u4e0a\u3067\u91cd\u306a\u308b\u30d5\u30a7\u30fc\u30b9\uff08Z\u30d5\u30a1\u30a4\u30c8/\u4e8c\u91cd\u9762\uff09\u3092\u691c\u51fa\u3002</li>"
-              u"<li><b>\u30a2\u30cb\u30e1\u30fc\u30b7\u30e7\u30f3\u30b9\u30ad\u30e3\u30f3</b>\uff1a\u30d5\u30ec\u30fc\u30e0\u7bc4\u56f2\u3092\u8d70\u67fb\u3057\u3066\u30d5\u30ec\u30fc\u30e0\u3054\u3068\u306e\u5e72\u6e09\u3092\u8a18\u9332\u3002\u30d9\u30fc\u30b9\u30e9\u30a4\u30f3\u30d5\u30ec\u30fc\u30e0\u3092\u9664\u5916\u53ef\u80fd\u3002</li></ul>"
-              u"<p><b>\u6df1\u5ea6\u95be\u5024</b>\uff1a\u5831\u544a\u3059\u308b\u6700\u5c0f\u8cab\u5165\u6df1\u3055\u3002<br>"
+              "<h3>Animation Scan</h3>"
+              "<p>Sweeps a frame range and reports which frames contain collisions. "
+              "Useful for finding problematic frames in cloth/hair animation without stepping through manually.</p>"
+              "<ul>"
+              "<li><b>Frame range</b>: Start / End / Step. Toggle <i>Use timeline range</i> "
+              "to follow Maya's current playback range.</li>"
+              "<li><b>Ignore baseline frame</b>: Excludes collisions that already exist at a reference frame "
+              "(e.g. resting pose), so only animation-induced issues are reported.</li>"
+              "<li><b>Baseline frame</b>: The frame treated as the clean reference.</li>"
+              "<li><b>Stop</b>: Cancels the scan mid-run.</li>"
+              "</ul>"
+              "<h3>Usage</h3>"
+              "<ol>"
+              "<li>Select meshes in the viewport.</li>"
+              "<li>Click [Check] on each item, or [Run Static Checks] to run all.</li>"
+              "<li>Click a row in the Results window to select the problem faces.</li>"
+              "<li>For animation: set the range and click [Run Animation Scan]. "
+              "Click a frame row to jump the timeline there.</li>"
+              "</ol>",
+        "jp": u"<h2>\u30c1\u30a7\u30c3\u30af\u30bf\u30d6</h2>"
+              u"<p>\u73fe\u5728\u30d5\u30ec\u30fc\u30e0\u307e\u305f\u306f\u30a2\u30cb\u30e1\u30fc\u30b7\u30e7\u30f3\u7bc4\u56f2\u5185\u3067\u30dd\u30ea\u30b4\u30f3\u306e\u4ea4\u5dee\u30fb\u91cd\u306a\u308a\u3092\u691c\u51fa\u3057\u307e\u3059\u3002</p>"
+              u"<h3>\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u30c1\u30a7\u30c3\u30af</h3>"
+              u"<ul>"
+              u"<li><b>\u4ea4\u5dee\u30c1\u30a7\u30c3\u30af</b>\uff1a\u5b9f\u969b\u306b\u30dd\u30ea\u30b4\u30f3\u304c\u8cab\u901a\u3057\u3066\u3044\u308b\u30d5\u30a7\u30fc\u30b9\u3092\u691c\u51fa\u3002</li>"
+              u"<li><b>\u91cd\u306a\u308a\u30c1\u30a7\u30c3\u30af</b>\uff1a\u540c\u4e00\u5e73\u9762\u4e0a\u3067\u91cd\u306a\u308b\u30d5\u30a7\u30fc\u30b9\uff08Z\u30d5\u30a1\u30a4\u30c8\u30fb\u4e8c\u91cd\u9762\uff09\u3092\u691c\u51fa\u3002</li>"
+              u"</ul>"
+              u"<p><b>\u6df1\u5ea6\u95be\u5024</b>\uff1a\u5831\u544a\u5bfe\u8c61\u3068\u3059\u308b\u6700\u5c0f\u8cab\u5165\u6df1\u3055\u3002<br>"
               u"<b>\u540c\u4e00\u9802\u70b9\u3068\u307f\u306a\u3059\u8ddd\u96e2</b>\uff1a\u3053\u306e\u8ddd\u96e2\u4ee5\u5185\u3067\u9802\u70b9\u3092\u5171\u6709\u3059\u308b\u4e09\u89d2\u5f62\u30da\u30a2\u306f\u4ea4\u5dee\u5224\u5b9a\u3092\u30b9\u30ad\u30c3\u30d7\u3002</p>"
-              u"<h4>\u305d\u306e\u4ed6\u30bf\u30d6</h4>"
-              u"<ul><li><b>\u539f\u70b9\u79fb\u52d5\uff08BETA\uff09</b>\uff1a\u9078\u629e\u3092\u6307\u5b9a\u8ef8\uff08X/Y/Z\uff09\u306b\u6cbf\u3063\u3066\u539f\u70b9\u65b9\u5411\u3078\u79fb\u52d5\u3057\u3001\u4ed6\u30e1\u30c3\u30b7\u30e5\u307e\u305f\u306f\u539f\u70b9\u306e\u624b\u524d\u3067\u505c\u6b62\u3002</li>"
-              u"<ul><li><i>\u5f62\u72b6\u3092\u4fdd\u3063\u305f\u307e\u307e\u79fb\u52d5</i>\uff1a\u9078\u629e\u5168\u4f53\u3092\u4e00\u3064\u306e\u5264\u4f53\u3068\u3057\u3066\u79fb\u52d5\u3057\u3001\u6700\u3082\u524d\u306e\u9802\u70b9\u304c\u6700\u8fd1\u306e\u58c1\u624b\u524d\u3067\u505c\u6b62\u3057\u307e\u3059\u3002</li>"
-              u"<li><i>\u505c\u6b62\u30aa\u30d5\u30bb\u30c3\u30c8</i>\uff1a\u8870\u7a81\u9762\u30fb\u539f\u70b9\u3068\u306e\u9593\u306b\u6b8b\u3059\u9694\u305f\u308a\u8ddd\u96e2\u3002</li></ul></ul>"
-              u"<h4>\u4f7f\u3044\u65b9</h4>"
-              u"<ol><li>\u30d3\u30e5\u30fc\u30dd\u30fc\u30c8\u3067\u30e1\u30c3\u30b7\u30e5\u30fb\u30b3\u30f3\u30dd\u30fc\u30cd\u30f3\u30c8\u3092\u9078\u629e\u3002</li>"
-              u"<li>\u30c1\u30a7\u30c3\u30af\uff1a[\u30c1\u30a7\u30c3\u30af] \u307e\u305f\u306f [\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u5b9f\u884c]\u3002</li>"
-              u"<li>\u79fb\u52d5\uff1a\u8ef8\u3092\u9078\u3093\u3067 [\u79fb\u52d5] \u307e\u305f\u306f [\u4e00\u62ec\u5b9f\u884c]\u3002</li>"
-              u"<li>\u7d50\u679c\u884c\u3092\u30af\u30ea\u30c3\u30af\u3059\u308b\u3068\u30d3\u30e5\u30fc\u30dd\u30fc\u30c8\u3067\u30d5\u30a7\u30fc\u30b9\u3092\u9078\u629e\u3002</li></ol>",
+              u"<h3>\u30a2\u30cb\u30e1\u30fc\u30b7\u30e7\u30f3\u30b9\u30ad\u30e3\u30f3</h3>"
+              u"<p>\u30d5\u30ec\u30fc\u30e0\u7bc4\u56f2\u3092\u8d70\u67fb\u3057\u3001\u5e72\u6e09\u304c\u767a\u751f\u3057\u305f\u30d5\u30ec\u30fc\u30e0\u3092\u4e00\u89a7\u5316\u3057\u307e\u3059\u3002"
+              u"\u5e03\u3084\u9aea\u306e\u30a2\u30cb\u30e1\u30fc\u30b7\u30e7\u30f3\u3067\u554f\u984c\u306e\u3042\u308b\u30d5\u30ec\u30fc\u30e0\u3092\u52b9\u7387\u7684\u306b\u898b\u3064\u3051\u3089\u308c\u307e\u3059\u3002</p>"
+              u"<ul>"
+              u"<li><b>\u30d5\u30ec\u30fc\u30e0\u7bc4\u56f2</b>\uff1a\u958b\u59cb / \u7d42\u4e86 / \u30b9\u30c6\u30c3\u30d7\u3002 <i>\u30bf\u30a4\u30e0\u30e9\u30a4\u30f3\u7bc4\u56f2\u3092\u4f7f\u7528</i> \u3067Maya\u306e\u518d\u751f\u7bc4\u56f2\u3068\u9023\u52d5\u3002</li>"
+              u"<li><b>\u30d9\u30fc\u30b9\u30e9\u30a4\u30f3\u30d5\u30ec\u30fc\u30e0\u306e\u5e72\u6e09\u3092\u7121\u8996</b>\uff1a\u57fa\u6e96\u30d5\u30ec\u30fc\u30e0\uff08\u5f85\u6a5f\u30dd\u30fc\u30ba\u7b49\uff09\u3067\u65e2\u306b\u767a\u751f\u3057\u3066\u3044\u308b\u5e72\u6e09\u3092\u9664\u5916\u3057\u3001\u30a2\u30cb\u30e1\u56fa\u6709\u306e\u554f\u984c\u3060\u3051\u3092\u691c\u51fa\u3002</li>"
+              u"<li><b>\u30d9\u30fc\u30b9\u30e9\u30a4\u30f3</b>\uff1a\u57fa\u6e96\u3068\u307f\u306a\u3059\u30af\u30ea\u30fc\u30f3\u306a\u30d5\u30ec\u30fc\u30e0\u3002</li>"
+              u"<li><b>\u505c\u6b62</b>\uff1a\u30b9\u30ad\u30e3\u30f3\u9014\u4e2d\u3067\u30ad\u30e3\u30f3\u30bb\u30eb\u3002</li>"
+              u"</ul>"
+              u"<h3>\u4f7f\u3044\u65b9</h3>"
+              u"<ol>"
+              u"<li>\u30d3\u30e5\u30fc\u30dd\u30fc\u30c8\u3067\u30e1\u30c3\u30b7\u30e5\u3092\u9078\u629e\u3002</li>"
+              u"<li>\u5404\u9805\u76ee\u306e [\u30c1\u30a7\u30c3\u30af]\u3001\u307e\u305f\u306f [\u30b9\u30bf\u30c6\u30a3\u30c3\u30af\u5b9f\u884c] \u3067\u4e00\u62ec\u691c\u67fb\u3002</li>"
+              u"<li>\u7d50\u679c\u884c\u3092\u30af\u30ea\u30c3\u30af\u3059\u308b\u3068\u5bfe\u5fdc\u3059\u308b\u30d5\u30a7\u30fc\u30b9\u3092\u9078\u629e\u8868\u793a\u3002</li>"
+              u"<li>\u30a2\u30cb\u30e1\u306f\u7bc4\u56f2\u3092\u8a2d\u5b9a\u3057 [\u30a2\u30cb\u30e1\u30fc\u30b7\u30e7\u30f3\u30b9\u30ad\u30e3\u30f3\u5b9f\u884c]\u3002\u30d5\u30ec\u30fc\u30e0\u884c\u3092\u30af\u30ea\u30c3\u30af\u3067\u305d\u306e\u30d5\u30ec\u30fc\u30e0\u306b\u79fb\u52d5\u3002</li>"
+              u"</ol>",
+    },
+    "help_body_snap": {
+        "en": "<h2>Snap Tab</h2>"
+              "<h3>Vertex Snap</h3>"
+              "<p>Distance-based vertex snap. Detects close vertex pairs and lets you snap them "
+              "interactively. Useful for stitching separate mesh parts (hair, cloth, armor, etc.) "
+              "without manually picking vertex pairs.</p>"
+              "<h3>Workflow</h3>"
+              "<ol>"
+              "<li>Select mesh(es) in the viewport (groups OK &mdash; child meshes are auto-collected).</li>"
+              "<li>Click [Launch]. The result window opens with all close vertex pairs detected.</li>"
+              "<li>Adjust the threshold by dragging directly on the histogram:</li>"
+              "<ul>"
+              "<li>Bars show how vertex pairs are distributed by distance.</li>"
+              "<li>Green = close, orange = medium, red = far.</li>"
+              "<li>Blue line = current threshold. Only pairs within threshold are listed below.</li>"
+              "</ul>"
+              "<li>Click a table row to highlight the vertex pair in Maya.</li>"
+              "<li>Select rows and choose a snap direction:</li>"
+              "<ul>"
+              "<li><b>Snap A\u2192B</b>: move Mesh A's vertex to Mesh B's position.</li>"
+              "<li><b>Snap B\u2192A</b>: move Mesh B's vertex to Mesh A's position.</li>"
+              "<li><b>Snap Mid</b>: move both vertices to the midpoint.</li>"
+              "</ul>"
+              "<li>Snapped rows are marked with \u2714 and remain visible for review.</li>"
+              "<li>When finished, click [\u2714 Confirm] to finalize, or [\u21A9 Revert] to undo all snaps at once.</li>"
+              "</ol>"
+              "<h3>Options</h3>"
+              "<ul>"
+              "<li><b>Include same-mesh pairs</b> (default ON): also detect close vertices within the same mesh. "
+              "Turn OFF to only detect pairs across different meshes.</li>"
+              "<li><b>Hide coincident</b> (default ON): hide pairs that were already overlapping (distance near 0) "
+              "so the table stays focused on pairs that need action.</li>"
+              "</ul>"
+              "<h3>Merge (Maya)</h3>"
+              "<p>Opens Maya's native <i>Merge Vertices</i> option box for conventional vertex merging "
+              "after snapping is complete.</p>",
+        "jp": u"<h2>\u30b9\u30ca\u30c3\u30d7\u30bf\u30d6</h2>"
+              u"<h3>\u30d0\u30fc\u30c6\u30c3\u30af\u30b9\u30ca\u30c3\u30d7</h3>"
+              u"<p>\u8ddd\u96e2\u30d9\u30fc\u30b9\u3067\u8fd1\u3044\u9802\u70b9\u30da\u30a2\u3092\u691c\u51fa\u3057\u3001\u5bfe\u8a71\u7684\u306b\u30b9\u30ca\u30c3\u30d7\u3055\u305b\u308b\u6a5f\u80fd\u3002"
+              u"\u9aea\u30fb\u5e03\u30fb\u30a2\u30fc\u30de\u30fc\u7b49\u306e\u7570\u306a\u308b\u30e1\u30c3\u30b7\u30e5\u3092\u7e4b\u304e\u5408\u308f\u305b\u308b\u969b\u3001\u9802\u70b9\u30da\u30a2\u3092\u624b\u52d5\u3067\u9078\u3076\u624b\u9593\u3092\u7701\u3051\u307e\u3059\u3002</p>"
+              u"<h3>\u4f5c\u696d\u624b\u9806</h3>"
+              u"<ol>"
+              u"<li>\u30d3\u30e5\u30fc\u30dd\u30fc\u30c8\u3067\u30e1\u30c3\u30b7\u30e5\u3092\u9078\u629e\uff08\u30b0\u30eb\u30fc\u30d7\u9078\u629e\u53ef\u3001\u914d\u4e0b\u306e\u30e1\u30c3\u30b7\u30e5\u3092\u81ea\u52d5\u3067\u53ce\u96c6\uff09\u3002</li>"
+              u"<li>[\u8d77\u52d5] \u3092\u30af\u30ea\u30c3\u30af\u3002\u7d50\u679c\u30a6\u30a3\u30f3\u30c9\u30a6\u304c\u958b\u304d\u3001\u8fd1\u63a5\u30da\u30a2\u304c\u4e00\u89a7\u8868\u793a\u3055\u308c\u307e\u3059\u3002</li>"
+              u"<li>\u30d2\u30b9\u30c8\u30b0\u30e9\u30e0\u3092\u76f4\u63a5\u30c9\u30e9\u30c3\u30b0\u3057\u3066\u3057\u304d\u3044\u5024\u3092\u8abf\u6574\uff1a</li>"
+              u"<ul>"
+              u"<li>\u30d0\u30fc\u306f\u9802\u70b9\u30da\u30a2\u306e\u8ddd\u96e2\u5206\u5e03\u3092\u8868\u3057\u307e\u3059\u3002</li>"
+              u"<li>\u7dd1 = \u8fd1\u3044\u3001\u6a59 = \u4e2d\u9593\u3001\u8d64 = \u9060\u3044\u3002</li>"
+              u"<li>\u9752\u3044\u7e26\u7dda\u304c\u73fe\u5728\u306e\u3057\u304d\u3044\u5024\u3002\u3053\u308c\u4ee5\u5185\u306e\u30da\u30a2\u306e\u307f\u8868\u306b\u8868\u793a\u3055\u308c\u307e\u3059\u3002</li>"
+              u"</ul>"
+              u"<li>\u884c\u3092\u30af\u30ea\u30c3\u30af\u3059\u308b\u3068Maya\u306e\u30d3\u30e5\u30fc\u30dd\u30fc\u30c8\u3067\u305d\u306e\u9802\u70b9\u30da\u30a2\u3092\u9078\u629e\u8868\u793a\u3002</li>"
+              u"<li>\u884c\u3092\u9078\u629e\u3057\u3066Snap\u65b9\u5411\u30dc\u30bf\u30f3\u3092\u30af\u30ea\u30c3\u30af\uff1a</li>"
+              u"<ul>"
+              u"<li><b>Snap A\u2192B</b>\uff1aMesh A \u5074\u306e\u9802\u70b9\u3092 Mesh B \u5074\u306b\u5bc4\u305b\u308b\u3002</li>"
+              u"<li><b>Snap B\u2192A</b>\uff1aMesh B \u5074\u306e\u9802\u70b9\u3092 Mesh A \u5074\u306b\u5bc4\u305b\u308b\u3002</li>"
+              u"<li><b>Snap Mid</b>\uff1a\u4e21\u65b9\u3092\u4e2d\u9593\u4f4d\u7f6e\u306b\u5bc4\u305b\u308b\u3002</li>"
+              u"</ul>"
+              u"<li>Snap\u6e08\u307f\u306e\u884c\u306f \u2714 \u30de\u30fc\u30af\u304c\u4ed8\u3044\u3066\u8868\u306b\u6b8b\u308a\u307e\u3059\uff08\u78ba\u8a8d\u53ef\u80fd\uff09\u3002</li>"
+              u"<li>\u6700\u5f8c\u306b [\u2714 \u78ba\u5b9a] \u3067\u78ba\u5b9a\u3001\u307e\u305f\u306f [\u21A9 \u5143\u306b\u623b\u3059] \u3067\u3059\u3079\u3066\u306e Snap \u3092\u4e00\u62ec\u53d6\u308a\u6d88\u3057\u3002</li>"
+              u"</ol>"
+              u"<h3>\u30aa\u30d7\u30b7\u30e7\u30f3</h3>"
+              u"<ul>"
+              u"<li><b>\u540c\u30e1\u30c3\u30b7\u30e5\u3082\u691c\u67fb</b>\uff08\u30c7\u30d5\u30a9\u30eb\u30c8ON\uff09\uff1a\u540c\u4e00\u30e1\u30c3\u30b7\u30e5\u5185\u306e\u8fd1\u63a5\u9802\u70b9\u3082\u691c\u51fa\u3002"
+              u"OFF \u306b\u3059\u308b\u3068\u4ed6\u30e1\u30c3\u30b7\u30e5\u9593\u306e\u30da\u30a2\u306e\u307f\u691c\u51fa\u3002</li>"
+              u"<li><b>\u91cd\u8907\u9802\u70b9\u3092\u975e\u8868\u793a</b>\uff08\u30c7\u30d5\u30a9\u30eb\u30c8ON\uff09\uff1a\u65e2\u306b\u8ddd\u96e2\u304c\u307b\u307c0\u306e\u30da\u30a2\u3092\u96a0\u3057\u3001\u4f5c\u696d\u5bfe\u8c61\u306e\u30da\u30a2\u3060\u3051\u3092\u8868\u793a\u3002</li>"
+              u"</ul>"
+              u"<h3>Merge (Maya)</h3>"
+              u"<p>Maya \u6a19\u6e96\u306e\u300c\u9802\u70b9\u306e\u30de\u30fc\u30b8\u300d\u30aa\u30d7\u30b7\u30e7\u30f3\u30dc\u30c3\u30af\u30b9\u3092\u958b\u304d\u307e\u3059\u3002"
+              u"Snap \u5f8c\u306e\u901a\u5e38\u306e\u9802\u70b9\u30de\u30fc\u30b8\u306b\u4f7f\u7528\u3057\u307e\u3059\u3002</p>",
+    },
+    "help_body_other": {
+        "en": "<h2>Other Tab</h2>"
+              "<p style='color:#FF9800;'><b>\u26A0 Currently unstable &mdash; not recommended for production use.</b></p>"
+              "<p>The <b>Move to Origin</b> feature is under revision. "
+              "Please avoid using it until it is fixed in a future update.</p>"
+              "<p>If you need to check the current behavior for testing purposes, "
+              "use it on disposable data only and review the result carefully.</p>",
+        "jp": u"<h2>\u305d\u306e\u4ed6\u30bf\u30d6</h2>"
+              u"<p style='color:#FF9800;'><b>\u26A0 \u73fe\u5728\u4f7f\u7528\u4e0d\u53ef \u2014 \u52d5\u4f5c\u304c\u4e0d\u5b89\u5b9a</b></p>"
+              u"<p><b>\u539f\u70b9\u79fb\u52d5</b>\u6a5f\u80fd\u306f\u73fe\u5728\u4fee\u6b63\u4f5c\u696d\u4e2d\u3067\u3059\u3002"
+              u"\u4eca\u5f8c\u306e\u30a2\u30c3\u30d7\u30c7\u30fc\u30c8\u3067\u4fee\u6b63\u3055\u308c\u308b\u307e\u3067\u3001\u672c\u756a\u30c7\u30fc\u30bf\u3067\u306e\u4f7f\u7528\u306f\u63a7\u3048\u3066\u304f\u3060\u3055\u3044\u3002</p>"
+              u"<p>\u30c6\u30b9\u30c8\u76ee\u7684\u3067\u73fe\u5728\u306e\u52d5\u4f5c\u3092\u78ba\u8a8d\u3059\u308b\u5834\u5408\u306f\u3001\u30c0\u30df\u30fc\u30c7\u30fc\u30bf\u3067\u306e\u307f\u4f7f\u7528\u3057\u3001\u7d50\u679c\u3092\u5fc5\u305a\u78ba\u8a8d\u3057\u3066\u304f\u3060\u3055\u3044\u3002</p>",
     },
 
     # ---- Vertex Snap (Snap tab) --------------------------------------
@@ -4524,17 +4630,34 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
     # ------------------------------------------------------------------
     def _open_help(self):
         dlg = QtWidgets.QDialog(self)
-        dlg.setWindowTitle("Help")
+        dlg.setWindowTitle(tr("help_title"))
         dlg.setWindowFlags(dlg.windowFlags() | QtCore.Qt.Tool)
-        dlg.setMinimumSize(400, 300)
-        dlg.setStyleSheet("QDialog{background-color:#333} QTextBrowser{background-color:#2B2B2B;color:#EEE;border:none}")
+        dlg.setMinimumSize(560, 520)
+        dlg.setStyleSheet(
+            "QDialog{background-color:#333}"
+            "QTextBrowser{background-color:#2B2B2B;color:#EEE;"
+            "border:1px solid #444;padding:8px;font-size:11px}"
+            "QTabWidget::pane{border:1px solid #444;background:#2B2B2B;top:-1px}"
+            "QTabBar::tab{background:#3C3C3C;color:#BBB;padding:6px 14px;"
+            "border:1px solid #444;border-bottom:none;margin-right:1px;"
+            "font-size:11px}"
+            "QTabBar::tab:selected{background:#2B2B2B;color:#EEE;font-weight:bold}")
         lo = QtWidgets.QVBoxLayout(dlg)
-        tb = QtWidgets.QTextBrowser()
-        tb.setHtml(tr("help_text"))
-        lo.addWidget(tb)
+        lo.setContentsMargins(8, 8, 8, 8)
+        lo.setSpacing(6)
+        tabs = QtWidgets.QTabWidget()
+        for tab_key, body_key in [
+                ("tab_check", "help_body_check"),
+                ("tab_snap",  "help_body_snap"),
+                ("tab_other", "help_body_other")]:
+            tb = QtWidgets.QTextBrowser()
+            tb.setHtml(tr(body_key))
+            tb.setOpenExternalLinks(True)
+            tabs.addTab(tb, tr(tab_key))
+        lo.addWidget(tabs)
         btn_lo = QtWidgets.QHBoxLayout()
         btn_lo.addStretch()
-        close = _mkbtn("Close", 26, "#555", "#444")
+        close = _mkbtn(tr("btn_close"), 26, "#555", "#444")
         close.clicked.connect(dlg.accept)
         btn_lo.addWidget(close)
         lo.addLayout(btn_lo)

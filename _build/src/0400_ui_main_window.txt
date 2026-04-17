@@ -874,17 +874,34 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
     # ------------------------------------------------------------------
     def _open_help(self):
         dlg = QtWidgets.QDialog(self)
-        dlg.setWindowTitle("Help")
+        dlg.setWindowTitle(tr("help_title"))
         dlg.setWindowFlags(dlg.windowFlags() | QtCore.Qt.Tool)
-        dlg.setMinimumSize(400, 300)
-        dlg.setStyleSheet("QDialog{background-color:#333} QTextBrowser{background-color:#2B2B2B;color:#EEE;border:none}")
+        dlg.setMinimumSize(560, 520)
+        dlg.setStyleSheet(
+            "QDialog{background-color:#333}"
+            "QTextBrowser{background-color:#2B2B2B;color:#EEE;"
+            "border:1px solid #444;padding:8px;font-size:11px}"
+            "QTabWidget::pane{border:1px solid #444;background:#2B2B2B;top:-1px}"
+            "QTabBar::tab{background:#3C3C3C;color:#BBB;padding:6px 14px;"
+            "border:1px solid #444;border-bottom:none;margin-right:1px;"
+            "font-size:11px}"
+            "QTabBar::tab:selected{background:#2B2B2B;color:#EEE;font-weight:bold}")
         lo = QtWidgets.QVBoxLayout(dlg)
-        tb = QtWidgets.QTextBrowser()
-        tb.setHtml(tr("help_text"))
-        lo.addWidget(tb)
+        lo.setContentsMargins(8, 8, 8, 8)
+        lo.setSpacing(6)
+        tabs = QtWidgets.QTabWidget()
+        for tab_key, body_key in [
+                ("tab_check", "help_body_check"),
+                ("tab_snap",  "help_body_snap"),
+                ("tab_other", "help_body_other")]:
+            tb = QtWidgets.QTextBrowser()
+            tb.setHtml(tr(body_key))
+            tb.setOpenExternalLinks(True)
+            tabs.addTab(tb, tr(tab_key))
+        lo.addWidget(tabs)
         btn_lo = QtWidgets.QHBoxLayout()
         btn_lo.addStretch()
-        close = _mkbtn("Close", 26, "#555", "#444")
+        close = _mkbtn(tr("btn_close"), 26, "#555", "#444")
         close.clicked.connect(dlg.accept)
         btn_lo.addWidget(close)
         lo.addLayout(btn_lo)
