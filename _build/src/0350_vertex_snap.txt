@@ -1,0 +1,744 @@
+# -*- coding: utf-8 -*-
+# ============================================================================
+# 0350_vertex_snap.txt
+# Vertex Snap feature for DW_CollisionCheck "Snap" tab.
+#
+# Depends on (defined earlier in the concatenated build):
+#   VERSION, PY2, MAYA_AVAILABLE, cmds, mel,
+#   QtCore, QtGui, QtWidgets, wrapInstance, omui,
+#   tr(), _STRINGS  (strings added in 0020_strings.txt),
+#   _mkbtn()        (defined in 0200_ui_helpers.txt)
+# ============================================================================
+
+
+# ---------------------------------------------------------------------------
+# Vertex snap: geometry helpers
+# ---------------------------------------------------------------------------
+
+def _vs_get_mesh_verts():
+    """Get all verts from selected meshes (traverses hierarchy).
+    Returns (vert_data, mesh_short_names).
+    vert_data = [(vtx_name, mesh_short, vtx_idx, (x,y,z)), ...]"""
+    if not MAYA_AVAILABLE:
+        return [], []
+    sel = cmds.ls(sl=True, l=True) or []
+    if not sel:
+        return [], []
+    meshes = set()
+    for s in sel:
+        node = s.split(".")[0]
+        for sh in (cmds.listRelatives(node, s=True, f=True, type="mesh") or []):
+            try:
+                if cmds.getAttr(sh + ".intermediateObject"):
+                    continue
+            except Exception:
+                pass
+            xf = cmds.listRelatives(sh, p=True, f=True)
+            if xf:
+                meshes.add(xf[0])
+        for sh in (cmds.listRelatives(node, ad=True, f=True, type="mesh") or []):
+            try:
+                if cmds.getAttr(sh + ".intermediateObject"):
+                    continue
+            except Exception:
+                pass
+            xf = cmds.listRelatives(sh, p=True, f=True)
+            if xf:
+                meshes.add(xf[0])
+    if not meshes:
+        return [], []
+    vdata = []
+    for m in sorted(meshes):
+        n = cmds.polyEvaluate(m, v=True)
+        for i in range(n):
+            vtx = u"{0}.vtx[{1}]".format(m, i)
+            p = cmds.pointPosition(vtx, w=True)
+            vdata.append((vtx, m.split("|")[-1], i, (p[0], p[1], p[2])))
+    short = [m.split("|")[-1] for m in sorted(meshes)]
+    return vdata, short
+
+
+def _vs_find_close_pairs(vdata, threshold, cross_only=False):
+    """Return pairs within threshold.
+    Each pair = (vtxA, meshA, idxA, posA, vtxB, meshB, idxB, posB, dist)."""
+    pairs = []
+    n = len(vdata)
+    for i in range(n):
+        va, ma, ia, pa = vdata[i]
+        for j in range(i + 1, n):
+            vb, mb, ib, pb = vdata[j]
+            if va == vb:
+                continue
+            if cross_only and ma == mb:
+                continue
+            dx = pa[0] - pb[0]
+            dy = pa[1] - pb[1]
+            dz = pa[2] - pb[2]
+            d = math.sqrt(dx * dx + dy * dy + dz * dz)
+            if d <= threshold:
+                pairs.append((va, ma, ia, pa, vb, mb, ib, pb, d))
+    pairs.sort(key=lambda x: x[8])
+    return pairs
+
+
+def _vs_snap_one(va, pa, vb, pb, direction):
+    """direction: 0=A->B, 1=B->A, 2=midpoint. Returns #verts moved."""
+    if direction == 0:
+        cmds.xform(va, ws=True, t=[pb[0], pb[1], pb[2]]); return 1
+    elif direction == 1:
+        cmds.xform(vb, ws=True, t=[pa[0], pa[1], pa[2]]); return 1
+    else:
+        mx = (pa[0]+pb[0])*0.5; my = (pa[1]+pb[1])*0.5; mz = (pa[2]+pb[2])*0.5
+        cmds.xform(va, ws=True, t=[mx, my, mz])
+        cmds.xform(vb, ws=True, t=[mx, my, mz]); return 2
+
+
+# ---------------------------------------------------------------------------
+# Vertex snap: UI constants
+# ---------------------------------------------------------------------------
+
+_VS_TABLE_SS = (
+    "QTableWidget{background-color:#2B2B2B;alternate-background-color:#323232;"
+    "color:#DDD;gridline-color:#444;border:1px solid #444;font-size:11px}"
+    "QTableWidget::item:selected{background-color:#1565C0}"
+    "QHeaderView::section{background-color:#3C3C3C;color:#EEE;"
+    "border:1px solid #555;padding:4px;font-size:10px;font-weight:bold}"
+    "QScrollBar:vertical{background:#2B2B2B;width:10px}"
+    "QScrollBar::handle:vertical{background:#555;border-radius:4px}")
+
+_VS_SPIN_SS = ("QDoubleSpinBox{background-color:#2B2B2B;color:#EEE;"
+               "border:1px solid #555;border-radius:3px;padding:1px;font-size:10px}")
+
+_VS_DIR_LABELS = {0: "vs_snap_ab", 1: "vs_snap_ba", 2: "vs_snap_mid"}
+_VS_DIR_COLORS = {0: "#2196F3", 1: "#FF9800", 2: "#4CAF50"}
+
+
+# ---------------------------------------------------------------------------
+# Distance histogram (interactive — drag to set threshold)
+# ---------------------------------------------------------------------------
+
+_VS_NUM_BINS = 40
+
+
+def _vs_bar_color(ratio, active):
+    if ratio < 0.33:
+        r, g, b = 76, 175, 80
+    elif ratio < 0.66:
+        r, g, b = 255, 152, 0
+    else:
+        r, g, b = 244, 67, 54
+    if not active:
+        r = int(r * 0.25); g = int(g * 0.25); b = int(b * 0.25)
+    return QtGui.QColor(r, g, b)
+
+
+class VertexSnapHistogram(QtWidgets.QWidget):
+    """Draggable histogram — click/drag to set threshold."""
+
+    threshold_changed = QtCore.Signal(float)
+
+    _MARGIN_L = 4
+    _MARGIN_R = 4
+    _MARGIN_T = 14
+    _MARGIN_B = 14
+
+    def __init__(self, parent=None):
+        super(VertexSnapHistogram, self).__init__(parent)
+        self.setFixedHeight(100)
+        self.setMouseTracking(True)
+        self.setCursor(QtCore.Qt.PointingHandCursor)
+        self._bins = []
+        self._max_dist = 1.0
+        self._threshold = 0.01
+        self._total = 0
+        self._within = 0
+        self._dragging = False
+        self._hover_x = -1
+
+    def set_data(self, distances, max_dist):
+        self._max_dist = max(max_dist, 0.0001)
+        self._bins = [0] * _VS_NUM_BINS
+        for d in distances:
+            idx = int(d / self._max_dist * _VS_NUM_BINS)
+            if idx >= _VS_NUM_BINS:
+                idx = _VS_NUM_BINS - 1
+            self._bins[idx] += 1
+        self._total = len(distances)
+        self._update_within()
+        self.update()
+
+    def set_threshold(self, th):
+        self._threshold = th
+        self._update_within()
+        self.update()
+
+    def _update_within(self):
+        th_bin = int(self._threshold / self._max_dist * _VS_NUM_BINS)
+        self._within = sum(self._bins[:min(th_bin + 1, _VS_NUM_BINS)])
+
+    def _bar_area(self):
+        w = self.width(); h = self.height()
+        return (self._MARGIN_L, self._MARGIN_T,
+                w - self._MARGIN_L - self._MARGIN_R,
+                h - self._MARGIN_T - self._MARGIN_B)
+
+    def _x_to_dist(self, x):
+        bx, by, bw, bh = self._bar_area()
+        ratio = max(0.0, min(1.0, (x - bx) / float(max(bw, 1))))
+        return ratio * self._max_dist
+
+    def _dist_to_x(self, d):
+        bx, by, bw, bh = self._bar_area()
+        return bx + min(d / self._max_dist, 1.0) * bw
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            self._dragging = True
+            self._set_th_from_x(event.x())
+
+    def mouseMoveEvent(self, event):
+        self._hover_x = event.x()
+        if self._dragging:
+            self._set_th_from_x(event.x())
+        self.update()
+
+    def mouseReleaseEvent(self, event):
+        self._dragging = False
+
+    def leaveEvent(self, event):
+        self._hover_x = -1
+        self.update()
+
+    def _set_th_from_x(self, x):
+        d = self._x_to_dist(x)
+        d = max(0.0001, round(d, 4))
+        if abs(d - self._threshold) > 0.00001:
+            self._threshold = d
+            self._update_within()
+            self.threshold_changed.emit(d)
+            self.update()
+
+    def paintEvent(self, event):
+        if not self._bins:
+            return
+        p = QtGui.QPainter(self)
+        p.setRenderHint(QtGui.QPainter.Antialiasing)
+
+        bx, by, bw, bh = self._bar_area()
+        max_count = max(self._bins) if self._bins else 1
+        if max_count == 0:
+            max_count = 1
+        n = len(self._bins)
+        bar_w = bw / float(n)
+        gap = max(1, int(bar_w * 0.12))
+        th_x = self._dist_to_x(self._threshold)
+
+        p.fillRect(int(bx), int(by), int(bw), int(bh),
+                   QtGui.QColor(35, 35, 35))
+
+        for i in range(n):
+            count = self._bins[i]
+            if count == 0:
+                continue
+            h = int((count / float(max_count)) * bh)
+            x = bx + int(i * bar_w) + gap
+            w = max(1, int(bar_w) - gap * 2)
+            y = by + bh - h
+            ratio = i / float(n)
+            active = (x + w) <= (th_x + 1)
+            p.fillRect(int(x), int(y), int(w), int(h),
+                       _vs_bar_color(ratio, active))
+
+        if self._hover_x >= bx and self._hover_x <= bx + bw and not self._dragging:
+            pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 40), 1)
+            p.setPen(pen)
+            p.drawLine(int(self._hover_x), int(by),
+                       int(self._hover_x), int(by + bh))
+
+        pen = QtGui.QPen(QtGui.QColor("#42A5F5"), 2)
+        p.setPen(pen)
+        p.drawLine(int(th_x), int(by - 2), int(th_x), int(by + bh + 2))
+
+        p.setBrush(QtGui.QColor("#42A5F5"))
+        p.setPen(QtCore.Qt.NoPen)
+        p.drawEllipse(int(th_x) - 5, int(by + bh) - 1, 10, 10)
+
+        p.setPen(QtGui.QColor("#42A5F5"))
+        p.setFont(QtGui.QFont("", 8, QtGui.QFont.Bold))
+        label = u"{0:.4f}".format(self._threshold)
+        lx = int(th_x) + 6
+        if lx + 48 > bx + bw:
+            lx = int(th_x) - 52
+        p.drawText(lx, by - 1, label)
+
+        p.setPen(QtGui.QColor("#AAA"))
+        p.setFont(QtGui.QFont("", 8))
+        txt = u"{0} / {1}".format(self._within, self._total)
+        p.drawText(int(bx + bw - 60), by - 1, 58, 12,
+                   QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter, txt)
+
+        p.setPen(QtGui.QColor("#555"))
+        p.setFont(QtGui.QFont("", 7))
+        bottom_y = by + bh + 3
+        p.drawText(int(bx), int(bottom_y), u"0")
+        max_label = u"{0:.2f}".format(self._max_dist)
+        p.drawText(int(bx + bw - 30), int(bottom_y), max_label)
+
+        p.end()
+
+
+# ---------------------------------------------------------------------------
+# VertexSnapResultWindow
+# ---------------------------------------------------------------------------
+
+class VertexSnapResultWindow(QtWidgets.QDialog):
+    """Pair table with histogram, snap logging, confirm/revert."""
+
+    status_msg = QtCore.Signal(str)
+
+    _HIST_MAX   = 1.0
+    _COINCIDENT = 1e-6
+
+    def __init__(self, parent=None):
+        super(VertexSnapResultWindow, self).__init__(parent)
+        self.setObjectName("DW_VertexSnap_Result")
+        self.setWindowTitle(tr("vs_result_title"))
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose, False)
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
+        self.setMinimumSize(640, 480)
+        self.setStyleSheet(
+            "QDialog{background-color:#333;color:#EEE}"
+            "QLabel{color:#EEE}")
+        self._vdata = []
+        self._all_pairs = []
+        self._pairs = []
+        self._row_to_pair = []
+        self._snap_log = {}
+        self._undo_open = False
+        self._build()
+
+    def _build(self):
+        lo = QtWidgets.QVBoxLayout(self)
+        lo.setContentsMargins(8, 8, 8, 8); lo.setSpacing(6)
+
+        # Scope label (mesh names)
+        self._scope_mesh = QtWidgets.QLabel("")
+        self._scope_mesh.setStyleSheet(
+            "color:#8BC34A;background-color:#2B2B2B;"
+            "padding:3px 8px;border-radius:3px;font-size:10px")
+        self._scope_mesh.setWordWrap(True)
+        lo.addWidget(self._scope_mesh)
+
+        # Interactive histogram
+        self._histogram = VertexSnapHistogram()
+        self._histogram.threshold_changed.connect(self._on_hist_drag)
+        lo.addWidget(self._histogram)
+
+        # Threshold spin
+        thr = QtWidgets.QHBoxLayout(); thr.setSpacing(6)
+        self._lbl_th = QtWidgets.QLabel(tr("vs_lbl_threshold"))
+        self._lbl_th.setStyleSheet("color:#AAA;font-size:10px")
+        thr.addWidget(self._lbl_th)
+        self._spin = QtWidgets.QDoubleSpinBox()
+        self._spin.setRange(0.0001, 10.0); self._spin.setDecimals(4)
+        self._spin.setSingleStep(0.001); self._spin.setValue(0.01)
+        self._spin.setFixedWidth(85); self._spin.setStyleSheet(_VS_SPIN_SS)
+        self._spin.valueChanged.connect(self._on_spin)
+        thr.addWidget(self._spin)
+        thr.addStretch()
+        lo.addLayout(thr)
+
+        # Count + option checkboxes
+        cnt_row = QtWidgets.QHBoxLayout(); cnt_row.setSpacing(8)
+        self._scope_count = QtWidgets.QLabel("")
+        self._scope_count.setStyleSheet("color:#FF9800;font-size:10px;padding:0 4px")
+        cnt_row.addWidget(self._scope_count)
+        cnt_row.addStretch()
+        cb_ss = ("QCheckBox{color:#AAA;font-size:10px}"
+                 "QCheckBox::indicator{width:12px;height:12px}")
+        self._cb_include_same = QtWidgets.QCheckBox(tr("vs_chk_include_same"))
+        self._cb_include_same.setChecked(True)
+        self._cb_include_same.setStyleSheet(cb_ss)
+        self._cb_include_same.toggled.connect(self._on_include_same_toggled)
+        cnt_row.addWidget(self._cb_include_same)
+        self._cb_hide_coinc = QtWidgets.QCheckBox(tr("vs_chk_hide_coinc"))
+        self._cb_hide_coinc.setChecked(True)
+        self._cb_hide_coinc.setStyleSheet(cb_ss)
+        self._cb_hide_coinc.toggled.connect(lambda _: self._populate())
+        cnt_row.addWidget(self._cb_hide_coinc)
+        lo.addLayout(cnt_row)
+
+        # Pair table
+        self._table = QtWidgets.QTableWidget(0, 6)
+        self._update_headers()
+        h = self._table.horizontalHeader()
+        self._table.setColumnWidth(0, 42)
+        h.setSectionResizeMode(0, QtWidgets.QHeaderView.Fixed)
+        h.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
+        h.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+        h.setSectionResizeMode(3, QtWidgets.QHeaderView.Stretch)
+        h.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)
+        h.setSectionResizeMode(5, QtWidgets.QHeaderView.ResizeToContents)
+        self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self._table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._table.setAlternatingRowColors(True)
+        self._table.verticalHeader().setVisible(False)
+        self._table.verticalHeader().setDefaultSectionSize(22)
+        self._table.setStyleSheet(_VS_TABLE_SS)
+        self._table.currentCellChanged.connect(self._on_row_changed)
+        lo.addWidget(self._table, 1)
+
+        # Snap direction buttons
+        sr = QtWidgets.QHBoxLayout(); sr.setSpacing(4)
+        self._btn_ab = _mkbtn(tr("vs_btn_snap_ab"), 26, "#2196F3", "#1976D2", fs=10)
+        self._btn_ab.clicked.connect(lambda: self._on_snap(0))
+        sr.addWidget(self._btn_ab)
+        self._btn_ba = _mkbtn(tr("vs_btn_snap_ba"), 26, "#FF9800", "#F57C00", fs=10)
+        self._btn_ba.clicked.connect(lambda: self._on_snap(1))
+        sr.addWidget(self._btn_ba)
+        self._btn_mid = _mkbtn(tr("vs_btn_snap_mid"), 26, "#4CAF50", "#388E3C", fs=10)
+        self._btn_mid.clicked.connect(lambda: self._on_snap(2))
+        sr.addWidget(self._btn_mid)
+        sr.addStretch()
+        lo.addLayout(sr)
+
+        # Confirm / Revert / Merge / Close
+        cr = QtWidgets.QHBoxLayout(); cr.setSpacing(4)
+        self._btn_confirm = _mkbtn(tr("vs_btn_confirm"), 26, "#4CAF50", "#388E3C", fs=10)
+        self._btn_confirm.clicked.connect(self._on_confirm)
+        self._btn_confirm.setEnabled(False)
+        cr.addWidget(self._btn_confirm)
+        self._btn_revert = _mkbtn(tr("vs_btn_revert"), 26, "#F44336", "#D32F2F", fs=10)
+        self._btn_revert.clicked.connect(self._on_revert)
+        self._btn_revert.setEnabled(False)
+        cr.addWidget(self._btn_revert)
+        cr.addStretch()
+        self._btn_merge = _mkbtn(tr("vs_btn_merge_maya"), 26, "#9C27B0", "#7B1FA2", fs=10)
+        self._btn_merge.clicked.connect(self._on_merge_maya)
+        cr.addWidget(self._btn_merge)
+        btn_close = _mkbtn(tr("btn_close"), 26, "#555", "#444", fs=10)
+        btn_close.clicked.connect(self.hide)
+        cr.addWidget(btn_close)
+        lo.addLayout(cr)
+
+    def _update_headers(self):
+        self._table.setHorizontalHeaderLabels([
+            u"", tr("vs_col_mesh_a"), tr("vs_col_vtx_a"),
+            tr("vs_col_mesh_b"), tr("vs_col_vtx_b"), tr("vs_col_dist")])
+
+    # -- Data setup --
+    def set_data(self, vdata, mesh_names):
+        self._vdata = list(vdata)
+        self._snap_log = {}
+        self._close_undo()
+        self._scope_mesh.setText(tr("vs_scope_meshes", names=u", ".join(mesh_names)))
+        self._recompute_all_pairs()
+        self._refilter()
+        self._update_confirm_state()
+
+    def _recompute_all_pairs(self):
+        cross = not self._cb_include_same.isChecked()
+        self._all_pairs = _vs_find_close_pairs(
+            self._vdata, self._HIST_MAX, cross_only=cross)
+        dists = [p[8] for p in self._all_pairs]
+        self._histogram.set_data(dists, self._HIST_MAX)
+
+    def _on_include_same_toggled(self, checked):
+        self._recompute_all_pairs()
+        self._refilter()
+
+    def _refilter(self):
+        th = self._spin.value()
+        self._pairs = [p for p in self._all_pairs if p[8] <= th]
+        self._histogram.set_threshold(th)
+        self._populate()
+
+    def _populate(self):
+        self._table.setRowCount(0)
+        self._row_to_pair = []
+        th = max(self._spin.value(), 0.0001)
+        hide_coinc = self._cb_hide_coinc.isChecked()
+        hidden = 0
+
+        for idx, (va, ma, ia, pa, vb, mb, ib, pb, dist) in enumerate(self._pairs):
+            key = self._pair_key(va, vb)
+            snap_dir = self._snap_log.get(key)
+
+            # Hide already-coincident pairs (not snapped in this session)
+            if hide_coinc and dist < self._COINCIDENT and snap_dir is None:
+                hidden += 1
+                continue
+
+            r = self._table.rowCount(); self._table.insertRow(r)
+            self._row_to_pair.append(idx)
+
+            if snap_dir is not None:
+                icon = u"\u2714"
+                color = _VS_DIR_COLORS.get(snap_dir, "#888")
+                tip = tr(_VS_DIR_LABELS.get(snap_dir, "vs_snap_ab"))
+            else:
+                icon = u"\u25CB"
+                color = "#666"
+                tip = u""
+            si = QtWidgets.QTableWidgetItem(icon)
+            si.setForeground(QtGui.QColor(color))
+            si.setTextAlignment(QtCore.Qt.AlignCenter)
+            si.setToolTip(tip)
+            self._table.setItem(r, 0, si)
+
+            mi_a = QtWidgets.QTableWidgetItem(ma)
+            mi_a.setForeground(QtGui.QColor("#8BC34A"))
+            f = mi_a.font(); f.setBold(True); mi_a.setFont(f)
+            self._table.setItem(r, 1, mi_a)
+            self._table.setItem(r, 2, QtWidgets.QTableWidgetItem(str(ia)))
+
+            mi_b = QtWidgets.QTableWidgetItem(mb)
+            mi_b.setForeground(QtGui.QColor("#81D4FA"))
+            fb = mi_b.font(); fb.setBold(True); mi_b.setFont(fb)
+            self._table.setItem(r, 3, mi_b)
+            self._table.setItem(r, 4, QtWidgets.QTableWidgetItem(str(ib)))
+
+            di = QtWidgets.QTableWidgetItem(u"{0:.6f}".format(dist))
+            di.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            ratio = dist / th
+            if ratio < 0.3:
+                di.setForeground(QtGui.QColor("#4CAF50"))
+            elif ratio < 0.7:
+                di.setForeground(QtGui.QColor("#FF9800"))
+            else:
+                di.setForeground(QtGui.QColor("#F44336"))
+            self._table.setItem(r, 5, di)
+
+            if snap_dir is not None:
+                for c in range(1, 6):
+                    item = self._table.item(r, c)
+                    if item:
+                        item.setForeground(QtGui.QColor("#666"))
+
+        n = len(self._pairs)
+        sn = len(self._snap_log)
+        txt = tr("vs_scope_pairs", count=n, th=self._spin.value())
+        if sn:
+            txt += u"  ({0} snapped)".format(sn)
+        if hidden:
+            txt += u"  [{0} coincident hidden]".format(hidden)
+        self._scope_count.setText(txt)
+
+    def _pair_key(self, va, vb):
+        return va + "|" + vb
+
+    # -- Threshold sync --
+    def _on_spin(self, val):
+        self._refilter()
+
+    def _on_hist_drag(self, val):
+        self._spin.blockSignals(True)
+        self._spin.setValue(val)
+        self._spin.blockSignals(False)
+        self._refilter()
+
+    # -- Row click -> select pair in Maya --
+    def _on_row_changed(self, row, col, pr, pc):
+        if not MAYA_AVAILABLE or row < 0 or row >= len(self._row_to_pair):
+            return
+        pi = self._row_to_pair[row]
+        p = self._pairs[pi]
+        try:
+            cmds.select([p[0], p[4]], r=True)
+        except Exception:
+            pass
+
+    # -- Snap (logged, not finalized until Confirm) --
+    def _on_snap(self, direction):
+        rows = sorted(set(i.row() for i in self._table.selectionModel().selectedRows()))
+        if not rows:
+            self.status_msg.emit(tr("vs_status_no_sel")); return
+        if not self._undo_open:
+            cmds.undoInfo(openChunk=True, chunkName="DW_VertexSnap")
+            self._undo_open = True
+        for r in rows:
+            if r >= len(self._row_to_pair):
+                continue
+            pi = self._row_to_pair[r]
+            p = self._pairs[pi]
+            va, pa, vb, pb = p[0], p[3], p[4], p[7]
+            key = self._pair_key(va, vb)
+            if key in self._snap_log:
+                continue
+            _vs_snap_one(va, pa, vb, pb, direction)
+            self._snap_log[key] = direction
+        self._populate()
+        self._update_confirm_state()
+        self.status_msg.emit(tr("vs_status_snapped", count=len(self._snap_log)))
+
+    # -- Confirm / Revert --
+    def _on_confirm(self):
+        n = len(self._snap_log)
+        self._close_undo()
+        self._snap_log = {}
+        self._update_confirm_state()
+        self.status_msg.emit(tr("vs_status_confirmed", count=n))
+        self._refresh_vdata()
+
+    def _on_revert(self):
+        self._close_undo()
+        if MAYA_AVAILABLE:
+            try:
+                cmds.undo()
+            except Exception:
+                pass
+        self._snap_log = {}
+        self._update_confirm_state()
+        self.status_msg.emit(tr("vs_status_reverted"))
+        self._refresh_vdata()
+
+    def _refresh_vdata(self):
+        if not MAYA_AVAILABLE:
+            return
+        new_vdata = []
+        for vtx, mesh, idx, pos in self._vdata:
+            try:
+                p = cmds.pointPosition(vtx, w=True)
+                new_vdata.append((vtx, mesh, idx, (p[0], p[1], p[2])))
+            except Exception:
+                new_vdata.append((vtx, mesh, idx, pos))
+        self._vdata = new_vdata
+        self._recompute_all_pairs()
+        self._refilter()
+
+    def _close_undo(self):
+        if self._undo_open:
+            try:
+                cmds.undoInfo(closeChunk=True)
+            except Exception:
+                pass
+            self._undo_open = False
+
+    def _update_confirm_state(self):
+        has_log = len(self._snap_log) > 0
+        self._btn_confirm.setEnabled(has_log)
+        self._btn_revert.setEnabled(has_log)
+
+    def _on_merge_maya(self):
+        """Open Maya's native Merge Vertices option box."""
+        if not MAYA_AVAILABLE:
+            return
+        try:
+            mel.eval("MergeVerticesOptions;")
+        except Exception:
+            try:
+                mel.eval("performPolyMerge 1;")
+            except Exception:
+                pass
+
+    def refresh_labels(self):
+        self.setWindowTitle(tr("vs_result_title"))
+        self._update_headers()
+        self._lbl_th.setText(tr("vs_lbl_threshold"))
+        self._cb_hide_coinc.setText(tr("vs_chk_hide_coinc"))
+        self._cb_include_same.setText(tr("vs_chk_include_same"))
+        self._btn_ab.setText(tr("vs_btn_snap_ab"))
+        self._btn_ba.setText(tr("vs_btn_snap_ba"))
+        self._btn_mid.setText(tr("vs_btn_snap_mid"))
+        self._btn_confirm.setText(tr("vs_btn_confirm"))
+        self._btn_revert.setText(tr("vs_btn_revert"))
+        self._btn_merge.setText(tr("vs_btn_merge_maya"))
+
+    def closeEvent(self, event):
+        if self._undo_open:
+            self._close_undo()
+        super(VertexSnapResultWindow, self).closeEvent(event)
+
+
+# ---------------------------------------------------------------------------
+# Snap tab group builder
+#
+# Called from CollisionCheckToolWindow._build() to build the Snap tab.
+# Adds a "Vertex Snap" group (blue border) with a launch button that
+# opens the VertexSnapResultWindow.
+# ---------------------------------------------------------------------------
+
+def _build_vertex_snap_group(tool_window, parent_layout):
+    """Build the Vertex Snap group for the Snap tab.
+    `tool_window` is the CollisionCheckToolWindow instance — the group
+    stores the result window reference on it (tool_window._vs_result_window).
+    Returns the QGroupBox so the caller can track label refs if needed.
+    """
+    grp = QtWidgets.QGroupBox()
+    grp.setStyleSheet(
+        "QGroupBox{border:1px solid #2196F3;border-radius:6px;"
+        "background-color:#2E2E2E;margin-top:6px}"
+        "QGroupBox::title{subcontrol-origin:margin;left:10px;"
+        "color:#EEE;font-size:11px;font-weight:bold}")
+    lo = QtWidgets.QVBoxLayout(grp)
+    lo.setContentsMargins(6, 10, 6, 6)
+    lo.setSpacing(4)
+
+    # Header: title + launch button
+    hdr = QtWidgets.QHBoxLayout()
+    tool_window._vs_grp_lbl = QtWidgets.QLabel(u"\u25A0 " + tr("vs_grp_title"))
+    tool_window._vs_grp_lbl.setStyleSheet(
+        "color:#2196F3;font-size:11px;font-weight:bold")
+    hdr.addWidget(tool_window._vs_grp_lbl)
+    hdr.addStretch()
+    tool_window._vs_btn_launch = _mkbtn(
+        tr("vs_btn_launch"), 24, "#2196F3", "#1976D2", fs=10)
+    tool_window._vs_btn_launch.clicked.connect(
+        lambda: _vs_launch(tool_window))
+    hdr.addWidget(tool_window._vs_btn_launch)
+    lo.addLayout(hdr)
+
+    # Description line
+    tool_window._vs_desc_lbl = QtWidgets.QLabel(tr("vs_grp_desc"))
+    tool_window._vs_desc_lbl.setStyleSheet(
+        "color:#AAA;font-size:10px;padding:2px 4px")
+    tool_window._vs_desc_lbl.setWordWrap(True)
+    lo.addWidget(tool_window._vs_desc_lbl)
+
+    parent_layout.addWidget(grp)
+    return grp
+
+
+def _vs_launch(tool_window):
+    """Collect selected meshes, build pairs, open result window."""
+    vdata, mesh_names = _vs_get_mesh_verts()
+    if not vdata:
+        if hasattr(tool_window, "_status_bar"):
+            tool_window._status_bar.setText(tr("vs_status_no_mesh"))
+        return
+
+    if not hasattr(tool_window, "_vs_result_window"):
+        tool_window._vs_result_window = None
+
+    if tool_window._vs_result_window is None:
+        tool_window._vs_result_window = VertexSnapResultWindow(parent=tool_window)
+        tool_window._vs_result_window.status_msg.connect(
+            lambda t: tool_window._status_bar.setText(t)
+            if hasattr(tool_window, "_status_bar") else None)
+
+    tool_window._vs_result_window.set_data(vdata, mesh_names)
+    tool_window._vs_result_window.show()
+    tool_window._vs_result_window.raise_()
+    tool_window._vs_result_window.activateWindow()
+
+
+def _vs_refresh_labels(tool_window):
+    """Called from CollisionCheckToolWindow._refresh_labels()."""
+    if hasattr(tool_window, "_vs_grp_lbl"):
+        tool_window._vs_grp_lbl.setText(u"\u25A0 " + tr("vs_grp_title"))
+    if hasattr(tool_window, "_vs_btn_launch"):
+        tool_window._vs_btn_launch.setText(tr("vs_btn_launch"))
+    if hasattr(tool_window, "_vs_desc_lbl"):
+        tool_window._vs_desc_lbl.setText(tr("vs_grp_desc"))
+    if getattr(tool_window, "_vs_result_window", None):
+        tool_window._vs_result_window.refresh_labels()
+
+
+def _vs_close_result_window(tool_window):
+    """Called from CollisionCheckToolWindow close/reload."""
+    if getattr(tool_window, "_vs_result_window", None):
+        try:
+            tool_window._vs_result_window.close()
+        except Exception:
+            pass
