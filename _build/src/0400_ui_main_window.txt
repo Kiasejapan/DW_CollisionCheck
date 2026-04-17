@@ -269,95 +269,6 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
 
         scroll_lo.addWidget(static_grp)
 
-        # ---- Move-to-Origin Group (purple border) - placed in Other tab --
-        move_grp = QtWidgets.QGroupBox()
-        move_grp.setStyleSheet(
-            "QGroupBox{border:1px solid #9C27B0;border-radius:6px;"
-            "background-color:#2E2E2E;margin-top:6px}"
-            "QGroupBox::title{subcontrol-origin:margin;left:10px;"
-            "color:#EEE;font-size:11px;font-weight:bold}")
-
-        move_lo = QtWidgets.QVBoxLayout(move_grp)
-        move_lo.setContentsMargins(6, 10, 6, 6)
-        move_lo.setSpacing(4)
-
-        # Group header row
-        move_header = QtWidgets.QHBoxLayout()
-        self._move_grp_lbl = QtWidgets.QLabel(
-            u"\u25A0 " + tr("grp_move"))
-        self._move_grp_lbl.setStyleSheet(
-            "color:#CE93D8;font-size:11px;font-weight:bold")
-        move_header.addWidget(self._move_grp_lbl)
-        move_header.addStretch()
-        self._btn_run_move_all = _mkbtn(
-            tr("run_move_all"), 24, "#9C27B0", "#7B1FA2")
-        self._btn_run_move_all.clicked.connect(self._run_all_move)
-        move_header.addWidget(self._btn_run_move_all)
-        move_lo.addLayout(move_header)
-
-        # Axis selector row (X / Y / Z radio)
-        axis_row = QtWidgets.QHBoxLayout()
-        self._lbl_move_axis = QtWidgets.QLabel(tr("lbl_move_axis"))
-        self._lbl_move_axis.setStyleSheet("color:#AAA;font-size:10px")
-        self._lbl_move_axis.setToolTip(tr("tip_move_axis"))
-        axis_row.addWidget(self._lbl_move_axis)
-        self._axis_group = QtWidgets.QButtonGroup(self)
-        self._rb_axis_x = QtWidgets.QRadioButton(tr("axis_x"))
-        self._rb_axis_y = QtWidgets.QRadioButton(tr("axis_y"))
-        self._rb_axis_z = QtWidgets.QRadioButton(tr("axis_z"))
-        for i, rb in enumerate(
-                (self._rb_axis_x, self._rb_axis_y, self._rb_axis_z)):
-            rb.setStyleSheet(
-                "QRadioButton{color:#EEE;font-size:11px;padding:0px 4px}"
-                "QRadioButton::indicator{width:11px;height:11px}")
-            rb.setToolTip(tr("tip_move_axis"))
-            self._axis_group.addButton(rb, i)
-            axis_row.addWidget(rb)
-        # default selection from module state
-        cur = _get_move_axis()
-        (self._rb_axis_x, self._rb_axis_y, self._rb_axis_z)[cur].setChecked(True)
-        try:
-            self._axis_group.idClicked.connect(self._on_axis_changed)
-        except AttributeError:
-            # PySide2 older signature fallback
-            self._axis_group.buttonClicked[int].connect(self._on_axis_changed)
-        axis_row.addStretch()
-        move_lo.addLayout(axis_row)
-
-        # MoveItem widgets (re-use CheckItemWidget for consistent UI)
-        self._move_instances = []
-        self._move_widgets   = []
-        for cls in MOVE_ITEMS:
-            inst = cls()
-            widget = CheckItemWidget(inst, has_settings=False)
-            widget.check_requested.connect(self._on_move_done)
-            self._move_instances.append(inst)
-            self._move_widgets.append(widget)
-            move_lo.addWidget(widget)
-
-        # Stop-offset row
-        off_row = QtWidgets.QHBoxLayout()
-        self._lbl_move_offset = QtWidgets.QLabel(tr("lbl_move_offset"))
-        self._lbl_move_offset.setStyleSheet("color:#AAA;font-size:10px")
-        self._lbl_move_offset.setToolTip(tr("tip_move_offset"))
-        off_row.addWidget(self._lbl_move_offset)
-        self._spin_move_offset = QtWidgets.QDoubleSpinBox()
-        self._spin_move_offset.setRange(0.0, 1.0e6)
-        self._spin_move_offset.setDecimals(4)
-        self._spin_move_offset.setSingleStep(0.001)
-        self._spin_move_offset.setValue(_get_move_offset())
-        self._spin_move_offset.setFixedWidth(85)
-        self._spin_move_offset.setToolTip(tr("tip_move_offset"))
-        self._spin_move_offset.setStyleSheet(
-            "QDoubleSpinBox{background-color:#2B2B2B;color:#EEE;"
-            "border:1px solid #555;border-radius:3px;padding:1px;font-size:10px}")
-        self._spin_move_offset.valueChanged.connect(
-            self._on_move_offset_changed)
-        off_row.addWidget(self._spin_move_offset)
-        off_row.addStretch()
-        move_lo.addLayout(off_row)
-
-        # NOTE: move_grp is added to Other tab below, not to scroll_lo
 
         # ---- Animation Scan Group (amber border) ----
         anim_grp = QtWidgets.QGroupBox()
@@ -516,7 +427,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         other_scroll_lo = QtWidgets.QVBoxLayout(other_scroll_w)
         other_scroll_lo.setContentsMargins(4, 4, 4, 4)
         other_scroll_lo.setSpacing(8)
-        other_scroll_lo.addWidget(move_grp)
+        _build_mesh_landing_group(self, other_scroll_lo)
         other_scroll_lo.addStretch()
         other_scroll.setWidget(other_scroll_w)
         other_tab_lo.addWidget(other_scroll)
@@ -554,48 +465,6 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
 
     def _on_vert_share_tol_changed(self, value):
         _set_vert_share_tolerance(value)
-
-    # ---- Move-to-Origin handlers --------------------------------------
-    def _on_move_offset_changed(self, value):
-        _set_move_offset(value)
-
-    def _on_axis_changed(self, idx):
-        _set_move_axis(int(idx))
-
-    def _on_axis_changed(self, idx):
-        _set_move_axis(int(idx))
-
-    def _run_all_move(self):
-        """Run every move item that has a matching selection."""
-        self._status_bar.setText(tr("status_checking"))
-        QtWidgets.QApplication.processEvents()
-        any_done = False
-        last_summary = u""
-        for w in self._move_widgets:
-            inst = w.check_item
-            inst.run_check()  # actually performs the move
-            w._update_ui()
-            if inst.status == "pass" or inst.issues:
-                any_done = True
-                if hasattr(inst, "_last_summary") and inst._last_summary:
-                    last_summary = inst._last_summary
-                elif inst.issues:
-                    last_summary = inst.issues[0].get("detail", u"")
-        if any_done and last_summary:
-            self._status_bar.setText(last_summary)
-        else:
-            self._status_bar.setText(tr("status_ready"))
-
-    def _on_move_done(self, check_item):
-        """Single move-item completed (badge / status bar update)."""
-        # Prefer the in-instance summary when fully successful
-        msg = u""
-        if hasattr(check_item, "_last_summary") and check_item._last_summary:
-            msg = check_item._last_summary
-        elif check_item.issues:
-            msg = check_item.issues[0].get("detail", u"")
-        if msg:
-            self._status_bar.setText(msg)
 
     def _run_all_static(self):
         self._status_bar.setText(tr("status_checking"))
@@ -834,19 +703,8 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         self._lbl_vert_share_tol.setText(tr("lbl_vert_share_tol"))
         self._lbl_vert_share_tol.setToolTip(tr("tip_vert_share_tol"))
         self._spin_vert_share_tol.setToolTip(tr("tip_vert_share_tol"))
-        # Move-to-Origin labels
-        self._move_grp_lbl.setText(u"\u25A0 " + tr("grp_move"))
-        self._btn_run_move_all.setText(tr("run_move_all"))
-        self._lbl_move_offset.setText(tr("lbl_move_offset"))
-        self._lbl_move_offset.setToolTip(tr("tip_move_offset"))
-        self._spin_move_offset.setToolTip(tr("tip_move_offset"))
-        self._lbl_move_axis.setText(tr("lbl_move_axis"))
-        self._lbl_move_axis.setToolTip(tr("tip_move_axis"))
-        self._rb_axis_x.setText(tr("axis_x"))
-        self._rb_axis_y.setText(tr("axis_y"))
-        self._rb_axis_z.setText(tr("axis_z"))
-        for rb in (self._rb_axis_x, self._rb_axis_y, self._rb_axis_z):
-            rb.setToolTip(tr("tip_move_axis"))
+        # Mesh Landing labels
+        _ml_refresh_labels(self)
         # Tab labels
         try:
             self._tabs.setTabText(0, tr("tab_check"))
@@ -856,8 +714,6 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
             pass
         # Vertex Snap labels
         _vs_refresh_labels(self)
-        for w in self._move_widgets:
-            w.refresh_labels()
         self._cb_use_timeline.setText(tr("chk_use_timeline"))
         self._lbl_fr.setText(tr("lbl_frame_range"))
         self._lbl_step.setText(tr("lbl_frame_step"))

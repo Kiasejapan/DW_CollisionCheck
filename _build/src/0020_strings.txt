@@ -72,45 +72,32 @@ _STRINGS = {
     "tip_vert_share_tol":   {"en": "Triangles sharing a vertex within this distance are skipped from intersection testing.",
                              "jp": u"\u3053\u306e\u8ddd\u96e2\u4ee5\u5185\u3067\u9802\u70b9\u3092\u5171\u6709\u3059\u308b\u4e09\u89d2\u5f62\u30da\u30a2\u306f\u4ea4\u5dee\u5224\u5b9a\u3092\u30b9\u30ad\u30c3\u30d7\u3057\u307e\u3059\u3002"},
 
-    # ---- Move-to-Origin group ------------------------------------------
-    "grp_move":             {"en": "Move to Origin (BETA)",         "jp": u"\u539f\u70b9\u79fb\u52d5\uff08BETA\uff09"},
-    "run_move_all":         {"en": "Run Move All",                  "jp": u"\u4e00\u62ec\u5b9f\u884c"},
-    "lbl_move_offset":      {"en": "Stop offset:",                  "jp": u"\u505c\u6b62\u30aa\u30d5\u30bb\u30c3\u30c8:"},
-    "tip_move_offset":      {"en": "Distance to keep between the moved element and the collision/origin.",
-                             "jp": u"\u79fb\u52d5\u8981\u7d20\u3068\u8870\u7a81\u9762/\u539f\u70b9\u3068\u306e\u9593\u306b\u6b8b\u3059\u9694\u305f\u308a\u8ddd\u96e2\u3002"},
-
-    "move_mesh":            {"en": "Move Mesh",                     "jp": u"\u30e1\u30c3\u30b7\u30e5\u3092\u539f\u70b9\u3078"},
-    "move_mesh_desc":       {"en": "Move each selected mesh transform toward the origin until it nearly touches another mesh or the origin.",
-                             "jp": u"\u9078\u629e\u30e1\u30c3\u30b7\u30e5\u3092\u4ed6\u30e1\u30c3\u30b7\u30e5\u307e\u305f\u306f\u539f\u70b9\u306b\u63a5\u3059\u308b\u624b\u524d\u307e\u3067\u539f\u70b9\u65b9\u5411\u306b\u79fb\u52d5\u3002"},
-    "move_vertex":          {"en": "Move Vertices",                 "jp": u"\u9802\u70b9\u3092\u539f\u70b9\u3078"},
-    "move_vertex_desc":     {"en": "Move each selected vertex individually toward the origin.",
-                             "jp": u"\u9078\u629e\u9802\u70b9\u3092\u3001\u305d\u308c\u305e\u308c\u500b\u5225\u306b\u539f\u70b9\u65b9\u5411\u3078\u79fb\u52d5\u3002"},
-    "move_edge":            {"en": "Move Edges",                    "jp": u"\u30a8\u30c3\u30b8\u3092\u539f\u70b9\u3078"},
-    "move_edge_desc":       {"en": "Move each selected edge (as a rigid pair of endpoints) toward the origin.",
-                             "jp": u"\u9078\u629e\u30a8\u30c3\u30b8\u3092\u4e21\u7aef\u70b9\u3054\u3068\u306b\u539f\u70b9\u65b9\u5411\u3078\u79fb\u52d5\u3002"},
-    "move_face":            {"en": "Move Faces",                    "jp": u"\u30d5\u30a7\u30fc\u30b9\u3092\u539f\u70b9\u3078"},
-    "move_face_desc":       {"en": "Move each selected face (with all its vertices) toward the origin.",
-                             "jp": u"\u9078\u629e\u30d5\u30a7\u30fc\u30b9\u3092\u9802\u70b9\u3054\u3068\u539f\u70b9\u65b9\u5411\u3078\u79fb\u52d5\u3002"},
-
-    "move_status_done":     {"en": "Moved {n} element(s)",          "jp": u"{n} \u8981\u7d20\u3092\u79fb\u52d5\u3057\u307e\u3057\u305f"},
-    "move_status_skipped":  {"en": "{n} skipped (near origin / no center)",
-                             "jp": u"{n} \u8981\u7d20\u3092\u30b9\u30ad\u30c3\u30d7\uff08\u539f\u70b9\u8fd1\u508d/\u4e2d\u5fc3\u4e0d\u660e\uff09"},
-    "move_status_no_selection": {"en": "No matching selection for this operation.",
-                                  "jp": u"\u3053\u306e\u64cd\u4f5c\u306b\u5408\u3046\u9078\u629e\u304c\u3042\u308a\u307e\u305b\u3093\u3002"},
+    # ---- Mesh Landing (Other tab) ------------------------------------
+    "ml_grp_title":         {"en": "Mesh Landing",                  "jp": u"\u30e1\u30c3\u30b7\u30e5\u63a5\u5730"},
+    "ml_btn_land":          {"en": "Land",                          "jp": u"\u63a5\u5730"},
+    "ml_lbl_source":        {"en": "Source (moves):",               "jp": u"\u30bd\u30fc\u30b9 (\u79fb\u52d5\u5074):"},
+    "ml_lbl_target":        {"en": "Target (ground):",              "jp": u"\u30bf\u30fc\u30b2\u30c3\u30c8 (\u5730\u9762):"},
+    "ml_btn_set":           {"en": "Set",                           "jp": u"\u30bb\u30c3\u30c8"},
+    "ml_lbl_axis":          {"en": "Axis:",                         "jp": u"\u8ef8:"},
+    "ml_lbl_direction":     {"en": "Direction:",                    "jp": u"\u65b9\u5411:"},
+    "ml_dir_auto":          {"en": "Auto",                          "jp": u"\u81ea\u52d5"},
+    "ml_dir_positive":      {"en": "+",                             "jp": u"+"},
+    "ml_dir_negative":      {"en": u"\u2212",                       "jp": u"\u2212"},
+    "ml_lbl_mode":          {"en": "Move mode:",                    "jp": u"\u79fb\u52d5\u30e2\u30fc\u30c9:"},
+    "ml_mode_object":       {"en": "Object",                        "jp": u"\u30aa\u30d6\u30b8\u30a7\u30af\u30c8"},
+    "ml_mode_component":    {"en": "Component",                     "jp": u"\u30b3\u30f3\u30dd\u30fc\u30cd\u30f3\u30c8"},
+    "ml_lbl_offset":        {"en": "Offset:",                       "jp": u"\u30aa\u30d5\u30bb\u30c3\u30c8:"},
+    "ml_status_landed":     {"en": "Landed: moved {dist:.4f} along {axis}",
+                             "jp": u"\u63a5\u5730\u5b8c\u4e86: {axis}\u8ef8\u65b9\u5411\u306b {dist:.4f} \u79fb\u52d5"},
+    "ml_status_no_hit":     {"en": "No surface found along the axis.",
+                             "jp": u"\u8ef8\u65b9\u5411\u306b\u8868\u9762\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093\u3002"},
+    "ml_status_no_source":  {"en": "Source is not set.",            "jp": u"\u30bd\u30fc\u30b9\u304c\u672a\u8a2d\u5b9a\u3067\u3059\u3002"},
+    "ml_status_no_target":  {"en": "Target is not set.",            "jp": u"\u30bf\u30fc\u30b2\u30c3\u30c8\u304c\u672a\u8a2d\u5b9a\u3067\u3059\u3002"},
 
     # ---- Tabs --------------------------------------------------------
     "tab_check":            {"en": "Check",                         "jp": u"\u30c1\u30a7\u30c3\u30af"},
     "tab_other":            {"en": "Other",                         "jp": u"\u305d\u306e\u4ed6"},
 
-    # ---- Move axis / mode --------------------------------------------
-    "lbl_move_axis":        {"en": "Axis:",                         "jp": u"\u8ef8:"},
-    "tip_move_axis":        {"en": "Direction is along this axis. Sign is auto (toward origin from element center).",
-                             "jp": u"\u9078\u629e\u8ef8\u306b\u6cbf\u3063\u3066\u79fb\u52d5\u3057\u307e\u3059\u3002\u6b63\u8ca0\u306f\u8981\u7d20\u4e2d\u5fc3\u304b\u3089\u539f\u70b9\u65b9\u5411\u306b\u81ea\u52d5\u5224\u5b9a\u3002"},
-    "axis_x":               {"en": "X",                             "jp": u"X"},
-    "axis_y":               {"en": "Y",                             "jp": u"Y"},
-    "axis_z":               {"en": "Z",                             "jp": u"Z"},
-
-    "btn_move":             {"en": "Move",                          "jp": u"\u79fb\u52d5"},
     "anim_scanning":        {"en": "Scanning frame {frame}/{total}...",
                              "jp": u"\u30d5\u30ec\u30fc\u30e0 {frame}/{total} \u3092\u30b9\u30ad\u30e3\u30f3\u4e2d..."},
     "anim_done":            {"en": "Animation scan done: {count} frame(s) with issues.",
@@ -252,16 +239,61 @@ _STRINGS = {
     },
     "help_body_other": {
         "en": "<h2>Other Tab</h2>"
-              "<p style='color:#FF9800;'><b>\u26A0 Currently unstable &mdash; not recommended for production use.</b></p>"
-              "<p>The <b>Move to Origin</b> feature is under revision. "
-              "Please avoid using it until it is fixed in a future update.</p>"
-              "<p>If you need to check the current behavior for testing purposes, "
-              "use it on disposable data only and review the result carefully.</p>",
+              "<h3>Mesh Landing</h3>"
+              "<p>Lands a source mesh onto a target mesh along a chosen axis. "
+              "Raycasts every source vertex toward the target, verifies with polygon-level "
+              "collision, and moves the source so it touches the target without penetrating.</p>"
+              "<h3>Workflow</h3>"
+              "<ol>"
+              "<li>Select source mesh(es) in the viewport and click <b>[Set]</b> on the Source row.</li>"
+              "<li>Select target mesh(es) and click <b>[Set]</b> on the Target row.</li>"
+              "<li>Choose the <b>Axis</b> (X / Y / Z).</li>"
+              "<li>Choose the <b>Direction</b>:"
+              "<ul>"
+              "<li><b>Auto</b> &mdash; auto-detect based on source/target center positions.</li>"
+              "<li><b>+</b> / <b>\u2212</b> &mdash; force positive or negative direction along the axis.</li>"
+              "</ul></li>"
+              "<li>Choose the <b>Move mode</b>:"
+              "<ul>"
+              "<li><b>Object</b> &mdash; moves the whole source transform.</li>"
+              "<li><b>Component</b> &mdash; moves only currently selected vertices / faces of the source.</li>"
+              "</ul></li>"
+              "<li>Set <b>Offset</b> (gap to keep between source and target surface; 0 = touch).</li>"
+              "<li>Click <b>[Land]</b>.</li>"
+              "</ol>"
+              "<h3>Algorithm</h3>"
+              "<p>A raycast gives an initial upper-bound distance. If the mesh still collides at that "
+              "distance (happens with rotated or concave shapes), a binary search in [0, upper-bound] "
+              "finds the largest safe distance that guarantees no polygon-level penetration.</p>"
+              "<p>Undo works normally &mdash; the entire operation is wrapped in a single undo chunk.</p>",
         "jp": u"<h2>\u305d\u306e\u4ed6\u30bf\u30d6</h2>"
-              u"<p style='color:#FF9800;'><b>\u26A0 \u73fe\u5728\u4f7f\u7528\u4e0d\u53ef \u2014 \u52d5\u4f5c\u304c\u4e0d\u5b89\u5b9a</b></p>"
-              u"<p><b>\u539f\u70b9\u79fb\u52d5</b>\u6a5f\u80fd\u306f\u73fe\u5728\u4fee\u6b63\u4f5c\u696d\u4e2d\u3067\u3059\u3002"
-              u"\u4eca\u5f8c\u306e\u30a2\u30c3\u30d7\u30c7\u30fc\u30c8\u3067\u4fee\u6b63\u3055\u308c\u308b\u307e\u3067\u3001\u672c\u756a\u30c7\u30fc\u30bf\u3067\u306e\u4f7f\u7528\u306f\u63a7\u3048\u3066\u304f\u3060\u3055\u3044\u3002</p>"
-              u"<p>\u30c6\u30b9\u30c8\u76ee\u7684\u3067\u73fe\u5728\u306e\u52d5\u4f5c\u3092\u78ba\u8a8d\u3059\u308b\u5834\u5408\u306f\u3001\u30c0\u30df\u30fc\u30c7\u30fc\u30bf\u3067\u306e\u307f\u4f7f\u7528\u3057\u3001\u7d50\u679c\u3092\u5fc5\u305a\u78ba\u8a8d\u3057\u3066\u304f\u3060\u3055\u3044\u3002</p>",
+              u"<h3>\u30e1\u30c3\u30b7\u30e5\u63a5\u5730</h3>"
+              u"<p>\u30bd\u30fc\u30b9\u30e1\u30c3\u30b7\u30e5\u3092\u6307\u5b9a\u8ef8\u306b\u6cbf\u3063\u3066\u30bf\u30fc\u30b2\u30c3\u30c8\u30e1\u30c3\u30b7\u30e5\u306b\u63a5\u5730\u3055\u305b\u307e\u3059\u3002"
+              u"\u30bd\u30fc\u30b9\u306e\u5168\u9802\u70b9\u304b\u3089\u30ec\u30a4\u30ad\u30e3\u30b9\u30c8\u3092\u884c\u3044\u3001\u30dd\u30ea\u30b4\u30f3\u30ec\u30d9\u30eb\u306e\u885d\u7a81\u5224\u5b9a\u3067\u691c\u8a3c\u3057\u3001"
+              u"\u8cab\u901a\u305b\u305a\u306b\u63a5\u89e6\u3059\u308b\u4f4d\u7f6e\u307e\u3067\u30bd\u30fc\u30b9\u3092\u79fb\u52d5\u3057\u307e\u3059\u3002</p>"
+              u"<h3>\u4f5c\u696d\u624b\u9806</h3>"
+              u"<ol>"
+              u"<li>\u30d3\u30e5\u30fc\u30dd\u30fc\u30c8\u3067\u30bd\u30fc\u30b9\u30e1\u30c3\u30b7\u30e5\u3092\u9078\u629e\u3057\u3001\u30bd\u30fc\u30b9\u884c\u306e <b>[\u30bb\u30c3\u30c8]</b> \u3092\u30af\u30ea\u30c3\u30af\u3002</li>"
+              u"<li>\u30bf\u30fc\u30b2\u30c3\u30c8\u30e1\u30c3\u30b7\u30e5\u3092\u9078\u629e\u3057\u3001\u30bf\u30fc\u30b2\u30c3\u30c8\u884c\u306e <b>[\u30bb\u30c3\u30c8]</b> \u3092\u30af\u30ea\u30c3\u30af\u3002</li>"
+              u"<li><b>\u8ef8</b>\uff08X / Y / Z\uff09\u3092\u9078\u629e\u3002</li>"
+              u"<li><b>\u65b9\u5411</b>\u3092\u9078\u629e\uff1a"
+              u"<ul>"
+              u"<li><b>\u81ea\u52d5</b> \u2014 \u30bd\u30fc\u30b9\u3068\u30bf\u30fc\u30b2\u30c3\u30c8\u306e\u4e2d\u5fc3\u4f4d\u7f6e\u304b\u3089\u81ea\u52d5\u5224\u5b9a\u3002</li>"
+              u"<li><b>+</b> / <b>\u2212</b> \u2014 \u8ef8\u65b9\u5411\u3092\u660e\u793a\u7684\u306b\u6307\u5b9a\u3002</li>"
+              u"</ul></li>"
+              u"<li><b>\u79fb\u52d5\u30e2\u30fc\u30c9</b>\u3092\u9078\u629e\uff1a"
+              u"<ul>"
+              u"<li><b>\u30aa\u30d6\u30b8\u30a7\u30af\u30c8</b> \u2014 \u30bd\u30fc\u30b9\u306e Transform \u3054\u3068\u79fb\u52d5\u3002</li>"
+              u"<li><b>\u30b3\u30f3\u30dd\u30fc\u30cd\u30f3\u30c8</b> \u2014 \u73fe\u5728\u9078\u629e\u3057\u3066\u3044\u308b\u9802\u70b9\u30fb\u30d5\u30a7\u30fc\u30b9\u306e\u307f\u79fb\u52d5\u3002</li>"
+              u"</ul></li>"
+              u"<li><b>\u30aa\u30d5\u30bb\u30c3\u30c8</b>\uff08\u30bd\u30fc\u30b9\u3068\u30bf\u30fc\u30b2\u30c3\u30c8\u9593\u306b\u6b8b\u3059\u9694\u305f\u308a\u8ddd\u96e2\u3002 0 \u306e\u5834\u5408\u306f\u63a5\u89e6\uff09\u3092\u8a2d\u5b9a\u3002</li>"
+              u"<li><b>[\u63a5\u5730]</b> \u3092\u30af\u30ea\u30c3\u30af\u3002</li>"
+              u"</ol>"
+              u"<h3>\u30a2\u30eb\u30b4\u30ea\u30ba\u30e0</h3>"
+              u"<p>\u307e\u305a\u30ec\u30a4\u30ad\u30e3\u30b9\u30c8\u3067\u6982\u7b97\u8ddd\u96e2\uff08\u4e0a\u9650\u5024\uff09\u3092\u7b97\u51fa\u3057\u307e\u3059\u3002"
+              u"\u305d\u306e\u8ddd\u96e2\u3067\u3082\u885d\u7a81\u304c\u6b8b\u308b\u5834\u5408\uff08\u56de\u8ee2\u3057\u305f\u5f62\u72b6\u3084\u51f9\u5f62\u30e1\u30c3\u30b7\u30e5\u3067\u8d77\u3053\u308a\u307e\u3059\uff09\u306f\u3001"
+              u"[0, \u4e0a\u9650\u5024] \u306e\u7bc4\u56f2\u3092\u4e8c\u5206\u63a2\u7d22\u3057\u3001\u30dd\u30ea\u30b4\u30f3\u30ec\u30d9\u30eb\u3067\u8cab\u901a\u3057\u306a\u3044\u6700\u5927\u8ddd\u96e2\u3092\u6c42\u3081\u307e\u3059\u3002</p>"
+              u"<p>Undo \u306f\u901a\u5e38\u901a\u308a\u52d5\u4f5c\u3057\u307e\u3059\uff08\u5168\u4f53\u304c 1 \u3064\u306e Undo \u30c1\u30e3\u30f3\u30af\u306b\u307e\u3068\u3081\u3089\u308c\u307e\u3059\uff09\u3002</p>",
     },
 
     # ---- Vertex Snap (Snap tab) --------------------------------------
