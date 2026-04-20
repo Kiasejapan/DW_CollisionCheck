@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.20.1745"
+VERSION = "2026.04.20.1808"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -4376,6 +4376,23 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
     """
     is_component_mode = vert_indices is not None
 
+    # Normalize: in component mode drop shapes that have no entries or
+    # only empty lists, so downstream "shape in vert_indices" is reliable.
+    if is_component_mode:
+        vert_indices = {s: v for s, v in vert_indices.items() if v}
+
+    if debug:
+        print(u"[DW MeshLanding] ----- compute_landing -----")
+        print(u"  source_shapes:", source_shapes)
+        print(u"  target_shapes:", target_shapes)
+        print(u"  axis={0} sign_in={1} offset={2}".format(
+            axis, sign, offset))
+        print(u"  component_mode:", is_component_mode)
+        if is_component_mode:
+            for s, vs in vert_indices.items():
+                print(u"    {0}: {1} verts".format(
+                    s.split(u"|")[-1], len(vs)))
+
     all_pts = []
     for shape in source_shapes:
         if is_component_mode:
@@ -4386,7 +4403,12 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
             pts = _ml_get_world_verts(shape)
         all_pts.extend(pts)
     if not all_pts:
+        if debug:
+            print(u"  [FAIL] no source points collected")
         return None, 0
+
+    if debug:
+        print(u"  collected {0} source pts".format(len(all_pts)))
 
     if sign == 0:
         src_cx = sum(p[axis] for p in all_pts) / len(all_pts)
@@ -4396,6 +4418,9 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
         if tgt_pts:
             tgt_cx = sum(p[axis] for p in tgt_pts) / len(tgt_pts)
             sign = -1 if src_cx > tgt_cx else 1
+            if debug:
+                print(u"  auto-sign: src_cx={0:.3f} tgt_cx={1:.3f} "
+                      u"-> sign={2}".format(src_cx, tgt_cx, sign))
         else:
             sign = -1
 
@@ -4405,11 +4430,16 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
 
     raycaster = MeshLandingRaycaster(target_shapes)
     ray_min_dist = None
+    ray_hits = 0
     for p in all_pts:
         d = raycaster.cast(p, direction)
         if d is not None:
+            ray_hits += 1
             if ray_min_dist is None or d < ray_min_dist:
                 ray_min_dist = d
+    if debug:
+        print(u"  raycast: {0}/{1} hits, min_dist={2}".format(
+            ray_hits, len(all_pts), ray_min_dist))
     if ray_min_dist is None:
         ray_min_dist = _ml_bbox_gap_estimate(all_pts, target_shapes,
                                               axis, sign)
@@ -4441,6 +4471,10 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
     for shape in target_shapes:
         tgt_tris.extend(_ml_mesh_to_triangles(shape))
 
+    if debug:
+        print(u"  moving_tris={0}  tgt_tris={1}".format(
+            len(src_moving_tris), len(tgt_tris)))
+
     # If there are no fully-selected triangles (user picked disconnected
     # vertices), fall back to raycast-only — rays already gave us a
     # vertex-level safe distance.
@@ -4452,6 +4486,8 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
         else:
             # Negative offset: embed by |offset| past the raycast hit.
             result = ray_min_dist + abs(offset)
+        if debug:
+            print(u"  [raycast-only] result={0}".format(result))
         return result, sign
 
     # Precompute AABBs from the moving-triangle subset ONLY. This is key:
@@ -4460,6 +4496,11 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
     # test that follows) is polluted by static geometry.
     src_aabb_static = _ml_aabb_merge_tris(src_moving_tris)
     tgt_aabb = _ml_aabb_merge_tris(tgt_tris)
+    if debug:
+        print(u"  src_aabb: ({0:.3f},{1:.3f},{2:.3f})-({3:.3f},{4:.3f},{5:.3f})"
+              .format(*src_aabb_static))
+        print(u"  tgt_aabb: ({0:.3f},{1:.3f},{2:.3f})-({3:.3f},{4:.3f},{5:.3f})"
+              .format(*tgt_aabb))
 
     def _collides_at(dist):
         dlist = [0.0, 0.0, 0.0]
@@ -4476,14 +4517,23 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
     if offset < 0:
         # Negative offset: embed past the raycast hit. No collision
         # check (we WANT Mesh A to go into Mesh B).
+        if debug:
+            print(u"  [negative offset] result={0}".format(
+                ray_min_dist + abs(offset)))
         return ray_min_dist + abs(offset), sign
 
     # Non-negative offset: find the max non-colliding distance, then
     # subtract the offset to leave a gap.
-    if not _collides_at(ray_min_dist):
+    collides_at_ray = _collides_at(ray_min_dist)
+    if debug:
+        print(u"  collides_at(ray_min_dist={0}) = {1}".format(
+            ray_min_dist, collides_at_ray))
+    if not collides_at_ray:
         result = ray_min_dist - offset
         if result < 0.0:
             result = 0.0
+        if debug:
+            print(u"  [no collision at raycast] result={0}".format(result))
         return result, sign
 
     lo = 0.0
@@ -4504,6 +4554,8 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
     final_d = best - offset
     if final_d < 0.0:
         final_d = 0.0
+    if debug:
+        print(u"  [binary-search] best={0} final_d={1}".format(best, final_d))
     return final_d, sign
 
 
@@ -4989,7 +5041,8 @@ class MeshLandingDialog(QtWidgets.QDialog):
             if is_component:
                 result = ml_compute_landing(
                     self._mesh_a_shapes, self._mesh_b_shapes,
-                    axis, sign, offset, vert_indices=vert_map)
+                    axis, sign, offset, vert_indices=vert_map,
+                    debug=True)
                 if result is None or result[0] is None or result[0] < 1.0e-8:
                     self.status_msg.emit(tr("ml_status_no_hit"))
                     self._set_preview_label(tr("ml_status_no_hit"),
@@ -5007,7 +5060,7 @@ class MeshLandingDialog(QtWidgets.QDialog):
             else:
                 result = ml_compute_landing(
                     self._mesh_a_shapes, self._mesh_b_shapes,
-                    axis, sign, offset)
+                    axis, sign, offset, debug=True)
                 if result is None or result[0] is None or result[0] < 1.0e-8:
                     self.status_msg.emit(tr("ml_status_no_hit"))
                     self._set_preview_label(tr("ml_status_no_hit"),
