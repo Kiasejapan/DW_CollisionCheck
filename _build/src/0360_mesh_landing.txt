@@ -334,16 +334,50 @@ def _ml_translate_aabb(aabb, delta):
 
 
 def _ml_get_mesh_shapes(objects):
+    """Collect mesh shapes from a list of nodes (transforms, groups, or meshes).
+
+    Recurses through transform hierarchies so selecting a group returns every
+    mesh underneath it. Intermediate objects (deformer orig shapes) are skipped.
+    """
     shapes = []
     for obj in objects:
         if not cmds.objExists(obj):
             continue
-        if cmds.nodeType(obj) == "mesh":
+        node_type = cmds.nodeType(obj)
+        if node_type == "mesh":
+            # Direct mesh shape selection
+            try:
+                if cmds.getAttr(obj + ".intermediateObject"):
+                    continue
+            except Exception:
+                pass
             shapes.append(cmds.ls(obj, long=True)[0])
         else:
-            ch = cmds.listRelatives(obj, shapes=True, noIntermediate=True,
-                                     fullPath=True, type="mesh") or []
-            shapes.extend(ch)
+            # Transform / group: walk the whole subtree for mesh shapes
+            descendants = cmds.listRelatives(
+                obj,
+                allDescendents=True,
+                shapes=True,
+                noIntermediate=True,
+                fullPath=True,
+                type="mesh") or []
+            # Also include shapes directly parented to this node
+            # (listRelatives sometimes misses the top-level shape when
+            # the node itself is a transform with a mesh child).
+            direct = cmds.listRelatives(
+                obj,
+                shapes=True,
+                noIntermediate=True,
+                fullPath=True,
+                type="mesh") or []
+            for sh in list(descendants) + list(direct):
+                # Double-check intermediateObject
+                try:
+                    if cmds.getAttr(sh + ".intermediateObject"):
+                        continue
+                except Exception:
+                    pass
+                shapes.append(sh)
     # preserve uniqueness without losing order
     seen = set()
     out = []
@@ -616,6 +650,12 @@ class MeshLandingDialog(QtWidgets.QDialog):
         self._preview_active = False   # True when an undo chunk is open
         self._last_dist = 0.0
         self._last_axis = 1
+        # Tracking for self-reversal (so we don't call cmds.undo() and
+        # accidentally undo the user's manual edits).
+        self._preview_delta = None
+        self._preview_is_component = False
+        self._preview_vert_map = None
+        self._preview_object_nodes = []
         self._build()
 
     # -- UI construction --
@@ -828,8 +868,28 @@ class MeshLandingDialog(QtWidgets.QDialog):
 
     @staticmethod
     def _short_names(shapes):
-        names = [s.split("|")[-1] for s in shapes]
-        return u", ".join(names) if names else u"---"
+        if not shapes:
+            return u"---"
+        # Show transform names (parent of the shape) — more meaningful than
+        # "pCubeShape1" when the user selected "pCube1" or a group.
+        names = []
+        seen = set()
+        for s in shapes:
+            short = s.split("|")[-1]
+            # Strip trailing "Shape" / "Shape1" / "ShapeOrig" if present
+            if short.endswith("Shape"):
+                short = short[:-5]
+            elif "Shape" in short:
+                # pCubeShape1 -> pCube1
+                idx = short.rfind("Shape")
+                short = short[:idx] + short[idx + 5:]
+            if short and short not in seen:
+                seen.add(short)
+                names.append(short)
+        if len(names) > 4:
+            return u"{0}, {1}, ... ({2} meshes)".format(
+                names[0], names[1], len(names))
+        return u", ".join(names)
 
     # -- Settings readers --
     def _get_axis(self):
@@ -897,18 +957,10 @@ class MeshLandingDialog(QtWidgets.QDialog):
             self.status_msg.emit(tr("ml_status_no_b"))
             return
 
-        # Undo previous preview (if any) so we always start from the
-        # original positions. Each preview is one undo-step.
-        if self._preview_active:
-            try:
-                cmds.undoInfo(closeChunk=True)
-            except Exception:
-                pass
-            try:
-                cmds.undo()
-            except Exception:
-                pass
-            self._preview_active = False
+        # Reverse the previous preview's delta (if any), without touching
+        # Maya's undo stack. This preserves any manual edits the user made
+        # to the meshes between previews (rotation, vertex edits, etc.).
+        self._reverse_preview_delta()
 
         axis = self._get_axis()
         sign = self._get_sign()
@@ -941,6 +993,12 @@ class MeshLandingDialog(QtWidgets.QDialog):
                              for vi in vidxs]
                     cmds.xform(comps, ws=True, r=True,
                                t=(delta[0], delta[1], delta[2]))
+                # Remember exactly what was moved, so we can reverse it.
+                self._preview_delta = tuple(delta)
+                self._preview_is_component = True
+                self._preview_vert_map = {k: list(v)
+                                           for k, v in vert_map.items()}
+                self._preview_object_nodes = []
             else:
                 result = ml_compute_landing(
                     self._mesh_a_shapes, self._mesh_b_shapes,
@@ -953,12 +1011,18 @@ class MeshLandingDialog(QtWidgets.QDialog):
                 dist, actual_sign = result
                 delta = [0.0, 0.0, 0.0]
                 delta[axis] = dist * actual_sign
+                moved_nodes = []
                 for shape in self._mesh_a_shapes:
                     tr_node = cmds.listRelatives(shape, parent=True,
                                                   fullPath=True)
                     if tr_node:
                         cmds.xform(tr_node[0], ws=True, r=True,
                                    t=(delta[0], delta[1], delta[2]))
+                        moved_nodes.append(tr_node[0])
+                self._preview_delta = tuple(delta)
+                self._preview_is_component = False
+                self._preview_object_nodes = moved_nodes
+                self._preview_vert_map = None
 
             self._last_dist = dist
             self._last_axis = axis
@@ -973,6 +1037,56 @@ class MeshLandingDialog(QtWidgets.QDialog):
             traceback.print_exc()
             self.status_msg.emit(u"Error: {0}".format(_e))
             self._set_preview_label(u"Error: {0}".format(_e), warn=True)
+
+    def _reverse_preview_delta(self):
+        """Reverse the previous preview's movement by applying -delta.
+
+        Does NOT touch cmds.undo, so any manual edits the user made between
+        previews are preserved. The chunk is closed so the reverse move
+        and the new preview live in separate undo steps — however, since
+        we open a new chunk for the new preview, the reverse is folded
+        into it and remains invisible as a single undoable operation.
+        """
+        if not getattr(self, "_preview_active", False):
+            return
+        delta = getattr(self, "_preview_delta", None)
+        if not delta:
+            try:
+                cmds.undoInfo(closeChunk=True)
+            except Exception:
+                pass
+            self._preview_active = False
+            return
+        neg_delta = (-delta[0], -delta[1], -delta[2])
+        # Close the existing chunk first so the reversal isn't part of it.
+        try:
+            cmds.undoInfo(closeChunk=True)
+        except Exception:
+            pass
+        try:
+            if self._preview_is_component and self._preview_vert_map:
+                for shape, vidxs in self._preview_vert_map.items():
+                    if not cmds.objExists(shape):
+                        continue
+                    comps = [u"{0}.vtx[{1}]".format(shape, vi)
+                             for vi in vidxs]
+                    try:
+                        cmds.xform(comps, ws=True, r=True, t=neg_delta)
+                    except Exception:
+                        pass
+            else:
+                for node in self._preview_object_nodes:
+                    if not cmds.objExists(node):
+                        continue
+                    try:
+                        cmds.xform(node, ws=True, r=True, t=neg_delta)
+                    except Exception:
+                        pass
+        finally:
+            self._preview_active = False
+            self._preview_delta = None
+            self._preview_vert_map = None
+            self._preview_object_nodes = []
 
     def _set_preview_label(self, text, warn=False):
         self._lbl_preview_status.setText(text)
@@ -1005,15 +1119,9 @@ class MeshLandingDialog(QtWidgets.QDialog):
     def _on_revert(self):
         if not self._preview_active:
             return
-        try:
-            cmds.undoInfo(closeChunk=True)
-        except Exception:
-            pass
-        try:
-            cmds.undo()
-        except Exception:
-            pass
-        self._preview_active = False
+        # Reverse our own delta — do NOT touch Maya's undo stack, so any
+        # manual edits made between preview and revert are preserved.
+        self._reverse_preview_delta()
         self._btn_confirm.setEnabled(False)
         self._btn_revert.setEnabled(False)
         self.status_msg.emit(tr("ml_status_reverted"))
@@ -1022,15 +1130,7 @@ class MeshLandingDialog(QtWidgets.QDialog):
     def closeEvent(self, event):
         # Auto-revert any uncommitted preview when dialog closes.
         if self._preview_active:
-            try:
-                cmds.undoInfo(closeChunk=True)
-            except Exception:
-                pass
-            try:
-                cmds.undo()
-            except Exception:
-                pass
-            self._preview_active = False
+            self._reverse_preview_delta()
         super(MeshLandingDialog, self).closeEvent(event)
 
     # -- Language refresh --
