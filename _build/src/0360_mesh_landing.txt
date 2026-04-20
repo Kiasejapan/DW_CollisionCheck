@@ -1204,41 +1204,65 @@ class MeshLandingDialog(QtWidgets.QDialog):
 
     # -- Preview / Confirm / Revert --
     def _gather_components(self):
-        """Collect selected vertices/faces on Mesh A shapes (component mode)."""
+        """Collect selected components on Mesh A, expanded to adjacent faces.
+
+        Whatever the user picks (vertices, edges, or faces), we first
+        collect the "seed" components, then convert them to the set of
+        faces that touch any of those components, then expand those
+        faces back to their full set of vertices.
+
+        This guarantees the moving region is made of COMPLETE faces
+        (not isolated vertices), so the collision check always has
+        whole triangles to work with.
+        """
         sel = cmds.ls(sl=True, fl=True, long=True) or []
         a_set = set(self._mesh_a_shapes)
-        vert_map = {}
+
+        # Step 1: group the raw selection by shape, keeping the
+        # original component-level items for polyListComponentConversion.
+        shape_items = {}   # shape -> list of full component names
         for item in sel:
+            # Identify the component type by the suffix.
             if u".vtx[" in item:
-                shape_part = item.split(u".vtx[")[0]
-                shapes = _ml_get_mesh_shapes([shape_part])
-                if not shapes:
-                    continue
-                shape = shapes[0]
-                if shape not in a_set:
-                    continue
-                try:
-                    vi = int(item.split(u"[")[-1].rstrip(u"]"))
-                except Exception:
-                    continue
-                vert_map.setdefault(shape, []).append(vi)
+                sep = u".vtx["
+            elif u".e[" in item:
+                sep = u".e["
             elif u".f[" in item:
-                shape_part = item.split(u".f[")[0]
-                shapes = _ml_get_mesh_shapes([shape_part])
-                if not shapes:
-                    continue
-                shape = shapes[0]
-                if shape not in a_set:
+                sep = u".f["
+            else:
+                continue
+            shape_part = item.split(sep)[0]
+            shapes = _ml_get_mesh_shapes([shape_part])
+            if not shapes:
+                continue
+            shape = shapes[0]
+            if shape not in a_set:
+                continue
+            shape_items.setdefault(shape, []).append(item)
+
+        # Step 2: per shape, convert seed components to faces, then
+        # faces to vertices. Use one polyListComponentConversion call
+        # per shape for efficiency.
+        vert_map = {}
+        for shape, items in shape_items.items():
+            try:
+                faces = cmds.polyListComponentConversion(
+                    items, toFace=True) or []
+                faces = cmds.ls(faces, fl=True) or []
+                if not faces:
                     continue
                 verts = cmds.polyListComponentConversion(
-                    item, fromFace=True, toVertex=True) or []
+                    faces, fromFace=True, toVertex=True) or []
                 verts = cmds.ls(verts, fl=True) or []
-                for v in verts:
-                    try:
-                        vi = int(v.split(u"[")[-1].rstrip(u"]"))
-                        vert_map.setdefault(shape, []).append(vi)
-                    except Exception:
-                        pass
+            except Exception:
+                continue
+            for v in verts:
+                try:
+                    vi = int(v.split(u"[")[-1].rstrip(u"]"))
+                    vert_map.setdefault(shape, []).append(vi)
+                except Exception:
+                    pass
+
         for shape in vert_map:
             vert_map[shape] = list(set(vert_map[shape]))
         return vert_map
@@ -1280,8 +1304,7 @@ class MeshLandingDialog(QtWidgets.QDialog):
             if is_component:
                 result = ml_compute_landing(
                     self._mesh_a_shapes, self._mesh_b_shapes,
-                    axis, sign, offset, vert_indices=vert_map,
-                    debug=True)
+                    axis, sign, offset, vert_indices=vert_map)
                 if result is None or result[0] is None or result[0] < 1.0e-8:
                     self.status_msg.emit(tr("ml_status_no_hit"))
                     self._set_preview_label(tr("ml_status_no_hit"),
@@ -1299,7 +1322,7 @@ class MeshLandingDialog(QtWidgets.QDialog):
             else:
                 result = ml_compute_landing(
                     self._mesh_a_shapes, self._mesh_b_shapes,
-                    axis, sign, offset, debug=True)
+                    axis, sign, offset)
                 if result is None or result[0] is None or result[0] < 1.0e-8:
                     self.status_msg.emit(tr("ml_status_no_hit"))
                     self._set_preview_label(tr("ml_status_no_hit"),
