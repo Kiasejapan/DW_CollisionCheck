@@ -102,6 +102,8 @@ _STRINGS = {
     "ml_status_no_b":       {"en": "Mesh B is not set.",            "jp": u"\u30e1\u30c3\u30b7\u30e5 B \u304c\u672a\u8a2d\u5b9a\u3067\u3059\u3002"},
     "ml_status_no_hit":     {"en": "No surface found along the axis.",
                              "jp": u"\u8ef8\u65b9\u5411\u306b\u8868\u9762\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093\u3002"},
+    "ml_status_no_enclosed": {"en": "Component mode: select face(s), or 3+ vertices / edges that fully enclose a face.",
+                              "jp": u"\u30b3\u30f3\u30dd\u30fc\u30cd\u30f3\u30c8\u30e2\u30fc\u30c9: \u30d5\u30a7\u30fc\u30b9\u3092\u9078\u629e\u3059\u308b\u304b\u3001\u30d5\u30a7\u30fc\u30b9\u3092\u56f2\u3080 3 \u70b9\u4ee5\u4e0a\u306e\u9802\u70b9 / \u30a8\u30c3\u30b8\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044\u3002"},
     "ml_status_preview":    {"en": "Preview: moved {dist} along {axis}. Click Confirm or Revert.",
                              "jp": u"\u30d7\u30ec\u30d3\u30e5\u30fc: {axis}\u8ef8\u306b {dist} \u79fb\u52d5\u3002\u78ba\u5b9a\u307e\u305f\u306f\u5143\u306b\u623b\u3059\u3002"},
     "ml_status_confirmed":  {"en": "Confirmed: moved {dist} along {axis}.",

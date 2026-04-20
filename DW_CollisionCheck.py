@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.20.1856"
+VERSION = "2026.04.20.1914"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -151,6 +151,8 @@ _STRINGS = {
     "ml_status_no_b":       {"en": "Mesh B is not set.",            "jp": u"\u30e1\u30c3\u30b7\u30e5 B \u304c\u672a\u8a2d\u5b9a\u3067\u3059\u3002"},
     "ml_status_no_hit":     {"en": "No surface found along the axis.",
                              "jp": u"\u8ef8\u65b9\u5411\u306b\u8868\u9762\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093\u3002"},
+    "ml_status_no_enclosed": {"en": "Component mode: select face(s), or 3+ vertices / edges that fully enclose a face.",
+                              "jp": u"\u30b3\u30f3\u30dd\u30fc\u30cd\u30f3\u30c8\u30e2\u30fc\u30c9: \u30d5\u30a7\u30fc\u30b9\u3092\u9078\u629e\u3059\u308b\u304b\u3001\u30d5\u30a7\u30fc\u30b9\u3092\u56f2\u3080 3 \u70b9\u4ee5\u4e0a\u306e\u9802\u70b9 / \u30a8\u30c3\u30b8\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044\u3002"},
     "ml_status_preview":    {"en": "Preview: moved {dist} along {axis}. Click Confirm or Revert.",
                              "jp": u"\u30d7\u30ec\u30d3\u30e5\u30fc: {axis}\u8ef8\u306b {dist} \u79fb\u52d5\u3002\u78ba\u5b9a\u307e\u305f\u306f\u5143\u306b\u623b\u3059\u3002"},
     "ml_status_confirmed":  {"en": "Confirmed: moved {dist} along {axis}.",
@@ -5054,31 +5056,34 @@ class MeshLandingDialog(QtWidgets.QDialog):
 
     # -- Preview / Confirm / Revert --
     def _gather_components(self):
-        """Collect selected components on Mesh A, expanded to adjacent faces.
+        """Collect the faces on Mesh A that are fully enclosed by the selection.
 
-        Whatever the user picks (vertices, edges, or faces), we first
-        collect the "seed" components, then convert them to the set of
-        faces that touch any of those components, then expand those
-        faces back to their full set of vertices.
+        Rules:
+          * Face selection          → that face itself.
+          * Vertex selection        → a face only counts if ALL of its
+                                      vertices are in the selection.
+          * Edge selection          → a face only counts if ALL of its
+                                      edges are in the selection (i.e.
+                                      the selected edges form the full
+                                      boundary of that face).
+          * Mixed selection         → union of the above.
 
-        This guarantees the moving region is made of COMPLETE faces
-        (not isolated vertices), so the collision check always has
-        whole triangles to work with.
+        Returns a dict {shape: [vert_index, ...]} listing every vertex
+        belonging to the enclosed faces. Returns empty dict if nothing
+        qualifies.
         """
         sel = cmds.ls(sl=True, fl=True, long=True) or []
         a_set = set(self._mesh_a_shapes)
 
-        # Step 1: group the raw selection by shape, keeping the
-        # original component-level items for polyListComponentConversion.
-        shape_items = {}   # shape -> list of full component names
+        # Bucket the raw selection by shape and component type.
+        per_shape = {}  # shape -> {"vtx": set, "e": set, "f": set}
         for item in sel:
-            # Identify the component type by the suffix.
             if u".vtx[" in item:
-                sep = u".vtx["
+                sep, kind = u".vtx[", "vtx"
             elif u".e[" in item:
-                sep = u".e["
+                sep, kind = u".e[", "e"
             elif u".f[" in item:
-                sep = u".f["
+                sep, kind = u".f[", "f"
             else:
                 continue
             shape_part = item.split(sep)[0]
@@ -5088,33 +5093,108 @@ class MeshLandingDialog(QtWidgets.QDialog):
             shape = shapes[0]
             if shape not in a_set:
                 continue
-            shape_items.setdefault(shape, []).append(item)
-
-        # Step 2: per shape, convert seed components to faces, then
-        # faces to vertices. Use one polyListComponentConversion call
-        # per shape for efficiency.
-        vert_map = {}
-        for shape, items in shape_items.items():
             try:
-                faces = cmds.polyListComponentConversion(
-                    items, toFace=True) or []
-                faces = cmds.ls(faces, fl=True) or []
-                if not faces:
-                    continue
-                verts = cmds.polyListComponentConversion(
-                    faces, fromFace=True, toVertex=True) or []
-                verts = cmds.ls(verts, fl=True) or []
+                idx = int(item.split(u"[")[-1].rstrip(u"]"))
             except Exception:
                 continue
+            bucket = per_shape.setdefault(
+                shape, {"vtx": set(), "e": set(), "f": set()})
+            bucket[kind].add(idx)
+
+        enclosed_faces_per_shape = {}  # shape -> set of face indices
+        for shape, buckets in per_shape.items():
+            enclosed = set()
+
+            # Faces directly selected always qualify.
+            enclosed.update(buckets["f"])
+
+            # Vertex-enclosed faces: every vertex of the face is selected.
+            if buckets["vtx"]:
+                # Start from the broad set of faces touched by any
+                # selected vertex, then filter those whose full vertex
+                # list is a subset of the selection.
+                vtx_items = [u"{0}.vtx[{1}]".format(shape, vi)
+                             for vi in buckets["vtx"]]
+                try:
+                    candidate_faces = cmds.polyListComponentConversion(
+                        vtx_items, toFace=True) or []
+                    candidate_faces = cmds.ls(candidate_faces, fl=True) or []
+                except Exception:
+                    candidate_faces = []
+                sel_vset = buckets["vtx"]
+                for f_item in candidate_faces:
+                    try:
+                        fi = int(f_item.split(u"[")[-1].rstrip(u"]"))
+                    except Exception:
+                        continue
+                    try:
+                        verts_of_f = cmds.polyListComponentConversion(
+                            f_item, fromFace=True, toVertex=True) or []
+                        verts_of_f = cmds.ls(verts_of_f, fl=True) or []
+                    except Exception:
+                        continue
+                    f_vidxs = set()
+                    for v in verts_of_f:
+                        try:
+                            f_vidxs.add(int(v.split(u"[")[-1].rstrip(u"]")))
+                        except Exception:
+                            pass
+                    if f_vidxs and f_vidxs.issubset(sel_vset):
+                        enclosed.add(fi)
+
+            # Edge-enclosed faces: every edge of the face is selected.
+            if buckets["e"]:
+                e_items = [u"{0}.e[{1}]".format(shape, ei)
+                           for ei in buckets["e"]]
+                try:
+                    candidate_faces = cmds.polyListComponentConversion(
+                        e_items, toFace=True) or []
+                    candidate_faces = cmds.ls(candidate_faces, fl=True) or []
+                except Exception:
+                    candidate_faces = []
+                sel_eset = buckets["e"]
+                for f_item in candidate_faces:
+                    try:
+                        fi = int(f_item.split(u"[")[-1].rstrip(u"]"))
+                    except Exception:
+                        continue
+                    try:
+                        edges_of_f = cmds.polyListComponentConversion(
+                            f_item, fromFace=True, toEdge=True) or []
+                        edges_of_f = cmds.ls(edges_of_f, fl=True) or []
+                    except Exception:
+                        continue
+                    f_eidxs = set()
+                    for e in edges_of_f:
+                        try:
+                            f_eidxs.add(int(e.split(u"[")[-1].rstrip(u"]")))
+                        except Exception:
+                            pass
+                    if f_eidxs and f_eidxs.issubset(sel_eset):
+                        enclosed.add(fi)
+
+            if enclosed:
+                enclosed_faces_per_shape[shape] = enclosed
+
+        # Expand enclosed faces to the set of unique vertex indices.
+        vert_map = {}
+        for shape, faces in enclosed_faces_per_shape.items():
+            face_items = [u"{0}.f[{1}]".format(shape, fi)
+                          for fi in faces]
+            try:
+                verts = cmds.polyListComponentConversion(
+                    face_items, fromFace=True, toVertex=True) or []
+                verts = cmds.ls(verts, fl=True) or []
+            except Exception:
+                verts = []
+            idxs = []
             for v in verts:
                 try:
-                    vi = int(v.split(u"[")[-1].rstrip(u"]"))
-                    vert_map.setdefault(shape, []).append(vi)
+                    idxs.append(int(v.split(u"[")[-1].rstrip(u"]")))
                 except Exception:
                     pass
-
-        for shape in vert_map:
-            vert_map[shape] = list(set(vert_map[shape]))
+            if idxs:
+                vert_map[shape] = list(set(idxs))
         return vert_map
 
     def _on_preview(self):
@@ -5143,7 +5223,12 @@ class MeshLandingDialog(QtWidgets.QDialog):
         if is_component:
             vert_map = self._gather_components()
             if not vert_map:
-                is_component = False
+                # No fully-enclosed face found. Tell the user instead of
+                # silently falling back to object mode.
+                self.status_msg.emit(tr("ml_status_no_enclosed"))
+                self._set_preview_label(tr("ml_status_no_enclosed"),
+                                        warn=True)
+                return
 
         # Wrap the preview in a single undo chunk so Ctrl+Z collapses it.
         cmds.undoInfo(openChunk=True, chunkName="DW_MeshLanding_Preview")
