@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.20.1231"
+VERSION = "2026.04.20.1240"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -147,10 +147,10 @@ _STRINGS = {
     "ml_status_no_b":       {"en": "Mesh B is not set.",            "jp": u"\u30e1\u30c3\u30b7\u30e5 B \u304c\u672a\u8a2d\u5b9a\u3067\u3059\u3002"},
     "ml_status_no_hit":     {"en": "No surface found along the axis.",
                              "jp": u"\u8ef8\u65b9\u5411\u306b\u8868\u9762\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093\u3002"},
-    "ml_status_preview":    {"en": "Preview: moved {dist:.4f} along {axis}. Click Confirm or Revert.",
-                             "jp": u"\u30d7\u30ec\u30d3\u30e5\u30fc: {axis}\u8ef8\u306b {dist:.4f} \u79fb\u52d5\u3002\u78ba\u5b9a\u307e\u305f\u306f\u5143\u306b\u623b\u3059\u3002"},
-    "ml_status_confirmed":  {"en": "Confirmed: moved {dist:.4f} along {axis}.",
-                             "jp": u"\u78ba\u5b9a: {axis}\u8ef8\u306b {dist:.4f} \u79fb\u52d5\u6e08\u307f\u3002"},
+    "ml_status_preview":    {"en": "Preview: moved {dist} along {axis}. Click Confirm or Revert.",
+                             "jp": u"\u30d7\u30ec\u30d3\u30e5\u30fc: {axis}\u8ef8\u306b {dist} \u79fb\u52d5\u3002\u78ba\u5b9a\u307e\u305f\u306f\u5143\u306b\u623b\u3059\u3002"},
+    "ml_status_confirmed":  {"en": "Confirmed: moved {dist} along {axis}.",
+                             "jp": u"\u78ba\u5b9a: {axis}\u8ef8\u306b {dist} \u79fb\u52d5\u6e08\u307f\u3002"},
     "ml_status_reverted":   {"en": "Reverted.",                     "jp": u"\u5143\u306b\u623b\u3057\u307e\u3057\u305f\u3002"},
     "ml_status_swapped":    {"en": "Swapped A \u2194 B.",           "jp": u"A \u2194 B \u3092\u5165\u308c\u66ff\u3048\u307e\u3057\u305f\u3002"},
 
@@ -4511,15 +4511,16 @@ class MeshLandingDialog(QtWidgets.QDialog):
 
         self._mesh_a_shapes = []
         self._mesh_b_shapes = []
-        self._preview_active = False   # True when an undo chunk is open
+        self._preview_active = False   # True when a preview is applied
         self._last_dist = 0.0
         self._last_axis = 1
-        # Tracking for self-reversal (so we don't call cmds.undo() and
-        # accidentally undo the user's manual edits).
-        self._preview_delta = None
-        self._preview_is_component = False
-        self._preview_vert_map = None
-        self._preview_object_nodes = []
+        # Snapshot of Mesh A state BEFORE the current preview was applied.
+        # Restoration writes absolute positions back, which is robust
+        # against Ctrl+Z, manual edits, or any other state changes the
+        # user may have performed while the dialog was open.
+        self._snapshot = None    # {"is_component": bool,
+                                 #  "object_positions": {node: (x,y,z)},
+                                 #  "vert_positions": {shape: {vi: (x,y,z)}}}
         self._build()
 
     # -- UI construction --
@@ -4821,10 +4822,12 @@ class MeshLandingDialog(QtWidgets.QDialog):
             self.status_msg.emit(tr("ml_status_no_b"))
             return
 
-        # Reverse the previous preview's delta (if any), without touching
-        # Maya's undo stack. This preserves any manual edits the user made
-        # to the meshes between previews (rotation, vertex edits, etc.).
-        self._reverse_preview_delta()
+        # If a previous preview exists, restore its snapshot first so
+        # we start the new calculation from a clean, known state. This
+        # works correctly even if the user pressed Ctrl+Z, moved things
+        # manually, or otherwise altered the scene between previews.
+        if self._preview_active:
+            self._restore_snapshot()
 
         axis = self._get_axis()
         sign = self._get_sign()
@@ -4837,9 +4840,12 @@ class MeshLandingDialog(QtWidgets.QDialog):
             if not vert_map:
                 is_component = False
 
+        # Wrap the preview in a single undo chunk so Ctrl+Z collapses it.
         cmds.undoInfo(openChunk=True, chunkName="DW_MeshLanding_Preview")
-        self._preview_active = True
         try:
+            # Take the snapshot of Mesh A's state BEFORE we move anything.
+            self._snapshot = self._capture_snapshot(is_component, vert_map)
+
             if is_component:
                 result = ml_compute_landing(
                     self._mesh_a_shapes, self._mesh_b_shapes,
@@ -4848,6 +4854,7 @@ class MeshLandingDialog(QtWidgets.QDialog):
                     self.status_msg.emit(tr("ml_status_no_hit"))
                     self._set_preview_label(tr("ml_status_no_hit"),
                                             warn=True)
+                    self._snapshot = None
                     return
                 dist, actual_sign = result
                 delta = [0.0, 0.0, 0.0]
@@ -4857,12 +4864,6 @@ class MeshLandingDialog(QtWidgets.QDialog):
                              for vi in vidxs]
                     cmds.xform(comps, ws=True, r=True,
                                t=(delta[0], delta[1], delta[2]))
-                # Remember exactly what was moved, so we can reverse it.
-                self._preview_delta = tuple(delta)
-                self._preview_is_component = True
-                self._preview_vert_map = {k: list(v)
-                                           for k, v in vert_map.items()}
-                self._preview_object_nodes = []
             else:
                 result = ml_compute_landing(
                     self._mesh_a_shapes, self._mesh_b_shapes,
@@ -4871,27 +4872,24 @@ class MeshLandingDialog(QtWidgets.QDialog):
                     self.status_msg.emit(tr("ml_status_no_hit"))
                     self._set_preview_label(tr("ml_status_no_hit"),
                                             warn=True)
+                    self._snapshot = None
                     return
                 dist, actual_sign = result
                 delta = [0.0, 0.0, 0.0]
                 delta[axis] = dist * actual_sign
-                moved_nodes = []
                 for shape in self._mesh_a_shapes:
                     tr_node = cmds.listRelatives(shape, parent=True,
                                                   fullPath=True)
                     if tr_node:
                         cmds.xform(tr_node[0], ws=True, r=True,
                                    t=(delta[0], delta[1], delta[2]))
-                        moved_nodes.append(tr_node[0])
-                self._preview_delta = tuple(delta)
-                self._preview_is_component = False
-                self._preview_object_nodes = moved_nodes
-                self._preview_vert_map = None
 
+            self._preview_active = True
             self._last_dist = dist
             self._last_axis = axis
             msg = tr("ml_status_preview",
-                     dist=dist, axis=_ML_AXIS_NAMES[axis])
+                     dist=u"{0:.4f}".format(dist),
+                     axis=_ML_AXIS_NAMES[axis])
             self.status_msg.emit(msg)
             self._set_preview_label(msg, warn=False)
             self._btn_confirm.setEnabled(True)
@@ -4901,56 +4899,71 @@ class MeshLandingDialog(QtWidgets.QDialog):
             traceback.print_exc()
             self.status_msg.emit(u"Error: {0}".format(_e))
             self._set_preview_label(u"Error: {0}".format(_e), warn=True)
-
-    def _reverse_preview_delta(self):
-        """Reverse the previous preview's movement by applying -delta.
-
-        Does NOT touch cmds.undo, so any manual edits the user made between
-        previews are preserved. The chunk is closed so the reverse move
-        and the new preview live in separate undo steps — however, since
-        we open a new chunk for the new preview, the reverse is folded
-        into it and remains invisible as a single undoable operation.
-        """
-        if not getattr(self, "_preview_active", False):
-            return
-        delta = getattr(self, "_preview_delta", None)
-        if not delta:
-            try:
-                cmds.undoInfo(closeChunk=True)
-            except Exception:
-                pass
-            self._preview_active = False
-            return
-        neg_delta = (-delta[0], -delta[1], -delta[2])
-        # Close the existing chunk first so the reversal isn't part of it.
-        try:
-            cmds.undoInfo(closeChunk=True)
-        except Exception:
-            pass
-        try:
-            if self._preview_is_component and self._preview_vert_map:
-                for shape, vidxs in self._preview_vert_map.items():
-                    if not cmds.objExists(shape):
-                        continue
-                    comps = [u"{0}.vtx[{1}]".format(shape, vi)
-                             for vi in vidxs]
-                    try:
-                        cmds.xform(comps, ws=True, r=True, t=neg_delta)
-                    except Exception:
-                        pass
-            else:
-                for node in self._preview_object_nodes:
-                    if not cmds.objExists(node):
-                        continue
-                    try:
-                        cmds.xform(node, ws=True, r=True, t=neg_delta)
-                    except Exception:
-                        pass
         finally:
+            cmds.undoInfo(closeChunk=True)
+
+    # -- Snapshot helpers --
+    def _capture_snapshot(self, is_component, vert_map):
+        """Capture Mesh A's current state so we can restore it later."""
+        snap = {
+            "is_component": is_component,
+            "object_positions": {},   # transform_node -> (tx, ty, tz)
+            "vert_positions": {},     # shape -> {vi: (x, y, z)}
+        }
+        if is_component and vert_map:
+            for shape, vidxs in vert_map.items():
+                if not cmds.objExists(shape):
+                    continue
+                pos_map = {}
+                for vi in vidxs:
+                    try:
+                        p = cmds.xform(
+                            u"{0}.vtx[{1}]".format(shape, vi),
+                            q=True, ws=True, t=True)
+                        pos_map[vi] = (p[0], p[1], p[2])
+                    except Exception:
+                        pass
+                if pos_map:
+                    snap["vert_positions"][shape] = pos_map
+        else:
+            for shape in self._mesh_a_shapes:
+                tr_node = cmds.listRelatives(shape, parent=True,
+                                              fullPath=True)
+                if not tr_node or not cmds.objExists(tr_node[0]):
+                    continue
+                try:
+                    t = cmds.xform(tr_node[0], q=True, ws=True, t=True)
+                    snap["object_positions"][tr_node[0]] = (t[0], t[1], t[2])
+                except Exception:
+                    pass
+        return snap
+
+    def _restore_snapshot(self):
+        """Write saved positions back absolutely. Idempotent; safe after Ctrl+Z."""
+        snap = self._snapshot
+        if not snap:
             self._preview_active = False
-            self._preview_delta = None
-            self._preview_vert_map = None
-            self._preview_object_nodes = []
+            return
+        if snap.get("is_component"):
+            for shape, pos_map in snap.get("vert_positions", {}).items():
+                if not cmds.objExists(shape):
+                    continue
+                for vi, pos in pos_map.items():
+                    try:
+                        cmds.xform(u"{0}.vtx[{1}]".format(shape, vi),
+                                   ws=True, t=pos)
+                    except Exception:
+                        pass
+        else:
+            for node, pos in snap.get("object_positions", {}).items():
+                if not cmds.objExists(node):
+                    continue
+                try:
+                    cmds.xform(node, ws=True, t=pos)
+                except Exception:
+                    pass
+        self._preview_active = False
+        self._snapshot = None
 
     def _set_preview_label(self, text, warn=False):
         self._lbl_preview_status.setText(text)
@@ -4967,15 +4980,15 @@ class MeshLandingDialog(QtWidgets.QDialog):
     def _on_confirm(self):
         if not self._preview_active:
             return
-        try:
-            cmds.undoInfo(closeChunk=True)
-        except Exception:
-            pass
+        # Drop the snapshot — we're committing to the current state.
+        # The preview chunk is already closed; user can still Ctrl+Z
+        # to undo the whole operation if they change their mind.
         self._preview_active = False
+        self._snapshot = None
         self._btn_confirm.setEnabled(False)
         self._btn_revert.setEnabled(False)
         msg = tr("ml_status_confirmed",
-                 dist=self._last_dist,
+                 dist=u"{0:.4f}".format(self._last_dist),
                  axis=_ML_AXIS_NAMES[self._last_axis])
         self.status_msg.emit(msg)
         self._set_preview_label(msg, warn=False)
@@ -4983,9 +4996,13 @@ class MeshLandingDialog(QtWidgets.QDialog):
     def _on_revert(self):
         if not self._preview_active:
             return
-        # Reverse our own delta — do NOT touch Maya's undo stack, so any
-        # manual edits made between preview and revert are preserved.
-        self._reverse_preview_delta()
+        # Restore the snapshot inside its own undo chunk so the revert
+        # itself is also undoable in one step.
+        cmds.undoInfo(openChunk=True, chunkName="DW_MeshLanding_Revert")
+        try:
+            self._restore_snapshot()
+        finally:
+            cmds.undoInfo(closeChunk=True)
         self._btn_confirm.setEnabled(False)
         self._btn_revert.setEnabled(False)
         self.status_msg.emit(tr("ml_status_reverted"))
@@ -4994,7 +5011,12 @@ class MeshLandingDialog(QtWidgets.QDialog):
     def closeEvent(self, event):
         # Auto-revert any uncommitted preview when dialog closes.
         if self._preview_active:
-            self._reverse_preview_delta()
+            cmds.undoInfo(openChunk=True,
+                          chunkName="DW_MeshLanding_AutoRevert")
+            try:
+                self._restore_snapshot()
+            finally:
+                cmds.undoInfo(closeChunk=True)
         super(MeshLandingDialog, self).closeEvent(event)
 
     # -- Language refresh --
