@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.17.1928"
+VERSION = "2026.04.20.1203"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -123,10 +123,14 @@ _STRINGS = {
 
     # ---- Mesh Landing (Other tab) ------------------------------------
     "ml_grp_title":         {"en": "Mesh Landing",                  "jp": u"\u30e1\u30c3\u30b7\u30e5\u63a5\u5730"},
-    "ml_btn_land":          {"en": "Land",                          "jp": u"\u63a5\u5730"},
-    "ml_lbl_source":        {"en": "Source (moves):",               "jp": u"\u30bd\u30fc\u30b9 (\u79fb\u52d5\u5074):"},
-    "ml_lbl_target":        {"en": "Target (ground):",              "jp": u"\u30bf\u30fc\u30b2\u30c3\u30c8 (\u5730\u9762):"},
+    "ml_grp_desc":          {"en": "Click Launch to open the Mesh Landing dialog.",
+                             "jp": u"\u300c\u8d77\u52d5\u300d\u3067\u30e1\u30c3\u30b7\u30e5\u63a5\u5730\u30c0\u30a4\u30a2\u30ed\u30b0\u3092\u958b\u304d\u307e\u3059\u3002"},
+    "ml_btn_launch":        {"en": u"\u25B6 Launch",                "jp": u"\u25B6 \u8d77\u52d5"},
+    "ml_dlg_title":         {"en": "Mesh Landing",                  "jp": u"\u30e1\u30c3\u30b7\u30e5\u63a5\u5730"},
+    "ml_lbl_mesh_a":        {"en": "Mesh A (moves):",               "jp": u"\u30e1\u30c3\u30b7\u30e5 A (\u79fb\u52d5\u5074):"},
+    "ml_lbl_mesh_b":        {"en": "Mesh B (ground):",              "jp": u"\u30e1\u30c3\u30b7\u30e5 B (\u5730\u9762):"},
     "ml_btn_set":           {"en": "Set",                           "jp": u"\u30bb\u30c3\u30c8"},
+    "ml_btn_swap":          {"en": u"\u21C4 Swap A \u2194 B",       "jp": u"\u21C4 A \u2194 B \u5165\u308c\u66ff\u3048"},
     "ml_lbl_axis":          {"en": "Axis:",                         "jp": u"\u8ef8:"},
     "ml_lbl_direction":     {"en": "Direction:",                    "jp": u"\u65b9\u5411:"},
     "ml_dir_auto":          {"en": "Auto",                          "jp": u"\u81ea\u52d5"},
@@ -136,12 +140,19 @@ _STRINGS = {
     "ml_mode_object":       {"en": "Object",                        "jp": u"\u30aa\u30d6\u30b8\u30a7\u30af\u30c8"},
     "ml_mode_component":    {"en": "Component",                     "jp": u"\u30b3\u30f3\u30dd\u30fc\u30cd\u30f3\u30c8"},
     "ml_lbl_offset":        {"en": "Offset:",                       "jp": u"\u30aa\u30d5\u30bb\u30c3\u30c8:"},
-    "ml_status_landed":     {"en": "Landed: moved {dist:.4f} along {axis}",
-                             "jp": u"\u63a5\u5730\u5b8c\u4e86: {axis}\u8ef8\u65b9\u5411\u306b {dist:.4f} \u79fb\u52d5"},
+    "ml_btn_preview":       {"en": u"\u25B6 Preview",               "jp": u"\u25B6 \u30d7\u30ec\u30d3\u30e5\u30fc"},
+    "ml_btn_confirm":       {"en": u"\u2714 Confirm",               "jp": u"\u2714 \u78ba\u5b9a"},
+    "ml_btn_revert":        {"en": u"\u21A9 Revert",                "jp": u"\u21A9 \u5143\u306b\u623b\u3059"},
+    "ml_status_no_a":       {"en": "Mesh A is not set.",            "jp": u"\u30e1\u30c3\u30b7\u30e5 A \u304c\u672a\u8a2d\u5b9a\u3067\u3059\u3002"},
+    "ml_status_no_b":       {"en": "Mesh B is not set.",            "jp": u"\u30e1\u30c3\u30b7\u30e5 B \u304c\u672a\u8a2d\u5b9a\u3067\u3059\u3002"},
     "ml_status_no_hit":     {"en": "No surface found along the axis.",
                              "jp": u"\u8ef8\u65b9\u5411\u306b\u8868\u9762\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093\u3002"},
-    "ml_status_no_source":  {"en": "Source is not set.",            "jp": u"\u30bd\u30fc\u30b9\u304c\u672a\u8a2d\u5b9a\u3067\u3059\u3002"},
-    "ml_status_no_target":  {"en": "Target is not set.",            "jp": u"\u30bf\u30fc\u30b2\u30c3\u30c8\u304c\u672a\u8a2d\u5b9a\u3067\u3059\u3002"},
+    "ml_status_preview":    {"en": "Preview: moved {dist:.4f} along {axis}. Click Confirm or Revert.",
+                             "jp": u"\u30d7\u30ec\u30d3\u30e5\u30fc: {axis}\u8ef8\u306b {dist:.4f} \u79fb\u52d5\u3002\u78ba\u5b9a\u307e\u305f\u306f\u5143\u306b\u623b\u3059\u3002"},
+    "ml_status_confirmed":  {"en": "Confirmed: moved {dist:.4f} along {axis}.",
+                             "jp": u"\u78ba\u5b9a: {axis}\u8ef8\u306b {dist:.4f} \u79fb\u52d5\u6e08\u307f\u3002"},
+    "ml_status_reverted":   {"en": "Reverted.",                     "jp": u"\u5143\u306b\u623b\u3057\u307e\u3057\u305f\u3002"},
+    "ml_status_swapped":    {"en": "Swapped A \u2194 B.",           "jp": u"A \u2194 B \u3092\u5165\u308c\u66ff\u3048\u307e\u3057\u305f\u3002"},
 
     # ---- Tabs --------------------------------------------------------
     "tab_check":            {"en": "Check",                         "jp": u"\u30c1\u30a7\u30c3\u30af"},
@@ -289,60 +300,77 @@ _STRINGS = {
     "help_body_other": {
         "en": "<h2>Other Tab</h2>"
               "<h3>Mesh Landing</h3>"
-              "<p>Lands a source mesh onto a target mesh along a chosen axis. "
-              "Raycasts every source vertex toward the target, verifies with polygon-level "
-              "collision, and moves the source so it touches the target without penetrating.</p>"
+              "<p>Lands <b>Mesh A</b> onto <b>Mesh B</b> along a chosen axis. "
+              "Raycasts every Mesh A vertex toward Mesh B, verifies with polygon-level "
+              "collision, and moves Mesh A so it touches Mesh B without penetrating.</p>"
               "<h3>Workflow</h3>"
               "<ol>"
-              "<li>Select source mesh(es) in the viewport and click <b>[Set]</b> on the Source row.</li>"
-              "<li>Select target mesh(es) and click <b>[Set]</b> on the Target row.</li>"
-              "<li>Choose the <b>Axis</b> (X / Y / Z).</li>"
-              "<li>Choose the <b>Direction</b>:"
-              "<ul>"
-              "<li><b>Auto</b> &mdash; auto-detect based on source/target center positions.</li>"
-              "<li><b>+</b> / <b>\u2212</b> &mdash; force positive or negative direction along the axis.</li>"
-              "</ul></li>"
-              "<li>Choose the <b>Move mode</b>:"
-              "<ul>"
-              "<li><b>Object</b> &mdash; moves the whole source transform.</li>"
-              "<li><b>Component</b> &mdash; moves only currently selected vertices / faces of the source.</li>"
-              "</ul></li>"
-              "<li>Set <b>Offset</b> (gap to keep between source and target surface; 0 = touch).</li>"
-              "<li>Click <b>[Land]</b>.</li>"
+              "<li>In the Other tab, click <b>[Launch]</b> to open the Mesh Landing dialog.</li>"
+              "<li>Select the mesh(es) to move in the viewport and click <b>[Set]</b> on the <b>Mesh A</b> row.</li>"
+              "<li>Select the ground mesh(es) and click <b>[Set]</b> on the <b>Mesh B</b> row.</li>"
+              "<li>If you picked them in the wrong order, click <b>[\u21C4 Swap A \u2194 B]</b> to flip them.</li>"
+              "<li>Adjust <b>Axis</b>, <b>Direction</b>, <b>Move mode</b>, and <b>Offset</b>.</li>"
+              "<li>Click <b>[\u25B6 Preview]</b>. Mesh A moves in-place; you can see the result.</li>"
+              "<li>If you want to try different settings, change any parameter and click <b>[Preview]</b> again. "
+              "The previous preview is undone automatically before the new one is applied.</li>"
+              "<li>When satisfied, click <b>[\u2714 Confirm]</b> to finalize, or <b>[\u21A9 Revert]</b> to cancel.</li>"
               "</ol>"
+              "<p><i>Closing the dialog while a preview is unconfirmed automatically reverts it.</i></p>"
+              "<h3>Parameters</h3>"
+              "<ul>"
+              "<li><b>Axis</b> \u2014 X / Y / Z. The landing is constrained to this axis.</li>"
+              "<li><b>Direction</b>"
+              "<ul>"
+              "<li><b>Auto</b> \u2014 picks the direction from A&#8217;s and B&#8217;s center positions.</li>"
+              "<li><b>+</b> / <b>\u2212</b> \u2014 force the sign explicitly.</li>"
+              "</ul></li>"
+              "<li><b>Move mode</b>"
+              "<ul>"
+              "<li><b>Object</b> \u2014 moves the whole Mesh A transform.</li>"
+              "<li><b>Component</b> \u2014 moves only currently selected vertices / faces of Mesh A.</li>"
+              "</ul></li>"
+              "<li><b>Offset</b> \u2014 gap to keep between A and B after landing. 0 means the surfaces touch.</li>"
+              "</ul>"
               "<h3>Algorithm</h3>"
-              "<p>A raycast gives an initial upper-bound distance. If the mesh still collides at that "
+              "<p>A raycast gives an initial upper-bound distance. If Mesh A still collides with Mesh B at that "
               "distance (happens with rotated or concave shapes), a binary search in [0, upper-bound] "
-              "finds the largest safe distance that guarantees no polygon-level penetration.</p>"
-              "<p>Undo works normally &mdash; the entire operation is wrapped in a single undo chunk.</p>",
+              "finds the largest safe distance that guarantees no polygon-level penetration.</p>",
         "jp": u"<h2>\u305d\u306e\u4ed6\u30bf\u30d6</h2>"
               u"<h3>\u30e1\u30c3\u30b7\u30e5\u63a5\u5730</h3>"
-              u"<p>\u30bd\u30fc\u30b9\u30e1\u30c3\u30b7\u30e5\u3092\u6307\u5b9a\u8ef8\u306b\u6cbf\u3063\u3066\u30bf\u30fc\u30b2\u30c3\u30c8\u30e1\u30c3\u30b7\u30e5\u306b\u63a5\u5730\u3055\u305b\u307e\u3059\u3002"
-              u"\u30bd\u30fc\u30b9\u306e\u5168\u9802\u70b9\u304b\u3089\u30ec\u30a4\u30ad\u30e3\u30b9\u30c8\u3092\u884c\u3044\u3001\u30dd\u30ea\u30b4\u30f3\u30ec\u30d9\u30eb\u306e\u885d\u7a81\u5224\u5b9a\u3067\u691c\u8a3c\u3057\u3001"
-              u"\u8cab\u901a\u305b\u305a\u306b\u63a5\u89e6\u3059\u308b\u4f4d\u7f6e\u307e\u3067\u30bd\u30fc\u30b9\u3092\u79fb\u52d5\u3057\u307e\u3059\u3002</p>"
+              u"<p><b>\u30e1\u30c3\u30b7\u30e5 A</b> \u3092 <b>\u30e1\u30c3\u30b7\u30e5 B</b> \u306b\u6307\u5b9a\u8ef8\u306b\u6cbf\u3063\u3066\u63a5\u5730\u3055\u305b\u307e\u3059\u3002"
+              u"A \u306e\u5168\u9802\u70b9\u304b\u3089 B \u306b\u5411\u3051\u3066\u30ec\u30a4\u30ad\u30e3\u30b9\u30c8\u3092\u884c\u3044\u3001\u30dd\u30ea\u30b4\u30f3\u30ec\u30d9\u30eb\u306e\u885d\u7a81\u5224\u5b9a\u3067\u691c\u8a3c\u3057\u3001"
+              u"\u8cab\u901a\u305b\u305a\u306b\u63a5\u89e6\u3059\u308b\u4f4d\u7f6e\u307e\u3067 A \u3092\u79fb\u52d5\u3057\u307e\u3059\u3002</p>"
               u"<h3>\u4f5c\u696d\u624b\u9806</h3>"
               u"<ol>"
-              u"<li>\u30d3\u30e5\u30fc\u30dd\u30fc\u30c8\u3067\u30bd\u30fc\u30b9\u30e1\u30c3\u30b7\u30e5\u3092\u9078\u629e\u3057\u3001\u30bd\u30fc\u30b9\u884c\u306e <b>[\u30bb\u30c3\u30c8]</b> \u3092\u30af\u30ea\u30c3\u30af\u3002</li>"
-              u"<li>\u30bf\u30fc\u30b2\u30c3\u30c8\u30e1\u30c3\u30b7\u30e5\u3092\u9078\u629e\u3057\u3001\u30bf\u30fc\u30b2\u30c3\u30c8\u884c\u306e <b>[\u30bb\u30c3\u30c8]</b> \u3092\u30af\u30ea\u30c3\u30af\u3002</li>"
-              u"<li><b>\u8ef8</b>\uff08X / Y / Z\uff09\u3092\u9078\u629e\u3002</li>"
-              u"<li><b>\u65b9\u5411</b>\u3092\u9078\u629e\uff1a"
+              u"<li>\u305d\u306e\u4ed6\u30bf\u30d6\u3067 <b>[\u8d77\u52d5]</b> \u3092\u30af\u30ea\u30c3\u30af\u3057\u3066\u30e1\u30c3\u30b7\u30e5\u63a5\u5730\u30c0\u30a4\u30a2\u30ed\u30b0\u3092\u958b\u304d\u307e\u3059\u3002</li>"
+              u"<li>\u79fb\u52d5\u3055\u305b\u305f\u3044\u30e1\u30c3\u30b7\u30e5\u3092\u30d3\u30e5\u30fc\u30dd\u30fc\u30c8\u3067\u9078\u629e\u3057\u3001<b>\u30e1\u30c3\u30b7\u30e5 A</b> \u884c\u306e <b>[\u30bb\u30c3\u30c8]</b> \u3092\u30af\u30ea\u30c3\u30af\u3002</li>"
+              u"<li>\u5730\u9762\u5074\u306e\u30e1\u30c3\u30b7\u30e5\u3092\u9078\u629e\u3057\u3001<b>\u30e1\u30c3\u30b7\u30e5 B</b> \u884c\u306e <b>[\u30bb\u30c3\u30c8]</b> \u3092\u30af\u30ea\u30c3\u30af\u3002</li>"
+              u"<li>\u9006\u306b\u30bb\u30c3\u30c8\u3057\u3066\u3057\u307e\u3063\u305f\u5834\u5408\u306f <b>[\u21C4 A \u2194 B \u5165\u308c\u66ff\u3048]</b> \u3067\u5165\u308c\u66ff\u3048\u3089\u308c\u307e\u3059\u3002</li>"
+              u"<li><b>\u8ef8</b>\u30fb<b>\u65b9\u5411</b>\u30fb<b>\u79fb\u52d5\u30e2\u30fc\u30c9</b>\u30fb<b>\u30aa\u30d5\u30bb\u30c3\u30c8</b> \u3092\u8a2d\u5b9a\u3002</li>"
+              u"<li><b>[\u25B6 \u30d7\u30ec\u30d3\u30e5\u30fc]</b> \u3092\u30af\u30ea\u30c3\u30af\u3002A \u304c\u79fb\u52d5\u3057\u3001\u7d50\u679c\u3092\u78ba\u8a8d\u3067\u304d\u307e\u3059\u3002</li>"
+              u"<li>\u8a2d\u5b9a\u3092\u5909\u66f4\u3057\u3066\u518d\u5ea6 <b>[\u30d7\u30ec\u30d3\u30e5\u30fc]</b> \u3092\u62bc\u3059\u3068\u3001\u524d\u56de\u306e\u30d7\u30ec\u30d3\u30e5\u30fc\u304c\u81ea\u52d5\u30ad\u30e3\u30f3\u30bb\u30eb\u3055\u308c\u3066\u65b0\u3057\u3044\u8a2d\u5b9a\u3067\u518d\u8a66\u884c\u3055\u308c\u307e\u3059\u3002\u4f55\u5ea6\u3067\u3082\u8a66\u305b\u307e\u3059\u3002</li>"
+              u"<li>\u826f\u3051\u308c\u3070 <b>[\u2714 \u78ba\u5b9a]</b> \u3067\u78ba\u5b9a\u3001\u3084\u308a\u76f4\u3059\u306a\u3089 <b>[\u21A9 \u5143\u306b\u623b\u3059]</b> \u3067\u30ad\u30e3\u30f3\u30bb\u30eb\u3002</li>"
+              u"</ol>"
+              u"<p><i>\u672a\u78ba\u5b9a\u306e\u30d7\u30ec\u30d3\u30e5\u30fc\u304c\u3042\u308b\u72b6\u614b\u3067\u30c0\u30a4\u30a2\u30ed\u30b0\u3092\u9589\u3058\u308b\u3068\u3001\u81ea\u52d5\u3067\u30ad\u30e3\u30f3\u30bb\u30eb\u3055\u308c\u307e\u3059\u3002</i></p>"
+              u"<h3>\u30d1\u30e9\u30e1\u30fc\u30bf</h3>"
               u"<ul>"
-              u"<li><b>\u81ea\u52d5</b> \u2014 \u30bd\u30fc\u30b9\u3068\u30bf\u30fc\u30b2\u30c3\u30c8\u306e\u4e2d\u5fc3\u4f4d\u7f6e\u304b\u3089\u81ea\u52d5\u5224\u5b9a\u3002</li>"
+              u"<li><b>\u8ef8</b> \u2014 X / Y / Z\u3002\u3053\u306e\u8ef8\u306b\u6cbf\u3063\u305f\u79fb\u52d5\u306e\u307f\u884c\u3044\u307e\u3059\u3002</li>"
+              u"<li><b>\u65b9\u5411</b>"
+              u"<ul>"
+              u"<li><b>\u81ea\u52d5</b> \u2014 A \u3068 B \u306e\u4e2d\u5fc3\u4f4d\u7f6e\u304b\u3089\u81ea\u52d5\u5224\u5b9a\u3002</li>"
               u"<li><b>+</b> / <b>\u2212</b> \u2014 \u8ef8\u65b9\u5411\u3092\u660e\u793a\u7684\u306b\u6307\u5b9a\u3002</li>"
               u"</ul></li>"
-              u"<li><b>\u79fb\u52d5\u30e2\u30fc\u30c9</b>\u3092\u9078\u629e\uff1a"
+              u"<li><b>\u79fb\u52d5\u30e2\u30fc\u30c9</b>"
               u"<ul>"
-              u"<li><b>\u30aa\u30d6\u30b8\u30a7\u30af\u30c8</b> \u2014 \u30bd\u30fc\u30b9\u306e Transform \u3054\u3068\u79fb\u52d5\u3002</li>"
-              u"<li><b>\u30b3\u30f3\u30dd\u30fc\u30cd\u30f3\u30c8</b> \u2014 \u73fe\u5728\u9078\u629e\u3057\u3066\u3044\u308b\u9802\u70b9\u30fb\u30d5\u30a7\u30fc\u30b9\u306e\u307f\u79fb\u52d5\u3002</li>"
+              u"<li><b>\u30aa\u30d6\u30b8\u30a7\u30af\u30c8</b> \u2014 A \u306e Transform \u3054\u3068\u79fb\u52d5\u3002</li>"
+              u"<li><b>\u30b3\u30f3\u30dd\u30fc\u30cd\u30f3\u30c8</b> \u2014 A \u3067\u73fe\u5728\u9078\u629e\u3057\u3066\u3044\u308b\u9802\u70b9\u30fb\u30d5\u30a7\u30fc\u30b9\u306e\u307f\u79fb\u52d5\u3002</li>"
               u"</ul></li>"
-              u"<li><b>\u30aa\u30d5\u30bb\u30c3\u30c8</b>\uff08\u30bd\u30fc\u30b9\u3068\u30bf\u30fc\u30b2\u30c3\u30c8\u9593\u306b\u6b8b\u3059\u9694\u305f\u308a\u8ddd\u96e2\u3002 0 \u306e\u5834\u5408\u306f\u63a5\u89e6\uff09\u3092\u8a2d\u5b9a\u3002</li>"
-              u"<li><b>[\u63a5\u5730]</b> \u3092\u30af\u30ea\u30c3\u30af\u3002</li>"
-              u"</ol>"
+              u"<li><b>\u30aa\u30d5\u30bb\u30c3\u30c8</b> \u2014 A \u3068 B \u306e\u9593\u306b\u6b8b\u3059\u9694\u305f\u308a\u8ddd\u96e2\u3002 0 \u306a\u3089\u63a5\u89e6\u3057\u307e\u3059\u3002</li>"
+              u"</ul>"
               u"<h3>\u30a2\u30eb\u30b4\u30ea\u30ba\u30e0</h3>"
               u"<p>\u307e\u305a\u30ec\u30a4\u30ad\u30e3\u30b9\u30c8\u3067\u6982\u7b97\u8ddd\u96e2\uff08\u4e0a\u9650\u5024\uff09\u3092\u7b97\u51fa\u3057\u307e\u3059\u3002"
               u"\u305d\u306e\u8ddd\u96e2\u3067\u3082\u885d\u7a81\u304c\u6b8b\u308b\u5834\u5408\uff08\u56de\u8ee2\u3057\u305f\u5f62\u72b6\u3084\u51f9\u5f62\u30e1\u30c3\u30b7\u30e5\u3067\u8d77\u3053\u308a\u307e\u3059\uff09\u306f\u3001"
-              u"[0, \u4e0a\u9650\u5024] \u306e\u7bc4\u56f2\u3092\u4e8c\u5206\u63a2\u7d22\u3057\u3001\u30dd\u30ea\u30b4\u30f3\u30ec\u30d9\u30eb\u3067\u8cab\u901a\u3057\u306a\u3044\u6700\u5927\u8ddd\u96e2\u3092\u6c42\u3081\u307e\u3059\u3002</p>"
-              u"<p>Undo \u306f\u901a\u5e38\u901a\u308a\u52d5\u4f5c\u3057\u307e\u3059\uff08\u5168\u4f53\u304c 1 \u3064\u306e Undo \u30c1\u30e3\u30f3\u30af\u306b\u307e\u3068\u3081\u3089\u308c\u307e\u3059\uff09\u3002</p>",
+              u"[0, \u4e0a\u9650\u5024] \u306e\u7bc4\u56f2\u3092\u4e8c\u5206\u63a2\u7d22\u3057\u3001\u30dd\u30ea\u30b4\u30f3\u30ec\u30d9\u30eb\u3067\u8cab\u901a\u3057\u306a\u3044\u6700\u5927\u8ddd\u96e2\u3092\u6c42\u3081\u307e\u3059\u3002</p>",
     },
 
     # ---- Vertex Snap (Snap tab) --------------------------------------
@@ -4328,15 +4356,11 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
 
 
 # ---------------------------------------------------------------------------
-# Landing UI group builder — called from CollisionCheckToolWindow._build()
+# Mesh Landing: tab-side launcher group
 # ---------------------------------------------------------------------------
 
 def _build_mesh_landing_group(tool_window, parent_layout):
-    """Build the Mesh Landing group for the Other tab.
-    Stores runtime state on the tool_window instance (_ml_* attrs)."""
-    tool_window._ml_source_shapes = []
-    tool_window._ml_target_shapes = []
-
+    """Compact launcher in the Other tab. Actual settings live in a dialog."""
     grp = QtWidgets.QGroupBox()
     grp.setStyleSheet(
         "QGroupBox{border:1px solid #4CAF50;border-radius:6px;"
@@ -4352,318 +4376,530 @@ def _build_mesh_landing_group(tool_window, parent_layout):
         "color:#4CAF50;font-size:11px;font-weight:bold")
     glo.addWidget(tool_window._ml_grp_lbl)
 
-    _lbl_ss = "color:#AAA;font-size:10px"
-    _field_ss = ("QLineEdit{background-color:#2B2B2B;color:#EEE;"
-                 "border:1px solid #555;border-radius:3px;"
-                 "padding:2px 4px;font-size:10px}")
-    _spin_ss = ("QDoubleSpinBox{background-color:#2B2B2B;color:#EEE;"
-                "border:1px solid #555;border-radius:3px;"
-                "padding:1px;font-size:10px}")
-    _set_btn_ss = ("QPushButton{background-color:#455A64;color:#EEE;"
-                   "border:1px solid #607D8B;border-radius:3px;"
-                   "font-size:10px;padding:2px 8px}"
-                   "QPushButton:hover{background-color:#546E7A}")
+    tool_window._ml_desc_lbl = QtWidgets.QLabel(tr("ml_grp_desc"))
+    tool_window._ml_desc_lbl.setStyleSheet(
+        "color:#AAA;font-size:10px;padding:2px 4px")
+    tool_window._ml_desc_lbl.setWordWrap(True)
+    glo.addWidget(tool_window._ml_desc_lbl)
 
-    # Source row
-    src_row = QtWidgets.QHBoxLayout()
-    tool_window._ml_lbl_source = QtWidgets.QLabel(tr("ml_lbl_source"))
-    tool_window._ml_lbl_source.setStyleSheet(_lbl_ss)
-    tool_window._ml_lbl_source.setFixedWidth(110)
-    src_row.addWidget(tool_window._ml_lbl_source)
-    tool_window._ml_txt_source = QtWidgets.QLineEdit()
-    tool_window._ml_txt_source.setReadOnly(True)
-    tool_window._ml_txt_source.setStyleSheet(_field_ss)
-    src_row.addWidget(tool_window._ml_txt_source)
-    tool_window._ml_btn_set_source = QtWidgets.QPushButton(tr("ml_btn_set"))
-    tool_window._ml_btn_set_source.setStyleSheet(_set_btn_ss)
-    tool_window._ml_btn_set_source.setFixedWidth(50)
-    tool_window._ml_btn_set_source.clicked.connect(
-        lambda: _ml_set_source(tool_window))
-    src_row.addWidget(tool_window._ml_btn_set_source)
-    glo.addLayout(src_row)
-
-    # Target row
-    tgt_row = QtWidgets.QHBoxLayout()
-    tool_window._ml_lbl_target = QtWidgets.QLabel(tr("ml_lbl_target"))
-    tool_window._ml_lbl_target.setStyleSheet(_lbl_ss)
-    tool_window._ml_lbl_target.setFixedWidth(110)
-    tgt_row.addWidget(tool_window._ml_lbl_target)
-    tool_window._ml_txt_target = QtWidgets.QLineEdit()
-    tool_window._ml_txt_target.setReadOnly(True)
-    tool_window._ml_txt_target.setStyleSheet(_field_ss)
-    tgt_row.addWidget(tool_window._ml_txt_target)
-    tool_window._ml_btn_set_target = QtWidgets.QPushButton(tr("ml_btn_set"))
-    tool_window._ml_btn_set_target.setStyleSheet(_set_btn_ss)
-    tool_window._ml_btn_set_target.setFixedWidth(50)
-    tool_window._ml_btn_set_target.clicked.connect(
-        lambda: _ml_set_target(tool_window))
-    tgt_row.addWidget(tool_window._ml_btn_set_target)
-    glo.addLayout(tgt_row)
-
-    # Separator
-    sep = QtWidgets.QFrame()
-    sep.setFrameShape(QtWidgets.QFrame.HLine)
-    sep.setStyleSheet("color:#555")
-    glo.addWidget(sep)
-
-    # Axis row
-    ax_row = QtWidgets.QHBoxLayout()
-    tool_window._ml_lbl_axis = QtWidgets.QLabel(tr("ml_lbl_axis"))
-    tool_window._ml_lbl_axis.setStyleSheet(_lbl_ss)
-    tool_window._ml_lbl_axis.setFixedWidth(110)
-    ax_row.addWidget(tool_window._ml_lbl_axis)
-    tool_window._ml_rb_x = QtWidgets.QRadioButton("X")
-    tool_window._ml_rb_y = QtWidgets.QRadioButton("Y")
-    tool_window._ml_rb_z = QtWidgets.QRadioButton("Z")
-    tool_window._ml_rb_y.setChecked(True)
-    ax_group = QtWidgets.QButtonGroup(tool_window)
-    for rb in (tool_window._ml_rb_x, tool_window._ml_rb_y, tool_window._ml_rb_z):
-        rb.setStyleSheet("QRadioButton{color:#CCC;font-size:10px}")
-        ax_group.addButton(rb)
-        ax_row.addWidget(rb)
-    ax_row.addStretch()
-    tool_window._ml_ax_group = ax_group
-    glo.addLayout(ax_row)
-
-    # Direction row
-    dir_row = QtWidgets.QHBoxLayout()
-    tool_window._ml_lbl_dir = QtWidgets.QLabel(tr("ml_lbl_direction"))
-    tool_window._ml_lbl_dir.setStyleSheet(_lbl_ss)
-    tool_window._ml_lbl_dir.setFixedWidth(110)
-    dir_row.addWidget(tool_window._ml_lbl_dir)
-    tool_window._ml_rb_auto = QtWidgets.QRadioButton(tr("ml_dir_auto"))
-    tool_window._ml_rb_pos = QtWidgets.QRadioButton(tr("ml_dir_positive"))
-    tool_window._ml_rb_neg = QtWidgets.QRadioButton(tr("ml_dir_negative"))
-    tool_window._ml_rb_auto.setChecked(True)
-    dir_group = QtWidgets.QButtonGroup(tool_window)
-    for rb in (tool_window._ml_rb_auto, tool_window._ml_rb_pos,
-               tool_window._ml_rb_neg):
-        rb.setStyleSheet("QRadioButton{color:#CCC;font-size:10px}")
-        dir_group.addButton(rb)
-        dir_row.addWidget(rb)
-    dir_row.addStretch()
-    tool_window._ml_dir_group = dir_group
-    glo.addLayout(dir_row)
-
-    # Mode row
-    mode_row = QtWidgets.QHBoxLayout()
-    tool_window._ml_lbl_mode = QtWidgets.QLabel(tr("ml_lbl_mode"))
-    tool_window._ml_lbl_mode.setStyleSheet(_lbl_ss)
-    tool_window._ml_lbl_mode.setFixedWidth(110)
-    mode_row.addWidget(tool_window._ml_lbl_mode)
-    tool_window._ml_rb_obj = QtWidgets.QRadioButton(tr("ml_mode_object"))
-    tool_window._ml_rb_comp = QtWidgets.QRadioButton(tr("ml_mode_component"))
-    tool_window._ml_rb_obj.setChecked(True)
-    mode_group = QtWidgets.QButtonGroup(tool_window)
-    for rb in (tool_window._ml_rb_obj, tool_window._ml_rb_comp):
-        rb.setStyleSheet("QRadioButton{color:#CCC;font-size:10px}")
-        mode_group.addButton(rb)
-        mode_row.addWidget(rb)
-    mode_row.addStretch()
-    tool_window._ml_mode_group = mode_group
-    glo.addLayout(mode_row)
-
-    # Offset row
-    off_row = QtWidgets.QHBoxLayout()
-    tool_window._ml_lbl_offset = QtWidgets.QLabel(tr("ml_lbl_offset"))
-    tool_window._ml_lbl_offset.setStyleSheet(_lbl_ss)
-    tool_window._ml_lbl_offset.setFixedWidth(110)
-    off_row.addWidget(tool_window._ml_lbl_offset)
-    tool_window._ml_spin_offset = QtWidgets.QDoubleSpinBox()
-    tool_window._ml_spin_offset.setRange(0.0, 1.0e6)
-    tool_window._ml_spin_offset.setDecimals(4)
-    tool_window._ml_spin_offset.setSingleStep(0.001)
-    tool_window._ml_spin_offset.setValue(0.001)
-    tool_window._ml_spin_offset.setFixedWidth(85)
-    tool_window._ml_spin_offset.setStyleSheet(_spin_ss)
-    off_row.addWidget(tool_window._ml_spin_offset)
-    off_row.addStretch()
-    glo.addLayout(off_row)
-
-    # Land button
     btn_row = QtWidgets.QHBoxLayout()
     btn_row.addStretch()
-    tool_window._ml_btn_land = _mkbtn(tr("ml_btn_land"), 28, "#4CAF50", "#388E3C")
-    tool_window._ml_btn_land.setFixedWidth(120)
-    tool_window._ml_btn_land.clicked.connect(
-        lambda: _ml_on_land(tool_window))
-    btn_row.addWidget(tool_window._ml_btn_land)
+    tool_window._ml_btn_launch = _mkbtn(tr("ml_btn_launch"), 28,
+                                         "#4CAF50", "#388E3C")
+    tool_window._ml_btn_launch.setFixedWidth(120)
+    tool_window._ml_btn_launch.clicked.connect(
+        lambda: _ml_launch(tool_window))
+    btn_row.addWidget(tool_window._ml_btn_launch)
     btn_row.addStretch()
     glo.addLayout(btn_row)
+
+    # State — initialised on launch
+    tool_window._ml_result_window = None
 
     parent_layout.addWidget(grp)
     return grp
 
 
-# ---------------------------------------------------------------------------
-# Landing UI handlers
-# ---------------------------------------------------------------------------
+def _ml_launch(tool_window):
+    """Open / refocus the Mesh Landing dialog."""
+    if getattr(tool_window, "_ml_result_window", None) is None:
+        tool_window._ml_result_window = MeshLandingDialog(parent=tool_window)
+        tool_window._ml_result_window.status_msg.connect(
+            lambda t: _ml_set_status(tool_window, t))
+    tool_window._ml_result_window.show()
+    tool_window._ml_result_window.raise_()
+    tool_window._ml_result_window.activateWindow()
+
 
 def _ml_set_status(tool_window, text):
     if hasattr(tool_window, "_status_bar"):
         tool_window._status_bar.setText(text)
 
 
-def _ml_set_source(tool_window):
-    if not MAYA_AVAILABLE:
-        return
-    sel = cmds.ls(sl=True, long=True) or []
-    shapes = _ml_get_mesh_shapes(sel)
-    tool_window._ml_source_shapes = shapes
-    names = [s.split("|")[-1] for s in shapes]
-    tool_window._ml_txt_source.setText(u", ".join(names) if names else u"---")
-
-
-def _ml_set_target(tool_window):
-    if not MAYA_AVAILABLE:
-        return
-    sel = cmds.ls(sl=True, long=True) or []
-    shapes = _ml_get_mesh_shapes(sel)
-    tool_window._ml_target_shapes = shapes
-    names = [s.split("|")[-1] for s in shapes]
-    tool_window._ml_txt_target.setText(u", ".join(names) if names else u"---")
-
-
-def _ml_get_axis(tool_window):
-    if tool_window._ml_rb_x.isChecked():
-        return 0
-    if tool_window._ml_rb_z.isChecked():
-        return 2
-    return 1
-
-
-def _ml_get_sign(tool_window):
-    if tool_window._ml_rb_pos.isChecked():
-        return 1
-    if tool_window._ml_rb_neg.isChecked():
-        return -1
-    return 0
-
-
-def _ml_gather_component_selection(tool_window):
-    sel = cmds.ls(sl=True, fl=True, long=True) or []
-    src_set = set(tool_window._ml_source_shapes)
-    vert_map = {}
-    for item in sel:
-        if u".vtx[" in item:
-            shape_part = item.split(u".vtx[")[0]
-            shapes = _ml_get_mesh_shapes([shape_part])
-            if not shapes:
-                continue
-            shape = shapes[0]
-            if shape not in src_set:
-                continue
-            try:
-                vi = int(item.split(u"[")[-1].rstrip(u"]"))
-            except Exception:
-                continue
-            vert_map.setdefault(shape, []).append(vi)
-        elif u".f[" in item:
-            shape_part = item.split(u".f[")[0]
-            shapes = _ml_get_mesh_shapes([shape_part])
-            if not shapes:
-                continue
-            shape = shapes[0]
-            if shape not in src_set:
-                continue
-            verts = cmds.polyListComponentConversion(
-                item, fromFace=True, toVertex=True) or []
-            verts = cmds.ls(verts, fl=True) or []
-            for v in verts:
-                try:
-                    vi = int(v.split(u"[")[-1].rstrip(u"]"))
-                    vert_map.setdefault(shape, []).append(vi)
-                except Exception:
-                    pass
-    for shape in vert_map:
-        vert_map[shape] = list(set(vert_map[shape]))
-    return vert_map
-
-
-def _ml_on_land(tool_window):
-    if not MAYA_AVAILABLE:
-        return
-    if not tool_window._ml_source_shapes:
-        _ml_set_status(tool_window, tr("ml_status_no_source"))
-        return
-    if not tool_window._ml_target_shapes:
-        _ml_set_status(tool_window, tr("ml_status_no_target"))
-        return
-
-    axis = _ml_get_axis(tool_window)
-    sign = _ml_get_sign(tool_window)
-    offset = tool_window._ml_spin_offset.value()
-    is_component = tool_window._ml_rb_comp.isChecked()
-
-    vert_map = None
-    if is_component:
-        vert_map = _ml_gather_component_selection(tool_window)
-        if not vert_map:
-            is_component = False
-
-    cmds.undoInfo(openChunk=True, chunkName="DW_MeshLanding")
-    try:
-        if is_component:
-            result = ml_compute_landing(
-                tool_window._ml_source_shapes, tool_window._ml_target_shapes,
-                axis, sign, offset, vert_indices=vert_map)
-            if result is None or result[0] is None or result[0] < 1.0e-8:
-                _ml_set_status(tool_window, tr("ml_status_no_hit"))
-                return
-            dist, actual_sign = result
-            delta = [0.0, 0.0, 0.0]
-            delta[axis] = dist * actual_sign
-            for shape, vidxs in vert_map.items():
-                comps = [u"{0}.vtx[{1}]".format(shape, vi) for vi in vidxs]
-                cmds.xform(comps, ws=True, r=True,
-                           t=(delta[0], delta[1], delta[2]))
-        else:
-            result = ml_compute_landing(
-                tool_window._ml_source_shapes, tool_window._ml_target_shapes,
-                axis, sign, offset)
-            if result is None or result[0] is None or result[0] < 1.0e-8:
-                _ml_set_status(tool_window, tr("ml_status_no_hit"))
-                return
-            dist, actual_sign = result
-            delta = [0.0, 0.0, 0.0]
-            delta[axis] = dist * actual_sign
-            for shape in tool_window._ml_source_shapes:
-                tr_node = cmds.listRelatives(shape, parent=True,
-                                              fullPath=True)
-                if tr_node:
-                    cmds.xform(tr_node[0], ws=True, r=True,
-                               t=(delta[0], delta[1], delta[2]))
-
-        _ml_set_status(tool_window,
-                       tr("ml_status_landed",
-                          dist=dist, axis=_ML_AXIS_NAMES[axis]))
-    except Exception as _e:
-        import traceback
-        traceback.print_exc()
-        _ml_set_status(tool_window, u"Error: {0}".format(_e))
-    finally:
-        cmds.undoInfo(closeChunk=True)
-
-
 def _ml_refresh_labels(tool_window):
     """Called from CollisionCheckToolWindow._refresh_labels()."""
     if hasattr(tool_window, "_ml_grp_lbl"):
         tool_window._ml_grp_lbl.setText(u"\u25A0 " + tr("ml_grp_title"))
-    if hasattr(tool_window, "_ml_lbl_source"):
-        tool_window._ml_lbl_source.setText(tr("ml_lbl_source"))
-        tool_window._ml_lbl_target.setText(tr("ml_lbl_target"))
-        tool_window._ml_btn_set_source.setText(tr("ml_btn_set"))
-        tool_window._ml_btn_set_target.setText(tr("ml_btn_set"))
-        tool_window._ml_lbl_axis.setText(tr("ml_lbl_axis"))
-        tool_window._ml_lbl_dir.setText(tr("ml_lbl_direction"))
-        tool_window._ml_rb_auto.setText(tr("ml_dir_auto"))
-        tool_window._ml_rb_pos.setText(tr("ml_dir_positive"))
-        tool_window._ml_rb_neg.setText(tr("ml_dir_negative"))
-        tool_window._ml_lbl_mode.setText(tr("ml_lbl_mode"))
-        tool_window._ml_rb_obj.setText(tr("ml_mode_object"))
-        tool_window._ml_rb_comp.setText(tr("ml_mode_component"))
-        tool_window._ml_lbl_offset.setText(tr("ml_lbl_offset"))
-        tool_window._ml_btn_land.setText(tr("ml_btn_land"))
+    if hasattr(tool_window, "_ml_desc_lbl"):
+        tool_window._ml_desc_lbl.setText(tr("ml_grp_desc"))
+    if hasattr(tool_window, "_ml_btn_launch"):
+        tool_window._ml_btn_launch.setText(tr("ml_btn_launch"))
+    w = getattr(tool_window, "_ml_result_window", None)
+    if w is not None:
+        w.refresh_labels()
+
+
+# ---------------------------------------------------------------------------
+# Mesh Landing Dialog — preview + confirm/revert workflow
+# ---------------------------------------------------------------------------
+
+class MeshLandingDialog(QtWidgets.QDialog):
+    """Dialog with A/B mesh picker, live preview, and confirm/revert.
+
+    Workflow:
+      1. Pick Mesh A (mover) and Mesh B (ground). Swap button flips them.
+      2. Adjust axis / direction / mode / offset.
+      3. Click [Preview] to run landing within an undo chunk.
+      4. Adjust settings and re-preview freely (previous preview is undone
+         automatically before the new one is applied).
+      5. Click [Confirm] to finalize, or [Revert] to cancel and restore."""
+
+    status_msg = QtCore.Signal(str)
+
+    def __init__(self, parent=None):
+        super(MeshLandingDialog, self).__init__(parent)
+        self.setObjectName("DW_MeshLanding_Dialog")
+        self.setWindowTitle(tr("ml_dlg_title"))
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose, False)
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
+        self.setMinimumSize(460, 360)
+        self.setStyleSheet(
+            "QDialog{background-color:#333;color:#EEE}"
+            "QLabel{color:#EEE}")
+
+        self._mesh_a_shapes = []
+        self._mesh_b_shapes = []
+        self._preview_active = False   # True when an undo chunk is open
+        self._last_dist = 0.0
+        self._last_axis = 1
+        self._build()
+
+    # -- UI construction --
+    def _build(self):
+        lo = QtWidgets.QVBoxLayout(self)
+        lo.setContentsMargins(10, 10, 10, 10)
+        lo.setSpacing(6)
+
+        _lbl_ss = "color:#AAA;font-size:10px"
+        _field_ss = ("QLineEdit{background-color:#2B2B2B;color:#EEE;"
+                     "border:1px solid #555;border-radius:3px;"
+                     "padding:2px 4px;font-size:10px}")
+        _spin_ss = ("QDoubleSpinBox{background-color:#2B2B2B;color:#EEE;"
+                    "border:1px solid #555;border-radius:3px;"
+                    "padding:1px;font-size:10px}")
+        _set_btn_ss = ("QPushButton{background-color:#455A64;color:#EEE;"
+                       "border:1px solid #607D8B;border-radius:3px;"
+                       "font-size:10px;padding:2px 8px}"
+                       "QPushButton:hover{background-color:#546E7A}")
+
+        # ---- Mesh A row ----
+        a_row = QtWidgets.QHBoxLayout()
+        self._lbl_mesh_a = QtWidgets.QLabel(tr("ml_lbl_mesh_a"))
+        self._lbl_mesh_a.setStyleSheet(
+            "color:#8BC34A;font-size:10px;font-weight:bold")
+        self._lbl_mesh_a.setFixedWidth(110)
+        a_row.addWidget(self._lbl_mesh_a)
+        self._txt_mesh_a = QtWidgets.QLineEdit()
+        self._txt_mesh_a.setReadOnly(True)
+        self._txt_mesh_a.setStyleSheet(_field_ss)
+        a_row.addWidget(self._txt_mesh_a)
+        self._btn_set_a = QtWidgets.QPushButton(tr("ml_btn_set"))
+        self._btn_set_a.setStyleSheet(_set_btn_ss)
+        self._btn_set_a.setFixedWidth(50)
+        self._btn_set_a.clicked.connect(self._on_set_a)
+        a_row.addWidget(self._btn_set_a)
+        lo.addLayout(a_row)
+
+        # ---- Mesh B row ----
+        b_row = QtWidgets.QHBoxLayout()
+        self._lbl_mesh_b = QtWidgets.QLabel(tr("ml_lbl_mesh_b"))
+        self._lbl_mesh_b.setStyleSheet(
+            "color:#81D4FA;font-size:10px;font-weight:bold")
+        self._lbl_mesh_b.setFixedWidth(110)
+        b_row.addWidget(self._lbl_mesh_b)
+        self._txt_mesh_b = QtWidgets.QLineEdit()
+        self._txt_mesh_b.setReadOnly(True)
+        self._txt_mesh_b.setStyleSheet(_field_ss)
+        b_row.addWidget(self._txt_mesh_b)
+        self._btn_set_b = QtWidgets.QPushButton(tr("ml_btn_set"))
+        self._btn_set_b.setStyleSheet(_set_btn_ss)
+        self._btn_set_b.setFixedWidth(50)
+        self._btn_set_b.clicked.connect(self._on_set_b)
+        b_row.addWidget(self._btn_set_b)
+        lo.addLayout(b_row)
+
+        # ---- Swap A <-> B ----
+        swap_row = QtWidgets.QHBoxLayout()
+        swap_row.addStretch()
+        self._btn_swap = QtWidgets.QPushButton(tr("ml_btn_swap"))
+        self._btn_swap.setStyleSheet(
+            "QPushButton{background-color:#607D8B;color:#EEE;border:none;"
+            "border-radius:3px;font-size:10px;font-weight:bold;padding:4px 12px}"
+            "QPushButton:hover{background-color:#78909C}")
+        self._btn_swap.setFixedWidth(140)
+        self._btn_swap.clicked.connect(self._on_swap)
+        swap_row.addWidget(self._btn_swap)
+        swap_row.addStretch()
+        lo.addLayout(swap_row)
+
+        # ---- Separator ----
+        sep = QtWidgets.QFrame()
+        sep.setFrameShape(QtWidgets.QFrame.HLine)
+        sep.setStyleSheet("color:#555")
+        lo.addWidget(sep)
+
+        # ---- Axis row ----
+        ax_row = QtWidgets.QHBoxLayout()
+        self._lbl_axis = QtWidgets.QLabel(tr("ml_lbl_axis"))
+        self._lbl_axis.setStyleSheet(_lbl_ss)
+        self._lbl_axis.setFixedWidth(110)
+        ax_row.addWidget(self._lbl_axis)
+        self._rb_x = QtWidgets.QRadioButton("X")
+        self._rb_y = QtWidgets.QRadioButton("Y")
+        self._rb_z = QtWidgets.QRadioButton("Z")
+        self._rb_y.setChecked(True)
+        ax_grp = QtWidgets.QButtonGroup(self)
+        for rb in (self._rb_x, self._rb_y, self._rb_z):
+            rb.setStyleSheet("QRadioButton{color:#CCC;font-size:10px}")
+            ax_grp.addButton(rb)
+            ax_row.addWidget(rb)
+        ax_row.addStretch()
+        lo.addLayout(ax_row)
+
+        # ---- Direction row ----
+        dir_row = QtWidgets.QHBoxLayout()
+        self._lbl_dir = QtWidgets.QLabel(tr("ml_lbl_direction"))
+        self._lbl_dir.setStyleSheet(_lbl_ss)
+        self._lbl_dir.setFixedWidth(110)
+        dir_row.addWidget(self._lbl_dir)
+        self._rb_auto = QtWidgets.QRadioButton(tr("ml_dir_auto"))
+        self._rb_pos = QtWidgets.QRadioButton(tr("ml_dir_positive"))
+        self._rb_neg = QtWidgets.QRadioButton(tr("ml_dir_negative"))
+        self._rb_auto.setChecked(True)
+        dir_grp = QtWidgets.QButtonGroup(self)
+        for rb in (self._rb_auto, self._rb_pos, self._rb_neg):
+            rb.setStyleSheet("QRadioButton{color:#CCC;font-size:10px}")
+            dir_grp.addButton(rb)
+            dir_row.addWidget(rb)
+        dir_row.addStretch()
+        lo.addLayout(dir_row)
+
+        # ---- Mode row ----
+        mode_row = QtWidgets.QHBoxLayout()
+        self._lbl_mode = QtWidgets.QLabel(tr("ml_lbl_mode"))
+        self._lbl_mode.setStyleSheet(_lbl_ss)
+        self._lbl_mode.setFixedWidth(110)
+        mode_row.addWidget(self._lbl_mode)
+        self._rb_obj = QtWidgets.QRadioButton(tr("ml_mode_object"))
+        self._rb_comp = QtWidgets.QRadioButton(tr("ml_mode_component"))
+        self._rb_obj.setChecked(True)
+        mode_grp = QtWidgets.QButtonGroup(self)
+        for rb in (self._rb_obj, self._rb_comp):
+            rb.setStyleSheet("QRadioButton{color:#CCC;font-size:10px}")
+            mode_grp.addButton(rb)
+            mode_row.addWidget(rb)
+        mode_row.addStretch()
+        lo.addLayout(mode_row)
+
+        # ---- Offset row ----
+        off_row = QtWidgets.QHBoxLayout()
+        self._lbl_offset = QtWidgets.QLabel(tr("ml_lbl_offset"))
+        self._lbl_offset.setStyleSheet(_lbl_ss)
+        self._lbl_offset.setFixedWidth(110)
+        off_row.addWidget(self._lbl_offset)
+        self._spin_offset = QtWidgets.QDoubleSpinBox()
+        self._spin_offset.setRange(0.0, 1.0e6)
+        self._spin_offset.setDecimals(4)
+        self._spin_offset.setSingleStep(0.001)
+        self._spin_offset.setValue(0.001)
+        self._spin_offset.setFixedWidth(85)
+        self._spin_offset.setStyleSheet(_spin_ss)
+        off_row.addWidget(self._spin_offset)
+        off_row.addStretch()
+        lo.addLayout(off_row)
+
+        # ---- Preview status ----
+        self._lbl_preview_status = QtWidgets.QLabel(u"")
+        self._lbl_preview_status.setStyleSheet(
+            "color:#FFB74D;font-size:10px;font-weight:bold;padding:4px;"
+            "background-color:#2B2B2B;border-radius:3px")
+        self._lbl_preview_status.setWordWrap(True)
+        self._lbl_preview_status.setVisible(False)
+        lo.addWidget(self._lbl_preview_status)
+
+        lo.addStretch()
+
+        # ---- Preview button ----
+        pv_row = QtWidgets.QHBoxLayout()
+        pv_row.addStretch()
+        self._btn_preview = _mkbtn(tr("ml_btn_preview"), 28,
+                                    "#2196F3", "#1976D2")
+        self._btn_preview.setFixedWidth(140)
+        self._btn_preview.clicked.connect(self._on_preview)
+        pv_row.addWidget(self._btn_preview)
+        pv_row.addStretch()
+        lo.addLayout(pv_row)
+
+        # ---- Confirm / Revert / Close ----
+        cr_row = QtWidgets.QHBoxLayout()
+        self._btn_confirm = _mkbtn(tr("ml_btn_confirm"), 26,
+                                    "#4CAF50", "#388E3C", fs=10)
+        self._btn_confirm.clicked.connect(self._on_confirm)
+        self._btn_confirm.setEnabled(False)
+        cr_row.addWidget(self._btn_confirm)
+        self._btn_revert = _mkbtn(tr("ml_btn_revert"), 26,
+                                   "#F44336", "#D32F2F", fs=10)
+        self._btn_revert.clicked.connect(self._on_revert)
+        self._btn_revert.setEnabled(False)
+        cr_row.addWidget(self._btn_revert)
+        cr_row.addStretch()
+        self._btn_close = _mkbtn(tr("btn_close"), 26, "#555", "#444", fs=10)
+        self._btn_close.clicked.connect(self.close)
+        cr_row.addWidget(self._btn_close)
+        lo.addLayout(cr_row)
+
+    # -- Mesh A/B picking --
+    def _on_set_a(self):
+        if not MAYA_AVAILABLE:
+            return
+        sel = cmds.ls(sl=True, long=True) or []
+        shapes = _ml_get_mesh_shapes(sel)
+        self._mesh_a_shapes = shapes
+        self._txt_mesh_a.setText(self._short_names(shapes))
+
+    def _on_set_b(self):
+        if not MAYA_AVAILABLE:
+            return
+        sel = cmds.ls(sl=True, long=True) or []
+        shapes = _ml_get_mesh_shapes(sel)
+        self._mesh_b_shapes = shapes
+        self._txt_mesh_b.setText(self._short_names(shapes))
+
+    def _on_swap(self):
+        self._mesh_a_shapes, self._mesh_b_shapes = \
+            self._mesh_b_shapes, self._mesh_a_shapes
+        self._txt_mesh_a.setText(self._short_names(self._mesh_a_shapes))
+        self._txt_mesh_b.setText(self._short_names(self._mesh_b_shapes))
+        self.status_msg.emit(tr("ml_status_swapped"))
+
+    @staticmethod
+    def _short_names(shapes):
+        names = [s.split("|")[-1] for s in shapes]
+        return u", ".join(names) if names else u"---"
+
+    # -- Settings readers --
+    def _get_axis(self):
+        if self._rb_x.isChecked():
+            return 0
+        if self._rb_z.isChecked():
+            return 2
+        return 1
+
+    def _get_sign(self):
+        if self._rb_pos.isChecked():
+            return 1
+        if self._rb_neg.isChecked():
+            return -1
+        return 0
+
+    # -- Preview / Confirm / Revert --
+    def _gather_components(self):
+        """Collect selected vertices/faces on Mesh A shapes (component mode)."""
+        sel = cmds.ls(sl=True, fl=True, long=True) or []
+        a_set = set(self._mesh_a_shapes)
+        vert_map = {}
+        for item in sel:
+            if u".vtx[" in item:
+                shape_part = item.split(u".vtx[")[0]
+                shapes = _ml_get_mesh_shapes([shape_part])
+                if not shapes:
+                    continue
+                shape = shapes[0]
+                if shape not in a_set:
+                    continue
+                try:
+                    vi = int(item.split(u"[")[-1].rstrip(u"]"))
+                except Exception:
+                    continue
+                vert_map.setdefault(shape, []).append(vi)
+            elif u".f[" in item:
+                shape_part = item.split(u".f[")[0]
+                shapes = _ml_get_mesh_shapes([shape_part])
+                if not shapes:
+                    continue
+                shape = shapes[0]
+                if shape not in a_set:
+                    continue
+                verts = cmds.polyListComponentConversion(
+                    item, fromFace=True, toVertex=True) or []
+                verts = cmds.ls(verts, fl=True) or []
+                for v in verts:
+                    try:
+                        vi = int(v.split(u"[")[-1].rstrip(u"]"))
+                        vert_map.setdefault(shape, []).append(vi)
+                    except Exception:
+                        pass
+        for shape in vert_map:
+            vert_map[shape] = list(set(vert_map[shape]))
+        return vert_map
+
+    def _on_preview(self):
+        if not MAYA_AVAILABLE:
+            return
+        if not self._mesh_a_shapes:
+            self.status_msg.emit(tr("ml_status_no_a"))
+            return
+        if not self._mesh_b_shapes:
+            self.status_msg.emit(tr("ml_status_no_b"))
+            return
+
+        # Undo previous preview (if any) so we always start from the
+        # original positions. Each preview is one undo-step.
+        if self._preview_active:
+            try:
+                cmds.undoInfo(closeChunk=True)
+            except Exception:
+                pass
+            try:
+                cmds.undo()
+            except Exception:
+                pass
+            self._preview_active = False
+
+        axis = self._get_axis()
+        sign = self._get_sign()
+        offset = self._spin_offset.value()
+        is_component = self._rb_comp.isChecked()
+
+        vert_map = None
+        if is_component:
+            vert_map = self._gather_components()
+            if not vert_map:
+                is_component = False
+
+        cmds.undoInfo(openChunk=True, chunkName="DW_MeshLanding_Preview")
+        self._preview_active = True
+        try:
+            if is_component:
+                result = ml_compute_landing(
+                    self._mesh_a_shapes, self._mesh_b_shapes,
+                    axis, sign, offset, vert_indices=vert_map)
+                if result is None or result[0] is None or result[0] < 1.0e-8:
+                    self.status_msg.emit(tr("ml_status_no_hit"))
+                    self._set_preview_label(tr("ml_status_no_hit"),
+                                            warn=True)
+                    return
+                dist, actual_sign = result
+                delta = [0.0, 0.0, 0.0]
+                delta[axis] = dist * actual_sign
+                for shape, vidxs in vert_map.items():
+                    comps = [u"{0}.vtx[{1}]".format(shape, vi)
+                             for vi in vidxs]
+                    cmds.xform(comps, ws=True, r=True,
+                               t=(delta[0], delta[1], delta[2]))
+            else:
+                result = ml_compute_landing(
+                    self._mesh_a_shapes, self._mesh_b_shapes,
+                    axis, sign, offset)
+                if result is None or result[0] is None or result[0] < 1.0e-8:
+                    self.status_msg.emit(tr("ml_status_no_hit"))
+                    self._set_preview_label(tr("ml_status_no_hit"),
+                                            warn=True)
+                    return
+                dist, actual_sign = result
+                delta = [0.0, 0.0, 0.0]
+                delta[axis] = dist * actual_sign
+                for shape in self._mesh_a_shapes:
+                    tr_node = cmds.listRelatives(shape, parent=True,
+                                                  fullPath=True)
+                    if tr_node:
+                        cmds.xform(tr_node[0], ws=True, r=True,
+                                   t=(delta[0], delta[1], delta[2]))
+
+            self._last_dist = dist
+            self._last_axis = axis
+            msg = tr("ml_status_preview",
+                     dist=dist, axis=_ML_AXIS_NAMES[axis])
+            self.status_msg.emit(msg)
+            self._set_preview_label(msg, warn=False)
+            self._btn_confirm.setEnabled(True)
+            self._btn_revert.setEnabled(True)
+        except Exception as _e:
+            import traceback
+            traceback.print_exc()
+            self.status_msg.emit(u"Error: {0}".format(_e))
+            self._set_preview_label(u"Error: {0}".format(_e), warn=True)
+
+    def _set_preview_label(self, text, warn=False):
+        self._lbl_preview_status.setText(text)
+        if warn:
+            self._lbl_preview_status.setStyleSheet(
+                "color:#FF5252;font-size:10px;font-weight:bold;padding:4px;"
+                "background-color:#2B2B2B;border-radius:3px")
+        else:
+            self._lbl_preview_status.setStyleSheet(
+                "color:#8BC34A;font-size:10px;font-weight:bold;padding:4px;"
+                "background-color:#2B2B2B;border-radius:3px")
+        self._lbl_preview_status.setVisible(True)
+
+    def _on_confirm(self):
+        if not self._preview_active:
+            return
+        try:
+            cmds.undoInfo(closeChunk=True)
+        except Exception:
+            pass
+        self._preview_active = False
+        self._btn_confirm.setEnabled(False)
+        self._btn_revert.setEnabled(False)
+        msg = tr("ml_status_confirmed",
+                 dist=self._last_dist,
+                 axis=_ML_AXIS_NAMES[self._last_axis])
+        self.status_msg.emit(msg)
+        self._set_preview_label(msg, warn=False)
+
+    def _on_revert(self):
+        if not self._preview_active:
+            return
+        try:
+            cmds.undoInfo(closeChunk=True)
+        except Exception:
+            pass
+        try:
+            cmds.undo()
+        except Exception:
+            pass
+        self._preview_active = False
+        self._btn_confirm.setEnabled(False)
+        self._btn_revert.setEnabled(False)
+        self.status_msg.emit(tr("ml_status_reverted"))
+        self._lbl_preview_status.setVisible(False)
+
+    def closeEvent(self, event):
+        # Auto-revert any uncommitted preview when dialog closes.
+        if self._preview_active:
+            try:
+                cmds.undoInfo(closeChunk=True)
+            except Exception:
+                pass
+            try:
+                cmds.undo()
+            except Exception:
+                pass
+            self._preview_active = False
+        super(MeshLandingDialog, self).closeEvent(event)
+
+    # -- Language refresh --
+    def refresh_labels(self):
+        self.setWindowTitle(tr("ml_dlg_title"))
+        self._lbl_mesh_a.setText(tr("ml_lbl_mesh_a"))
+        self._lbl_mesh_b.setText(tr("ml_lbl_mesh_b"))
+        self._btn_set_a.setText(tr("ml_btn_set"))
+        self._btn_set_b.setText(tr("ml_btn_set"))
+        self._btn_swap.setText(tr("ml_btn_swap"))
+        self._lbl_axis.setText(tr("ml_lbl_axis"))
+        self._lbl_dir.setText(tr("ml_lbl_direction"))
+        self._rb_auto.setText(tr("ml_dir_auto"))
+        self._rb_pos.setText(tr("ml_dir_positive"))
+        self._rb_neg.setText(tr("ml_dir_negative"))
+        self._lbl_mode.setText(tr("ml_lbl_mode"))
+        self._rb_obj.setText(tr("ml_mode_object"))
+        self._rb_comp.setText(tr("ml_mode_component"))
+        self._lbl_offset.setText(tr("ml_lbl_offset"))
+        self._btn_preview.setText(tr("ml_btn_preview"))
+        self._btn_confirm.setText(tr("ml_btn_confirm"))
+        self._btn_revert.setText(tr("ml_btn_revert"))
+        self._btn_close.setText(tr("btn_close"))
 # ---------------------------------------------------------------------------
 # CollisionCheckToolWindow  (Main UI — reference architecture compliant)
 # ---------------------------------------------------------------------------
