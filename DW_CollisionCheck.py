@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.20.1250"
+VERSION = "2026.04.20.1306"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -140,6 +140,10 @@ _STRINGS = {
     "ml_mode_object":       {"en": "Object",                        "jp": u"\u30aa\u30d6\u30b8\u30a7\u30af\u30c8"},
     "ml_mode_component":    {"en": "Component",                     "jp": u"\u30b3\u30f3\u30dd\u30fc\u30cd\u30f3\u30c8"},
     "ml_lbl_offset":        {"en": "Offset:",                       "jp": u"\u30aa\u30d5\u30bb\u30c3\u30c8:"},
+    "ml_tip_offset":        {"en": "Gap from the target surface. Positive = stop before contact; Negative = embed into target.",
+                             "jp": u"\u30bf\u30fc\u30b2\u30c3\u30c8\u8868\u9762\u3068\u306e\u9694\u305f\u308a\u8ddd\u96e2\u3002\u6b63\u306e\u5024=\u624b\u524d\u3067\u505c\u6b62\u3001\u8ca0\u306e\u5024=\u30bf\u30fc\u30b2\u30c3\u30c8\u306b\u57cb\u3081\u8fbc\u307f\u3002"},
+    "ml_tip_slider":        {"en": "Drag to adjust offset in the range -1.0 to +1.0. Use the spinbox for larger values.",
+                             "jp": u"\u30c9\u30e9\u30c3\u30b0\u3067\u30aa\u30d5\u30bb\u30c3\u30c8\u3092 -1.0 \u301c +1.0 \u306e\u7bc4\u56f2\u3067\u8abf\u6574\u3002\u3088\u308a\u5927\u304d\u3044\u5024\u306f\u30b9\u30d4\u30f3\u30dc\u30c3\u30af\u30b9\u306b\u76f4\u63a5\u5165\u529b\u3002"},
     "ml_btn_preview":       {"en": u"\u25B6 Preview",               "jp": u"\u25B6 \u30d7\u30ec\u30d3\u30e5\u30fc"},
     "ml_btn_confirm":       {"en": u"\u2714 Confirm",               "jp": u"\u2714 \u78ba\u5b9a"},
     "ml_btn_revert":        {"en": u"\u21A9 Revert",                "jp": u"\u21A9 \u5143\u306b\u623b\u3059"},
@@ -4398,9 +4402,18 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
             return None, 0
 
     # ----- Build per-triangle data with "which vertices move" info -----
-    # Each entry: (triangle_verts, (v0_moves, v1_moves, v2_moves))
-    src_tri_data = []  # [(tri, (bool, bool, bool)), ...]
-    any_fully_static = False
+    # Component-mode collision strategy:
+    #   - Fully selected (3 of 3 verts moving): triangle translates
+    #     rigidly; participates in collision check.
+    #   - Partially selected (1-2 verts moving): triangle deforms. We
+    #     SKIP these from the collision check because the deformed
+    #     shape often has "static" vertices that are already coincident
+    #     with / inside Mesh B, producing false collisions that block
+    #     any meaningful motion.
+    #   - Fully static (0 verts moving): does not move, obviously
+    #     skipped.
+    # Object mode keeps all triangles (all vertices move).
+    src_tri_data = []   # [(triangle, (bool,bool,bool)), ...]
     for shape in source_shapes:
         tris, vids = _ml_mesh_to_triangles_with_ids(shape)
         if vert_indices and shape in vert_indices:
@@ -4409,90 +4422,66 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
             moving = None  # whole-shape mode: every vertex moves
         for t, vid in zip(tris, vids):
             if moving is None:
+                # Object mode — whole triangle translates.
                 src_tri_data.append((t, (True, True, True)))
             else:
                 flags = (vid[0] in moving,
                          vid[1] in moving,
                          vid[2] in moving)
-                if not any(flags):
-                    any_fully_static = True
-                    # Fully static triangles don't participate in the
-                    # collision check because they don't move. Skipping
-                    # them prevents "false collisions" where a vertex of
-                    # Mesh A that the user didn't select happens to sit
-                    # near / touch Mesh B.
-                    continue
-                src_tri_data.append((t, flags))
+                # Only fully-selected triangles participate.
+                if all(flags):
+                    src_tri_data.append((t, (True, True, True)))
+                # else: skip (partial or fully static)
 
     tgt_tris = []
     for shape in target_shapes:
         tgt_tris.extend(_ml_mesh_to_triangles(shape))
 
+    # If there are no fully-selected triangles to check (e.g. user
+    # selected only a handful of disconnected vertices), fall back to
+    # raycast-only — the rays already determined a safe distance.
     if not src_tri_data or not tgt_tris:
+        if offset >= 0:
+            result = ray_min_dist - offset
+            if result < 0.0:
+                result = 0.0
+        else:
+            # Negative offset: embed by |offset| past the raycast hit.
+            result = ray_min_dist + abs(offset)
+        return result, sign
+
+    # Precompute AABBs (all triangles are fully rigid translators here).
+    moving_tris_static = [d[0] for d in src_tri_data]
+    src_aabb_static = _ml_aabb_merge_tris(moving_tris_static)
+    tgt_aabb = _ml_aabb_merge_tris(tgt_tris)
+
+    def _collides_at(dist):
+        dlist = [0.0, 0.0, 0.0]
+        dlist[axis] = dist * sign
+        delta = tuple(dlist)
+        moved_aabb = _ml_translate_aabb(src_aabb_static, delta)
+        if not _ml_aabb_overlap(moved_aabb, tgt_aabb):
+            return False
+        moved_tris = _ml_translate_triangles(moving_tris_static, delta)
+        return _ml_meshes_intersect(moved_tris, tgt_tris,
+                                     moved_aabb, tgt_aabb)
+
+    # ----- Resolve final distance -----
+    if offset < 0:
+        # Negative offset: embed past the raycast hit. No collision
+        # check (we WANT Mesh A to go into Mesh B).
+        return ray_min_dist + abs(offset), sign
+
+    # Non-negative offset: find the max non-colliding distance, then
+    # subtract the offset to leave a gap.
+    if not _collides_at(ray_min_dist):
         result = ray_min_dist - offset
         if result < 0.0:
             result = 0.0
         return result, sign
 
-    # Compute moving-subset AABB (used for broad-phase)
-    moving_tris_static = [d[0] for d in src_tri_data]
-    src_aabb_static = _ml_aabb_merge_tris(moving_tris_static)
-    tgt_aabb = _ml_aabb_merge_tris(tgt_tris)
-
-    def _transform_tri(t, flags, delta):
-        """Add delta only to the vertices that move."""
-        dx, dy, dz = delta
-        def _v(v, moves):
-            if moves:
-                return (v[0] + dx, v[1] + dy, v[2] + dz)
-            return v
-        return (_v(t[0], flags[0]),
-                _v(t[1], flags[1]),
-                _v(t[2], flags[2]))
-
-    def _collides_at(dist):
-        delta = (0.0, 0.0, 0.0)
-        dlist = [0.0, 0.0, 0.0]
-        dlist[axis] = dist * sign
-        delta = tuple(dlist)
-
-        # Broad-phase: AABB of the set of moving triangles, translated by
-        # the portion that actually moves. Since some vertices may stay
-        # fixed, this is conservative (slightly larger than the true
-        # post-move AABB for partially-selected triangles), which is fine
-        # for broad-phase rejection.
-        moved_aabb = _ml_translate_aabb(src_aabb_static, delta)
-        # Expand to include the static-vertex portions of partial tris.
-        # For partially-selected triangles, the true AABB spans both the
-        # moved and unmoved vertices. The original (pre-move) AABB covers
-        # unmoved vertices; the translated AABB covers moved ones.
-        # Union them:
-        broad_aabb = (
-            min(src_aabb_static[0], moved_aabb[0]),
-            min(src_aabb_static[1], moved_aabb[1]),
-            min(src_aabb_static[2], moved_aabb[2]),
-            max(src_aabb_static[3], moved_aabb[3]),
-            max(src_aabb_static[4], moved_aabb[4]),
-            max(src_aabb_static[5], moved_aabb[5]),
-        )
-        if not _ml_aabb_overlap(broad_aabb, tgt_aabb):
-            return False
-
-        # Narrow-phase: transform each triangle according to per-vertex
-        # move flags and run the precise intersection test.
-        moved_tris = [_transform_tri(t, flags, delta)
-                      for (t, flags) in src_tri_data]
-        return _ml_meshes_intersect(moved_tris, tgt_tris,
-                                     broad_aabb, tgt_aabb)
-
-    initial_d = ray_min_dist - offset
-    if initial_d < 0.0:
-        initial_d = 0.0
-    if not _collides_at(initial_d):
-        return initial_d, sign
-
     lo = 0.0
-    hi = initial_d
+    hi = ray_min_dist
     best = 0.0
     _MAX_ITER = 20
     _TOL = 1.0e-4
@@ -4755,21 +4744,39 @@ class MeshLandingDialog(QtWidgets.QDialog):
         mode_row.addStretch()
         lo.addLayout(mode_row)
 
-        # ---- Offset row ----
+        # ---- Offset row (spinbox + slider, negative allowed) ----
         off_row = QtWidgets.QHBoxLayout()
         self._lbl_offset = QtWidgets.QLabel(tr("ml_lbl_offset"))
         self._lbl_offset.setStyleSheet(_lbl_ss)
         self._lbl_offset.setFixedWidth(110)
         off_row.addWidget(self._lbl_offset)
         self._spin_offset = QtWidgets.QDoubleSpinBox()
-        self._spin_offset.setRange(0.0, 1.0e6)
+        self._spin_offset.setRange(-1.0e6, 1.0e6)
         self._spin_offset.setDecimals(4)
         self._spin_offset.setSingleStep(0.001)
-        self._spin_offset.setValue(0.001)
+        self._spin_offset.setValue(0.0)
         self._spin_offset.setFixedWidth(85)
         self._spin_offset.setStyleSheet(_spin_ss)
+        self._spin_offset.setToolTip(tr("ml_tip_offset"))
         off_row.addWidget(self._spin_offset)
-        off_row.addStretch()
+        # Slider covers -1.0..+1.0 in 0.0001 steps (integer scale 10000).
+        # For larger values the user can type directly into the spinbox.
+        self._slider_offset = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self._slider_offset.setRange(-10000, 10000)
+        self._slider_offset.setValue(0)
+        self._slider_offset.setStyleSheet(
+            "QSlider::groove:horizontal{background:#2B2B2B;height:4px;"
+            "border-radius:2px}"
+            "QSlider::handle:horizontal{background:#4CAF50;width:12px;"
+            "margin:-4px 0;border-radius:6px}"
+            "QSlider::sub-page:horizontal,QSlider::add-page:horizontal{"
+            "background:transparent}")
+        self._slider_offset.setToolTip(tr("ml_tip_slider"))
+        off_row.addWidget(self._slider_offset, 1)
+        # Two-way sync (with blockSignals to avoid loops)
+        self._spin_offset.valueChanged.connect(self._on_offset_spin_changed)
+        self._slider_offset.valueChanged.connect(
+            self._on_offset_slider_changed)
         lo.addLayout(off_row)
 
         # ---- Preview status ----
@@ -4875,6 +4882,28 @@ class MeshLandingDialog(QtWidgets.QDialog):
         if self._rb_neg.isChecked():
             return -1
         return 0
+
+    # -- Offset two-way sync (spinbox <-> slider) --
+    def _on_offset_spin_changed(self, val):
+        # Clamp to slider's integer range when syncing.
+        iv = int(round(val * 10000.0))
+        if iv > 10000:
+            iv = 10000
+        elif iv < -10000:
+            iv = -10000
+        self._slider_offset.blockSignals(True)
+        try:
+            self._slider_offset.setValue(iv)
+        finally:
+            self._slider_offset.blockSignals(False)
+
+    def _on_offset_slider_changed(self, iv):
+        val = iv / 10000.0
+        self._spin_offset.blockSignals(True)
+        try:
+            self._spin_offset.setValue(val)
+        finally:
+            self._spin_offset.blockSignals(False)
 
     # -- Preview / Confirm / Revert --
     def _gather_components(self):
