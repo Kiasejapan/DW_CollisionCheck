@@ -162,7 +162,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         # NOTE: sel_row is added to the Check tab's scroll area below
         #       (not to main_lo) so that the toggles only apply to checks.
 
-        # ---- Tab widget (Check / Other) ----
+        # ---- Tab widget (Check / Snap) ----
         self._tabs = QtWidgets.QTabWidget()
         self._tabs.setStyleSheet(
             "QTabWidget::pane{border:1px solid #444;background-color:#2B2B2B;"
@@ -397,7 +397,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         check_tab_lo.addWidget(check_scroll)
         self._tabs.addTab(check_tab, tr("tab_check"))
 
-        # ---- Snap tab (vertex snap + future snap tools) ----
+        # ---- Snap tab (vertex snap + face snap) ----
         snap_tab = QtWidgets.QWidget()
         snap_tab_lo = QtWidgets.QVBoxLayout(snap_tab)
         snap_tab_lo.setContentsMargins(0, 0, 0, 0)
@@ -410,28 +410,11 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         snap_scroll_lo.setContentsMargins(4, 4, 4, 4)
         snap_scroll_lo.setSpacing(8)
         _build_vertex_snap_group(self, snap_scroll_lo)
+        _build_mesh_landing_group(self, snap_scroll_lo)
         snap_scroll_lo.addStretch()
         snap_scroll.setWidget(snap_scroll_w)
         snap_tab_lo.addWidget(snap_scroll)
         self._tabs.addTab(snap_tab, tr("tab_snap"))
-
-        # ---- Other tab (auxiliary tools, contains Move-to-Origin) ----
-        other_tab = QtWidgets.QWidget()
-        other_tab_lo = QtWidgets.QVBoxLayout(other_tab)
-        other_tab_lo.setContentsMargins(0, 0, 0, 0)
-        other_tab_lo.setSpacing(0)
-        other_scroll = QtWidgets.QScrollArea()
-        other_scroll.setWidgetResizable(True)
-        other_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-        other_scroll_w = QtWidgets.QWidget()
-        other_scroll_lo = QtWidgets.QVBoxLayout(other_scroll_w)
-        other_scroll_lo.setContentsMargins(4, 4, 4, 4)
-        other_scroll_lo.setSpacing(8)
-        _build_mesh_landing_group(self, other_scroll_lo)
-        other_scroll_lo.addStretch()
-        other_scroll.setWidget(other_scroll_w)
-        other_tab_lo.addWidget(other_scroll)
-        self._tabs.addTab(other_tab, tr("tab_other"))
 
         main_lo.addWidget(self._tabs)
 
@@ -709,7 +692,6 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         try:
             self._tabs.setTabText(0, tr("tab_check"))
             self._tabs.setTabText(1, tr("tab_snap"))
-            self._tabs.setTabText(2, tr("tab_other"))
         except Exception:
             pass
         # Vertex Snap labels
@@ -748,8 +730,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         tabs = QtWidgets.QTabWidget()
         for tab_key, body_key in [
                 ("tab_check", "help_body_check"),
-                ("tab_snap",  "help_body_snap"),
-                ("tab_other", "help_body_other")]:
+                ("tab_snap",  "help_body_snap")]:
             tb = QtWidgets.QTextBrowser()
             tb.setHtml(tr(body_key))
             tb.setOpenExternalLinks(True)

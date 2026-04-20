@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.20.1919"
+VERSION = "2026.04.20.1935"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -122,11 +122,11 @@ _STRINGS = {
                              "jp": u"\u3053\u306e\u8ddd\u96e2\u4ee5\u5185\u3067\u9802\u70b9\u3092\u5171\u6709\u3059\u308b\u4e09\u89d2\u5f62\u30da\u30a2\u306f\u4ea4\u5dee\u5224\u5b9a\u3092\u30b9\u30ad\u30c3\u30d7\u3057\u307e\u3059\u3002"},
 
     # ---- Mesh Landing (Other tab) ------------------------------------
-    "ml_grp_title":         {"en": "Mesh Landing",                  "jp": u"\u30e1\u30c3\u30b7\u30e5\u63a5\u5730"},
-    "ml_grp_desc":          {"en": "Click Launch to open the Mesh Landing dialog.",
-                             "jp": u"\u300c\u8d77\u52d5\u300d\u3067\u30e1\u30c3\u30b7\u30e5\u63a5\u5730\u30c0\u30a4\u30a2\u30ed\u30b0\u3092\u958b\u304d\u307e\u3059\u3002"},
+    "ml_grp_title":         {"en": "Face Snap",                     "jp": u"\u30d5\u30a7\u30fc\u30b9\u30b9\u30ca\u30c3\u30d7"},
+    "ml_grp_desc":          {"en": "Click Launch to open the Face Snap dialog.",
+                             "jp": u"\u300c\u8d77\u52d5\u300d\u3067\u30d5\u30a7\u30fc\u30b9\u30b9\u30ca\u30c3\u30d7\u30c0\u30a4\u30a2\u30ed\u30b0\u3092\u958b\u304d\u307e\u3059\u3002"},
     "ml_btn_launch":        {"en": u"\u25B6 Launch",                "jp": u"\u25B6 \u8d77\u52d5"},
-    "ml_dlg_title":         {"en": "Mesh Landing",                  "jp": u"\u30e1\u30c3\u30b7\u30e5\u63a5\u5730"},
+    "ml_dlg_title":         {"en": "Face Snap",                     "jp": u"\u30d5\u30a7\u30fc\u30b9\u30b9\u30ca\u30c3\u30d7"},
     "ml_lbl_mesh_a":        {"en": "Mesh A (moves):",               "jp": u"\u30e1\u30c3\u30b7\u30e5 A (\u79fb\u52d5\u5074):"},
     "ml_lbl_mesh_b":        {"en": "Mesh B (ground):",              "jp": u"\u30e1\u30c3\u30b7\u30e5 B (\u5730\u9762):"},
     "ml_btn_set":           {"en": "Set",                           "jp": u"\u30bb\u30c3\u30c8"},
@@ -167,7 +167,6 @@ _STRINGS = {
 
     # ---- Tabs --------------------------------------------------------
     "tab_check":            {"en": "Check",                         "jp": u"\u30c1\u30a7\u30c3\u30af"},
-    "tab_other":            {"en": "Other",                         "jp": u"\u305d\u306e\u4ed6"},
 
     "anim_scanning":        {"en": "Scanning frame {frame}/{total}...",
                              "jp": u"\u30d5\u30ec\u30fc\u30e0 {frame}/{total} \u3092\u30b9\u30ad\u30e3\u30f3\u4e2d..."},
@@ -244,7 +243,7 @@ _STRINGS = {
               "<p>Distance-based vertex snap. Detects close vertex pairs and lets you snap them "
               "interactively. Useful for stitching separate mesh parts (hair, cloth, armor, etc.) "
               "without manually picking vertex pairs.</p>"
-              "<h3>Workflow</h3>"
+              "<h4>Workflow</h4>"
               "<ol>"
               "<li>Select mesh(es) in the viewport (groups OK &mdash; child meshes are auto-collected).</li>"
               "<li>Click [Launch]. The result window opens with all close vertex pairs detected.</li>"
@@ -264,21 +263,61 @@ _STRINGS = {
               "<li>Snapped rows are marked with \u2714 and remain visible for review.</li>"
               "<li>When finished, click [\u2714 Confirm] to finalize, or [\u21A9 Revert] to undo all snaps at once.</li>"
               "</ol>"
-              "<h3>Options</h3>"
+              "<h4>Options</h4>"
               "<ul>"
               "<li><b>Include same-mesh pairs</b> (default ON): also detect close vertices within the same mesh. "
               "Turn OFF to only detect pairs across different meshes.</li>"
               "<li><b>Hide coincident</b> (default ON): hide pairs that were already overlapping (distance near 0) "
               "so the table stays focused on pairs that need action.</li>"
               "</ul>"
-              "<h3>Merge (Maya)</h3>"
+              "<h4>Merge (Maya)</h4>"
               "<p>Opens Maya's native <i>Merge Vertices</i> option box for conventional vertex merging "
-              "after snapping is complete.</p>",
+              "after snapping is complete.</p>"
+              "<hr>"
+              "<h3>Face Snap</h3>"
+              "<p>Lands <b>Mesh A</b> onto <b>Mesh B</b> along a chosen axis. "
+              "Raycasts every Mesh A vertex toward Mesh B, verifies with polygon-level collision, "
+              "and moves Mesh A so it touches Mesh B without penetrating.</p>"
+              "<h4>Workflow</h4>"
+              "<ol>"
+              "<li>Click <b>[Launch]</b> in the Face Snap group to open the dialog.</li>"
+              "<li>Select the mesh(es) to move and click <b>[Set]</b> on the <b>Mesh A</b> row.</li>"
+              "<li>Select the ground mesh(es) and click <b>[Set]</b> on the <b>Mesh B</b> row.</li>"
+              "<li>Use <b>[\u21C4 Swap A \u2194 B]</b> if you picked them in the wrong order.</li>"
+              "<li>Adjust <b>Axis</b>, <b>Direction</b>, <b>Move mode</b>, and <b>Offset</b>.</li>"
+              "<li>Click <b>[\u25B6 Preview]</b>. Mesh A moves in-place for visual confirmation.</li>"
+              "<li>Change any parameter and click <b>[Preview]</b> again to retry \u2014 the previous preview is automatically reverted first.</li>"
+              "<li>When satisfied, click <b>[\u2714 Confirm]</b> to keep the result, or <b>[\u21A9 Revert]</b> to cancel.</li>"
+              "</ol>"
+              "<p><i>Closing the dialog while a preview is unconfirmed automatically reverts it.</i></p>"
+              "<h4>Parameters</h4>"
+              "<ul>"
+              "<li><b>Axis</b> \u2014 X / Y / Z. Landing is constrained to this axis.</li>"
+              "<li><b>Direction</b>"
+              "<ul>"
+              "<li><b>Auto</b> \u2014 picks direction from A and B center positions.</li>"
+              "<li><b>+</b> / <b>\u2212</b> \u2014 force the sign explicitly.</li>"
+              "</ul></li>"
+              "<li><b>Move mode</b>"
+              "<ul>"
+              "<li><b>Object</b> \u2014 moves the whole Mesh A transform.</li>"
+              "<li><b>Component</b> \u2014 moves only the currently selected vertices / edges / faces of Mesh A. "
+              "The selection must fully enclose one or more faces (e.g. all four vertices of a quad). "
+              "If the selection doesn't enclose a face, a dialog asks whether to expand to the adjacent faces.</li>"
+              "</ul></li>"
+              "<li><b>Offset</b> \u2014 gap to keep between A and B after landing. "
+              "0 means the surfaces touch; negative values embed Mesh A into Mesh B.</li>"
+              "</ul>"
+              "<h4>Algorithm</h4>"
+              "<p>A raycast gives an initial upper-bound distance. If Mesh A still collides with Mesh B at that "
+              "distance (with rotated or concave shapes), a binary search in [0, upper-bound] "
+              "finds the largest safe distance with no polygon-level penetration. "
+              "If rays miss Mesh B entirely, Mesh A is dropped to the world origin plane (Y=0 for Y axis, etc.).</p>",
         "jp": u"<h2>\u30b9\u30ca\u30c3\u30d7\u30bf\u30d6</h2>"
               u"<h3>\u30d0\u30fc\u30c6\u30c3\u30af\u30b9\u30ca\u30c3\u30d7</h3>"
               u"<p>\u8ddd\u96e2\u30d9\u30fc\u30b9\u3067\u8fd1\u3044\u9802\u70b9\u30da\u30a2\u3092\u691c\u51fa\u3057\u3001\u5bfe\u8a71\u7684\u306b\u30b9\u30ca\u30c3\u30d7\u3055\u305b\u308b\u6a5f\u80fd\u3002"
               u"\u9aea\u30fb\u5e03\u30fb\u30a2\u30fc\u30de\u30fc\u7b49\u306e\u7570\u306a\u308b\u30e1\u30c3\u30b7\u30e5\u3092\u7e4b\u304e\u5408\u308f\u305b\u308b\u969b\u3001\u9802\u70b9\u30da\u30a2\u3092\u624b\u52d5\u3067\u9078\u3076\u624b\u9593\u3092\u7701\u3051\u307e\u3059\u3002</p>"
-              u"<h3>\u4f5c\u696d\u624b\u9806</h3>"
+              u"<h4>\u4f5c\u696d\u624b\u9806</h4>"
               u"<ol>"
               u"<li>\u30d3\u30e5\u30fc\u30dd\u30fc\u30c8\u3067\u30e1\u30c3\u30b7\u30e5\u3092\u9078\u629e\uff08\u30b0\u30eb\u30fc\u30d7\u9078\u629e\u53ef\u3001\u914d\u4e0b\u306e\u30e1\u30c3\u30b7\u30e5\u3092\u81ea\u52d5\u3067\u53ce\u96c6\uff09\u3002</li>"
               u"<li>[\u8d77\u52d5] \u3092\u30af\u30ea\u30c3\u30af\u3002\u7d50\u679c\u30a6\u30a3\u30f3\u30c9\u30a6\u304c\u958b\u304d\u3001\u8fd1\u63a5\u30da\u30a2\u304c\u4e00\u89a7\u8868\u793a\u3055\u308c\u307e\u3059\u3002</li>"
@@ -298,72 +337,33 @@ _STRINGS = {
               u"<li>Snap\u6e08\u307f\u306e\u884c\u306f \u2714 \u30de\u30fc\u30af\u304c\u4ed8\u3044\u3066\u8868\u306b\u6b8b\u308a\u307e\u3059\uff08\u78ba\u8a8d\u53ef\u80fd\uff09\u3002</li>"
               u"<li>\u6700\u5f8c\u306b [\u2714 \u78ba\u5b9a] \u3067\u78ba\u5b9a\u3001\u307e\u305f\u306f [\u21A9 \u5143\u306b\u623b\u3059] \u3067\u3059\u3079\u3066\u306e Snap \u3092\u4e00\u62ec\u53d6\u308a\u6d88\u3057\u3002</li>"
               u"</ol>"
-              u"<h3>\u30aa\u30d7\u30b7\u30e7\u30f3</h3>"
+              u"<h4>\u30aa\u30d7\u30b7\u30e7\u30f3</h4>"
               u"<ul>"
               u"<li><b>\u540c\u30e1\u30c3\u30b7\u30e5\u3082\u691c\u67fb</b>\uff08\u30c7\u30d5\u30a9\u30eb\u30c8ON\uff09\uff1a\u540c\u4e00\u30e1\u30c3\u30b7\u30e5\u5185\u306e\u8fd1\u63a5\u9802\u70b9\u3082\u691c\u51fa\u3002"
               u"OFF \u306b\u3059\u308b\u3068\u4ed6\u30e1\u30c3\u30b7\u30e5\u9593\u306e\u30da\u30a2\u306e\u307f\u691c\u51fa\u3002</li>"
               u"<li><b>\u91cd\u8907\u9802\u70b9\u3092\u975e\u8868\u793a</b>\uff08\u30c7\u30d5\u30a9\u30eb\u30c8ON\uff09\uff1a\u65e2\u306b\u8ddd\u96e2\u304c\u307b\u307c0\u306e\u30da\u30a2\u3092\u96a0\u3057\u3001\u4f5c\u696d\u5bfe\u8c61\u306e\u30da\u30a2\u3060\u3051\u3092\u8868\u793a\u3002</li>"
               u"</ul>"
-              u"<h3>Merge (Maya)</h3>"
+              u"<h4>Merge (Maya)</h4>"
               u"<p>Maya \u6a19\u6e96\u306e\u300c\u9802\u70b9\u306e\u30de\u30fc\u30b8\u300d\u30aa\u30d7\u30b7\u30e7\u30f3\u30dc\u30c3\u30af\u30b9\u3092\u958b\u304d\u307e\u3059\u3002"
-              u"Snap \u5f8c\u306e\u901a\u5e38\u306e\u9802\u70b9\u30de\u30fc\u30b8\u306b\u4f7f\u7528\u3057\u307e\u3059\u3002</p>",
-    },
-    "help_body_other": {
-        "en": "<h2>Other Tab</h2>"
-              "<h3>Mesh Landing</h3>"
-              "<p>Lands <b>Mesh A</b> onto <b>Mesh B</b> along a chosen axis. "
-              "Raycasts every Mesh A vertex toward Mesh B, verifies with polygon-level "
-              "collision, and moves Mesh A so it touches Mesh B without penetrating.</p>"
-              "<h3>Workflow</h3>"
-              "<ol>"
-              "<li>In the Other tab, click <b>[Launch]</b> to open the Mesh Landing dialog.</li>"
-              "<li>Select the mesh(es) to move in the viewport and click <b>[Set]</b> on the <b>Mesh A</b> row.</li>"
-              "<li>Select the ground mesh(es) and click <b>[Set]</b> on the <b>Mesh B</b> row.</li>"
-              "<li>If you picked them in the wrong order, click <b>[\u21C4 Swap A \u2194 B]</b> to flip them.</li>"
-              "<li>Adjust <b>Axis</b>, <b>Direction</b>, <b>Move mode</b>, and <b>Offset</b>.</li>"
-              "<li>Click <b>[\u25B6 Preview]</b>. Mesh A moves in-place; you can see the result.</li>"
-              "<li>If you want to try different settings, change any parameter and click <b>[Preview]</b> again. "
-              "The previous preview is undone automatically before the new one is applied.</li>"
-              "<li>When satisfied, click <b>[\u2714 Confirm]</b> to finalize, or <b>[\u21A9 Revert]</b> to cancel.</li>"
-              "</ol>"
-              "<p><i>Closing the dialog while a preview is unconfirmed automatically reverts it.</i></p>"
-              "<h3>Parameters</h3>"
-              "<ul>"
-              "<li><b>Axis</b> \u2014 X / Y / Z. The landing is constrained to this axis.</li>"
-              "<li><b>Direction</b>"
-              "<ul>"
-              "<li><b>Auto</b> \u2014 picks the direction from A&#8217;s and B&#8217;s center positions.</li>"
-              "<li><b>+</b> / <b>\u2212</b> \u2014 force the sign explicitly.</li>"
-              "</ul></li>"
-              "<li><b>Move mode</b>"
-              "<ul>"
-              "<li><b>Object</b> \u2014 moves the whole Mesh A transform.</li>"
-              "<li><b>Component</b> \u2014 moves only currently selected vertices / faces of Mesh A.</li>"
-              "</ul></li>"
-              "<li><b>Offset</b> \u2014 gap to keep between A and B after landing. 0 means the surfaces touch.</li>"
-              "</ul>"
-              "<h3>Algorithm</h3>"
-              "<p>A raycast gives an initial upper-bound distance. If Mesh A still collides with Mesh B at that "
-              "distance (happens with rotated or concave shapes), a binary search in [0, upper-bound] "
-              "finds the largest safe distance that guarantees no polygon-level penetration.</p>",
-        "jp": u"<h2>\u305d\u306e\u4ed6\u30bf\u30d6</h2>"
-              u"<h3>\u30e1\u30c3\u30b7\u30e5\u63a5\u5730</h3>"
+              u"Snap \u5f8c\u306e\u901a\u5e38\u306e\u9802\u70b9\u30de\u30fc\u30b8\u306b\u4f7f\u7528\u3057\u307e\u3059\u3002</p>"
+              u"<hr>"
+              u"<h3>\u30d5\u30a7\u30fc\u30b9\u30b9\u30ca\u30c3\u30d7</h3>"
               u"<p><b>\u30e1\u30c3\u30b7\u30e5 A</b> \u3092 <b>\u30e1\u30c3\u30b7\u30e5 B</b> \u306b\u6307\u5b9a\u8ef8\u306b\u6cbf\u3063\u3066\u63a5\u5730\u3055\u305b\u307e\u3059\u3002"
               u"A \u306e\u5168\u9802\u70b9\u304b\u3089 B \u306b\u5411\u3051\u3066\u30ec\u30a4\u30ad\u30e3\u30b9\u30c8\u3092\u884c\u3044\u3001\u30dd\u30ea\u30b4\u30f3\u30ec\u30d9\u30eb\u306e\u885d\u7a81\u5224\u5b9a\u3067\u691c\u8a3c\u3057\u3001"
               u"\u8cab\u901a\u305b\u305a\u306b\u63a5\u89e6\u3059\u308b\u4f4d\u7f6e\u307e\u3067 A \u3092\u79fb\u52d5\u3057\u307e\u3059\u3002</p>"
-              u"<h3>\u4f5c\u696d\u624b\u9806</h3>"
+              u"<h4>\u4f5c\u696d\u624b\u9806</h4>"
               u"<ol>"
-              u"<li>\u305d\u306e\u4ed6\u30bf\u30d6\u3067 <b>[\u8d77\u52d5]</b> \u3092\u30af\u30ea\u30c3\u30af\u3057\u3066\u30e1\u30c3\u30b7\u30e5\u63a5\u5730\u30c0\u30a4\u30a2\u30ed\u30b0\u3092\u958b\u304d\u307e\u3059\u3002</li>"
+              u"<li>\u30d5\u30a7\u30fc\u30b9\u30b9\u30ca\u30c3\u30d7\u306e <b>[\u8d77\u52d5]</b> \u3092\u30af\u30ea\u30c3\u30af\u3057\u3066\u30c0\u30a4\u30a2\u30ed\u30b0\u3092\u958b\u304d\u307e\u3059\u3002</li>"
               u"<li>\u79fb\u52d5\u3055\u305b\u305f\u3044\u30e1\u30c3\u30b7\u30e5\u3092\u30d3\u30e5\u30fc\u30dd\u30fc\u30c8\u3067\u9078\u629e\u3057\u3001<b>\u30e1\u30c3\u30b7\u30e5 A</b> \u884c\u306e <b>[\u30bb\u30c3\u30c8]</b> \u3092\u30af\u30ea\u30c3\u30af\u3002</li>"
               u"<li>\u5730\u9762\u5074\u306e\u30e1\u30c3\u30b7\u30e5\u3092\u9078\u629e\u3057\u3001<b>\u30e1\u30c3\u30b7\u30e5 B</b> \u884c\u306e <b>[\u30bb\u30c3\u30c8]</b> \u3092\u30af\u30ea\u30c3\u30af\u3002</li>"
-              u"<li>\u9006\u306b\u30bb\u30c3\u30c8\u3057\u3066\u3057\u307e\u3063\u305f\u5834\u5408\u306f <b>[\u21C4 A \u2194 B \u5165\u308c\u66ff\u3048]</b> \u3067\u5165\u308c\u66ff\u3048\u3089\u308c\u307e\u3059\u3002</li>"
+              u"<li>\u9006\u306b\u30bb\u30c3\u30c8\u3057\u305f\u5834\u5408\u306f <b>[\u21C4 A \u2194 B \u5165\u308c\u66ff\u3048]</b> \u3092\u4f7f\u7528\u3002</li>"
               u"<li><b>\u8ef8</b>\u30fb<b>\u65b9\u5411</b>\u30fb<b>\u79fb\u52d5\u30e2\u30fc\u30c9</b>\u30fb<b>\u30aa\u30d5\u30bb\u30c3\u30c8</b> \u3092\u8a2d\u5b9a\u3002</li>"
               u"<li><b>[\u25B6 \u30d7\u30ec\u30d3\u30e5\u30fc]</b> \u3092\u30af\u30ea\u30c3\u30af\u3002A \u304c\u79fb\u52d5\u3057\u3001\u7d50\u679c\u3092\u78ba\u8a8d\u3067\u304d\u307e\u3059\u3002</li>"
-              u"<li>\u8a2d\u5b9a\u3092\u5909\u66f4\u3057\u3066\u518d\u5ea6 <b>[\u30d7\u30ec\u30d3\u30e5\u30fc]</b> \u3092\u62bc\u3059\u3068\u3001\u524d\u56de\u306e\u30d7\u30ec\u30d3\u30e5\u30fc\u304c\u81ea\u52d5\u30ad\u30e3\u30f3\u30bb\u30eb\u3055\u308c\u3066\u65b0\u3057\u3044\u8a2d\u5b9a\u3067\u518d\u8a66\u884c\u3055\u308c\u307e\u3059\u3002\u4f55\u5ea6\u3067\u3082\u8a66\u305b\u307e\u3059\u3002</li>"
+              u"<li>\u8a2d\u5b9a\u3092\u5909\u66f4\u3057\u3066\u518d\u5ea6 <b>[\u30d7\u30ec\u30d3\u30e5\u30fc]</b> \u3092\u62bc\u3059\u3068\u3001\u524d\u56de\u306e\u30d7\u30ec\u30d3\u30e5\u30fc\u304c\u81ea\u52d5\u30ad\u30e3\u30f3\u30bb\u30eb\u3055\u308c\u307e\u3059\u3002</li>"
               u"<li>\u826f\u3051\u308c\u3070 <b>[\u2714 \u78ba\u5b9a]</b> \u3067\u78ba\u5b9a\u3001\u3084\u308a\u76f4\u3059\u306a\u3089 <b>[\u21A9 \u5143\u306b\u623b\u3059]</b> \u3067\u30ad\u30e3\u30f3\u30bb\u30eb\u3002</li>"
               u"</ol>"
               u"<p><i>\u672a\u78ba\u5b9a\u306e\u30d7\u30ec\u30d3\u30e5\u30fc\u304c\u3042\u308b\u72b6\u614b\u3067\u30c0\u30a4\u30a2\u30ed\u30b0\u3092\u9589\u3058\u308b\u3068\u3001\u81ea\u52d5\u3067\u30ad\u30e3\u30f3\u30bb\u30eb\u3055\u308c\u307e\u3059\u3002</i></p>"
-              u"<h3>\u30d1\u30e9\u30e1\u30fc\u30bf</h3>"
+              u"<h4>\u30d1\u30e9\u30e1\u30fc\u30bf</h4>"
               u"<ul>"
               u"<li><b>\u8ef8</b> \u2014 X / Y / Z\u3002\u3053\u306e\u8ef8\u306b\u6cbf\u3063\u305f\u79fb\u52d5\u306e\u307f\u884c\u3044\u307e\u3059\u3002</li>"
               u"<li><b>\u65b9\u5411</b>"
@@ -374,16 +374,19 @@ _STRINGS = {
               u"<li><b>\u79fb\u52d5\u30e2\u30fc\u30c9</b>"
               u"<ul>"
               u"<li><b>\u30aa\u30d6\u30b8\u30a7\u30af\u30c8</b> \u2014 A \u306e Transform \u3054\u3068\u79fb\u52d5\u3002</li>"
-              u"<li><b>\u30b3\u30f3\u30dd\u30fc\u30cd\u30f3\u30c8</b> \u2014 A \u3067\u73fe\u5728\u9078\u629e\u3057\u3066\u3044\u308b\u9802\u70b9\u30fb\u30d5\u30a7\u30fc\u30b9\u306e\u307f\u79fb\u52d5\u3002</li>"
+              u"<li><b>\u30b3\u30f3\u30dd\u30fc\u30cd\u30f3\u30c8</b> \u2014 A \u3067\u73fe\u5728\u9078\u629e\u3057\u3066\u3044\u308b\u9802\u70b9\u30fb\u30a8\u30c3\u30b8\u30fb\u30d5\u30a7\u30fc\u30b9\u306e\u307f\u79fb\u52d5\u3002"
+              u"\u9078\u629e\u306f\u30d5\u30a7\u30fc\u30b9\u3092\u5b8c\u5168\u306b\u56f2\u3080\u5fc5\u8981\u304c\u3042\u308a\u307e\u3059\uff08\u4f8b\uff1a\u30af\u30a2\u30c3\u30c9\u306e 4 \u9802\u70b9\u3059\u3079\u3066\uff09\u3002"
+              u"\u5b8c\u5168\u306b\u56f2\u3081\u3066\u3044\u306a\u3044\u5834\u5408\u306f\u3001\u9694\u63a5\u30d5\u30a7\u30fc\u30b9\u306b\u62e1\u5f35\u3059\u308b\u304b\u78ba\u8a8d\u30c0\u30a4\u30a2\u30ed\u30b0\u304c\u8868\u793a\u3055\u308c\u307e\u3059\u3002</li>"
               u"</ul></li>"
-              u"<li><b>\u30aa\u30d5\u30bb\u30c3\u30c8</b> \u2014 A \u3068 B \u306e\u9593\u306b\u6b8b\u3059\u9694\u305f\u308a\u8ddd\u96e2\u3002 0 \u306a\u3089\u63a5\u89e6\u3057\u307e\u3059\u3002</li>"
+              u"<li><b>\u30aa\u30d5\u30bb\u30c3\u30c8</b> \u2014 A \u3068 B \u306e\u9593\u306b\u6b8b\u3059\u9694\u305f\u308a\u8ddd\u96e2\u3002"
+              u"0 \u306a\u3089\u63a5\u89e6\u3001\u8ca0\u306e\u5024\u306a\u3089 A \u3092 B \u306b\u57cb\u3081\u8fbc\u307f\u307e\u3059\u3002</li>"
               u"</ul>"
-              u"<h3>\u30a2\u30eb\u30b4\u30ea\u30ba\u30e0</h3>"
+              u"<h4>\u30a2\u30eb\u30b4\u30ea\u30ba\u30e0</h4>"
               u"<p>\u307e\u305a\u30ec\u30a4\u30ad\u30e3\u30b9\u30c8\u3067\u6982\u7b97\u8ddd\u96e2\uff08\u4e0a\u9650\u5024\uff09\u3092\u7b97\u51fa\u3057\u307e\u3059\u3002"
               u"\u305d\u306e\u8ddd\u96e2\u3067\u3082\u885d\u7a81\u304c\u6b8b\u308b\u5834\u5408\uff08\u56de\u8ee2\u3057\u305f\u5f62\u72b6\u3084\u51f9\u5f62\u30e1\u30c3\u30b7\u30e5\u3067\u8d77\u3053\u308a\u307e\u3059\uff09\u306f\u3001"
-              u"[0, \u4e0a\u9650\u5024] \u306e\u7bc4\u56f2\u3092\u4e8c\u5206\u63a2\u7d22\u3057\u3001\u30dd\u30ea\u30b4\u30f3\u30ec\u30d9\u30eb\u3067\u8cab\u901a\u3057\u306a\u3044\u6700\u5927\u8ddd\u96e2\u3092\u6c42\u3081\u307e\u3059\u3002</p>",
+              u"[0, \u4e0a\u9650\u5024] \u306e\u7bc4\u56f2\u3092\u4e8c\u5206\u63a2\u7d22\u3057\u3001\u30dd\u30ea\u30b4\u30f3\u30ec\u30d9\u30eb\u3067\u8cab\u901a\u3057\u306a\u3044\u6700\u5927\u8ddd\u96e2\u3092\u6c42\u3081\u307e\u3059\u3002"
+              u"\u30ec\u30a4\u304c B \u306b\u4e00\u3064\u3082\u5f53\u305f\u3089\u306a\u3044\u5834\u5408\u306f\u3001\u30ef\u30fc\u30eb\u30c9\u539f\u70b9\u5e73\u9762\uff08Y \u8ef8\u306a\u3089 Y=0\uff09\u307e\u3067\u843d\u3068\u3057\u307e\u3059\u3002</p>",
     },
-
     # ---- Vertex Snap (Snap tab) --------------------------------------
     "tab_snap":             {"en": "Snap",                          "jp": u"\u30b9\u30ca\u30c3\u30d7"},
     "vs_grp_title":         {"en": "Vertex Snap",                   "jp": u"\u30d0\u30fc\u30c6\u30c3\u30af\u30b9\u30ca\u30c3\u30d7"},
@@ -5650,7 +5653,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         # NOTE: sel_row is added to the Check tab's scroll area below
         #       (not to main_lo) so that the toggles only apply to checks.
 
-        # ---- Tab widget (Check / Other) ----
+        # ---- Tab widget (Check / Snap) ----
         self._tabs = QtWidgets.QTabWidget()
         self._tabs.setStyleSheet(
             "QTabWidget::pane{border:1px solid #444;background-color:#2B2B2B;"
@@ -5885,7 +5888,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         check_tab_lo.addWidget(check_scroll)
         self._tabs.addTab(check_tab, tr("tab_check"))
 
-        # ---- Snap tab (vertex snap + future snap tools) ----
+        # ---- Snap tab (vertex snap + face snap) ----
         snap_tab = QtWidgets.QWidget()
         snap_tab_lo = QtWidgets.QVBoxLayout(snap_tab)
         snap_tab_lo.setContentsMargins(0, 0, 0, 0)
@@ -5898,28 +5901,11 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         snap_scroll_lo.setContentsMargins(4, 4, 4, 4)
         snap_scroll_lo.setSpacing(8)
         _build_vertex_snap_group(self, snap_scroll_lo)
+        _build_mesh_landing_group(self, snap_scroll_lo)
         snap_scroll_lo.addStretch()
         snap_scroll.setWidget(snap_scroll_w)
         snap_tab_lo.addWidget(snap_scroll)
         self._tabs.addTab(snap_tab, tr("tab_snap"))
-
-        # ---- Other tab (auxiliary tools, contains Move-to-Origin) ----
-        other_tab = QtWidgets.QWidget()
-        other_tab_lo = QtWidgets.QVBoxLayout(other_tab)
-        other_tab_lo.setContentsMargins(0, 0, 0, 0)
-        other_tab_lo.setSpacing(0)
-        other_scroll = QtWidgets.QScrollArea()
-        other_scroll.setWidgetResizable(True)
-        other_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-        other_scroll_w = QtWidgets.QWidget()
-        other_scroll_lo = QtWidgets.QVBoxLayout(other_scroll_w)
-        other_scroll_lo.setContentsMargins(4, 4, 4, 4)
-        other_scroll_lo.setSpacing(8)
-        _build_mesh_landing_group(self, other_scroll_lo)
-        other_scroll_lo.addStretch()
-        other_scroll.setWidget(other_scroll_w)
-        other_tab_lo.addWidget(other_scroll)
-        self._tabs.addTab(other_tab, tr("tab_other"))
 
         main_lo.addWidget(self._tabs)
 
@@ -6197,7 +6183,6 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         try:
             self._tabs.setTabText(0, tr("tab_check"))
             self._tabs.setTabText(1, tr("tab_snap"))
-            self._tabs.setTabText(2, tr("tab_other"))
         except Exception:
             pass
         # Vertex Snap labels
@@ -6236,8 +6221,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         tabs = QtWidgets.QTabWidget()
         for tab_key, body_key in [
                 ("tab_check", "help_body_check"),
-                ("tab_snap",  "help_body_snap"),
-                ("tab_other", "help_body_other")]:
+                ("tab_snap",  "help_body_snap")]:
             tb = QtWidgets.QTextBrowser()
             tb.setHtml(tr(body_key))
             tb.setOpenExternalLinks(True)
