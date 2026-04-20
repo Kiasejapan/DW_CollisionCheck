@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.20.1844"
+VERSION = "2026.04.20.1849"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -3901,13 +3901,13 @@ class MeshLandingRaycaster(object):
         except Exception:
             return None
 
-    def cast(self, source_point, direction, max_distance=1.0e9):
+    def cast(self, source_point, direction, max_distance=1.0e9,
+             debug=False):
         """Cast a ray; return closest hit distance along `direction`, or None.
 
-        Uses MFnMesh.closestIntersection with no accel grid (simpler and
-        more reliable than allIntersections with autoUniformGridParams
-        on small scenes). If no triangle is intersected along the ray,
-        returns None.
+        Uses MFnMesh.closestIntersection with no accel grid. Any exception
+        is logged (with debug=True) so a silent failure cannot hide the
+        root cause of bugs.
         """
         ray_src = om.MFloatPoint(float(source_point[0]),
                                  float(source_point[1]),
@@ -3921,30 +3921,32 @@ class MeshLandingRaycaster(object):
         best = None
         for shape in self._targets:
             fn = self._fn_cache[shape]
+            # Output buffers — standard Maya API1 idiom.
             hit_pt = om.MFloatPoint()
-            hit_rp_util = om.MScriptUtil()
-            hit_rp_util.createFromDouble(0.0)
+            hit_rp_util = om.MScriptUtil(0.0)
             hit_rp_ptr = hit_rp_util.asFloatPtr()
-            hit_face_util = om.MScriptUtil()
-            hit_face_util.createFromInt(0)
+            hit_face_util = om.MScriptUtil(0)
             hit_face_ptr = hit_face_util.asIntPtr()
-            hit_tri_util = om.MScriptUtil()
-            hit_tri_util.createFromInt(0)
+            hit_tri_util = om.MScriptUtil(0)
             hit_tri_ptr = hit_tri_util.asIntPtr()
-            hit_b1_util = om.MScriptUtil()
-            hit_b1_util.createFromDouble(0.0)
+            hit_b1_util = om.MScriptUtil(0.0)
             hit_b1_ptr = hit_b1_util.asFloatPtr()
-            hit_b2_util = om.MScriptUtil()
-            hit_b2_util.createFromDouble(0.0)
+            hit_b2_util = om.MScriptUtil(0.0)
             hit_b2_ptr = hit_b2_util.asFloatPtr()
+
+            got = False
             try:
                 got = fn.closestIntersection(
-                    ray_src, ray_dir,
-                    None, None, False,
+                    ray_src,
+                    ray_dir,
+                    None,                 # faceIds
+                    None,                 # triIds
+                    False,                # idsSorted
                     om.MSpace.kWorld,
                     float(max_distance),
-                    False,
-                    None,
+                    False,                # testBothDirections
+                    None,                 # accelParams
+                    False,                # sortHits — not used by closestIntersection
                     hit_pt,
                     hit_rp_ptr,
                     hit_face_ptr,
@@ -3952,13 +3954,22 @@ class MeshLandingRaycaster(object):
                     hit_b1_ptr,
                     hit_b2_ptr,
                     _ML_RAY_EPS,
-                    _ML_RAY_EPS,
                 )
-            except Exception:
-                got = False
+            except Exception as _e:
+                if debug:
+                    import traceback
+                    print(u"[DW MeshLanding] closestIntersection exception "
+                          u"on {0}: {1}".format(shape, _e))
+                    traceback.print_exc()
+                continue
             if not got:
+                if debug:
+                    print(u"[DW MeshLanding]  ray miss on {0}".format(shape))
                 continue
             d = om.MScriptUtil.getFloat(hit_rp_ptr)
+            if debug:
+                print(u"[DW MeshLanding]  ray hit on {0}: dist={1}".format(
+                    shape, d))
             if d is None:
                 continue
             if d <= _ML_RAY_EPS:
@@ -4451,8 +4462,10 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
     ray_min_dist = None
     ray_hits = 0
     first_pt_info = None
-    for p in all_pts:
-        d = raycaster.cast(p, direction)
+    # For the first 3 points, also cast with debug on to see what's happening.
+    for idx, p in enumerate(all_pts):
+        cast_debug = bool(debug) and idx < 3
+        d = raycaster.cast(p, direction, debug=cast_debug)
         if first_pt_info is None:
             first_pt_info = (p, d)
         if d is not None:
@@ -5117,7 +5130,8 @@ class MeshLandingDialog(QtWidgets.QDialog):
             if is_component:
                 result = ml_compute_landing(
                     self._mesh_a_shapes, self._mesh_b_shapes,
-                    axis, sign, offset, vert_indices=vert_map)
+                    axis, sign, offset, vert_indices=vert_map,
+                    debug=True)
                 if result is None or result[0] is None or result[0] < 1.0e-8:
                     self.status_msg.emit(tr("ml_status_no_hit"))
                     self._set_preview_label(tr("ml_status_no_hit"),
