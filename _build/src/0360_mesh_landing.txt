@@ -517,10 +517,20 @@ def _ml_bbox_gap_estimate(source_pts, target_shapes, axis, sign):
 
 def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
                        vert_indices=None, debug=False):
-    """Compute landing delta. Returns (distance, sign) or (None, 0)."""
+    """Compute landing delta. Returns (distance, sign) or (None, 0).
+
+    If `vert_indices` is given (component mode), ONLY the selected
+    vertices participate. Source shapes that have no entry in
+    `vert_indices` are ignored completely — they won't be moved and
+    won't contribute to raycast, bounding-box, or triangle data.
+    """
+    is_component_mode = vert_indices is not None
+
     all_pts = []
     for shape in source_shapes:
-        if vert_indices and shape in vert_indices:
+        if is_component_mode:
+            if shape not in vert_indices:
+                continue  # this shape has no selected verts → skip
             pts = _ml_get_selected_vert_positions(shape, vert_indices[shape])
         else:
             pts = _ml_get_world_verts(shape)
@@ -559,20 +569,22 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
     # ----- Build list of triangles that will actually move ---------------
     # Object mode:     all triangles from every source mesh.
     # Component mode:  ONLY triangles where all 3 vertices are in the
-    #                  user's selection. Partial / fully static triangles
-    #                  are excluded entirely; the unmoving mesh data is
-    #                  NOT used for collision detection at all.
+    #                  user's selection. Shapes with no entries in
+    #                  vert_indices are entirely excluded (they won't
+    #                  move, so they must not constrain the motion).
     src_moving_tris = []
     for shape in source_shapes:
-        tris, vids = _ml_mesh_to_triangles_with_ids(shape)
-        if vert_indices and shape in vert_indices:
+        if is_component_mode:
+            if shape not in vert_indices:
+                continue
+            tris, vids = _ml_mesh_to_triangles_with_ids(shape)
             moving = set(vert_indices[shape])
             for t, vid in zip(tris, vids):
                 if (vid[0] in moving and vid[1] in moving
                         and vid[2] in moving):
                     src_moving_tris.append(t)
         else:
-            # Whole-shape mode
+            tris = _ml_mesh_to_triangles(shape)
             src_moving_tris.extend(tris)
 
     tgt_tris = []
