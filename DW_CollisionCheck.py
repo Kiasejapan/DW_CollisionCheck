@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.20.1823"
+VERSION = "2026.04.20.1844"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -3878,17 +3878,12 @@ _ML_RAY_EPS = 1.0e-5
 class MeshLandingRaycaster(object):
     def __init__(self, target_shapes):
         self._fn_cache = {}
-        self._acc_cache = {}
         self._targets = []
         for s in target_shapes:
             fn = self._make_mfn(s)
             if fn is None:
                 continue
             self._fn_cache[s] = fn
-            try:
-                self._acc_cache[s] = fn.autoUniformGridParams()
-            except Exception:
-                self._acc_cache[s] = None
             self._targets.append(s)
 
     @staticmethod
@@ -3907,6 +3902,13 @@ class MeshLandingRaycaster(object):
             return None
 
     def cast(self, source_point, direction, max_distance=1.0e9):
+        """Cast a ray; return closest hit distance along `direction`, or None.
+
+        Uses MFnMesh.closestIntersection with no accel grid (simpler and
+        more reliable than allIntersections with autoUniformGridParams
+        on small scenes). If no triangle is intersected along the ray,
+        returns None.
+        """
         ray_src = om.MFloatPoint(float(source_point[0]),
                                  float(source_point[1]),
                                  float(source_point[2]))
@@ -3919,35 +3921,52 @@ class MeshLandingRaycaster(object):
         best = None
         for shape in self._targets:
             fn = self._fn_cache[shape]
-            accel = self._acc_cache.get(shape)
-            hit_pts = om.MFloatPointArray()
-            hit_rps = om.MFloatArray()
-            hit_faces = om.MIntArray()
-            hit_tris = om.MIntArray()
-            hit_b1 = om.MFloatArray()
-            hit_b2 = om.MFloatArray()
+            hit_pt = om.MFloatPoint()
+            hit_rp_util = om.MScriptUtil()
+            hit_rp_util.createFromDouble(0.0)
+            hit_rp_ptr = hit_rp_util.asFloatPtr()
+            hit_face_util = om.MScriptUtil()
+            hit_face_util.createFromInt(0)
+            hit_face_ptr = hit_face_util.asIntPtr()
+            hit_tri_util = om.MScriptUtil()
+            hit_tri_util.createFromInt(0)
+            hit_tri_ptr = hit_tri_util.asIntPtr()
+            hit_b1_util = om.MScriptUtil()
+            hit_b1_util.createFromDouble(0.0)
+            hit_b1_ptr = hit_b1_util.asFloatPtr()
+            hit_b2_util = om.MScriptUtil()
+            hit_b2_util.createFromDouble(0.0)
+            hit_b2_ptr = hit_b2_util.asFloatPtr()
             try:
-                fn.allIntersections(
+                got = fn.closestIntersection(
                     ray_src, ray_dir,
                     None, None, False,
                     om.MSpace.kWorld,
                     float(max_distance),
                     False,
-                    accel,
-                    True,
-                    hit_pts, hit_rps, hit_faces, hit_tris, hit_b1, hit_b2,
+                    None,
+                    hit_pt,
+                    hit_rp_ptr,
+                    hit_face_ptr,
+                    hit_tri_ptr,
+                    hit_b1_ptr,
+                    hit_b2_ptr,
+                    _ML_RAY_EPS,
                     _ML_RAY_EPS,
                 )
             except Exception:
+                got = False
+            if not got:
                 continue
-            for i in range(hit_rps.length()):
-                d = float(hit_rps[i])
-                if d <= _ML_RAY_EPS:
-                    continue
-                if _ml_math.isnan(d) or _ml_math.isinf(d):
-                    continue
-                if best is None or d < best:
-                    best = d
+            d = om.MScriptUtil.getFloat(hit_rp_ptr)
+            if d is None:
+                continue
+            if d <= _ML_RAY_EPS:
+                continue
+            if _ml_math.isnan(d) or _ml_math.isinf(d):
+                continue
+            if best is None or d < best:
+                best = d
         return best
 
 
@@ -5116,7 +5135,7 @@ class MeshLandingDialog(QtWidgets.QDialog):
             else:
                 result = ml_compute_landing(
                     self._mesh_a_shapes, self._mesh_b_shapes,
-                    axis, sign, offset)
+                    axis, sign, offset, debug=True)
                 if result is None or result[0] is None or result[0] < 1.0e-8:
                     self.status_msg.emit(tr("ml_status_no_hit"))
                     self._set_preview_label(tr("ml_status_no_hit"),
