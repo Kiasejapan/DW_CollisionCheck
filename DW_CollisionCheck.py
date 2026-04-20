@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.20.1219"
+VERSION = "2026.04.20.1231"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -4184,6 +4184,11 @@ def _ml_get_mesh_shapes(objects):
 
     Recurses through transform hierarchies so selecting a group returns every
     mesh underneath it. Intermediate objects (deformer orig shapes) are skipped.
+
+    Note: Maya's `cmds.listRelatives(..., allDescendents=True, type="mesh")`
+    is unreliable because the `type` filter is applied to intermediate
+    transform nodes too, which can prune the traversal. We instead collect
+    all descendants and filter by node type in Python.
     """
     shapes = []
     for obj in objects:
@@ -4191,39 +4196,52 @@ def _ml_get_mesh_shapes(objects):
             continue
         node_type = cmds.nodeType(obj)
         if node_type == "mesh":
-            # Direct mesh shape selection
+            # Direct mesh-shape selection
             try:
                 if cmds.getAttr(obj + ".intermediateObject"):
                     continue
             except Exception:
                 pass
-            shapes.append(cmds.ls(obj, long=True)[0])
-        else:
-            # Transform / group: walk the whole subtree for mesh shapes
-            descendants = cmds.listRelatives(
-                obj,
-                allDescendents=True,
-                shapes=True,
-                noIntermediate=True,
-                fullPath=True,
-                type="mesh") or []
-            # Also include shapes directly parented to this node
-            # (listRelatives sometimes misses the top-level shape when
-            # the node itself is a transform with a mesh child).
-            direct = cmds.listRelatives(
-                obj,
-                shapes=True,
-                noIntermediate=True,
-                fullPath=True,
-                type="mesh") or []
-            for sh in list(descendants) + list(direct):
-                # Double-check intermediateObject
-                try:
-                    if cmds.getAttr(sh + ".intermediateObject"):
-                        continue
-                except Exception:
-                    pass
-                shapes.append(sh)
+            full = cmds.ls(obj, long=True)
+            if full:
+                shapes.append(full[0])
+            continue
+
+        # Transform / group: enumerate the entire subtree and pull out
+        # mesh shapes. Separate calls for descendants and direct shapes;
+        # `listRelatives(allDescendents=True)` alone doesn't include
+        # shapes parented directly to the top node.
+        collected = set()
+
+        # 1. All transforms + shapes under this node
+        all_descendants = cmds.listRelatives(
+            obj,
+            allDescendents=True,
+            fullPath=True) or []
+
+        # 2. Direct shape children (catches the common case where the
+        #    node itself is a transform with a mesh shape).
+        direct_shapes = cmds.listRelatives(
+            obj,
+            shapes=True,
+            fullPath=True) or []
+
+        for node in list(all_descendants) + list(direct_shapes):
+            if node in collected:
+                continue
+            collected.add(node)
+            try:
+                if cmds.nodeType(node) != "mesh":
+                    continue
+            except Exception:
+                continue
+            try:
+                if cmds.getAttr(node + ".intermediateObject"):
+                    continue
+            except Exception:
+                pass
+            shapes.append(node)
+
     # preserve uniqueness without losing order
     seen = set()
     out = []
