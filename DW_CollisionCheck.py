@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.20.1808"
+VERSION = "2026.04.20.1819"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -4431,8 +4431,11 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
     raycaster = MeshLandingRaycaster(target_shapes)
     ray_min_dist = None
     ray_hits = 0
+    first_pt_info = None
     for p in all_pts:
         d = raycaster.cast(p, direction)
+        if first_pt_info is None:
+            first_pt_info = (p, d)
         if d is not None:
             ray_hits += 1
             if ray_min_dist is None or d < ray_min_dist:
@@ -4440,6 +4443,16 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
     if debug:
         print(u"  raycast: {0}/{1} hits, min_dist={2}".format(
             ray_hits, len(all_pts), ray_min_dist))
+        if first_pt_info is not None:
+            pt, d = first_pt_info
+            print(u"  first source pt={0} direction={1} hit_dist={2}".format(
+                pt, direction, d))
+        if ray_min_dist is not None:
+            sample = all_pts[0]
+            expected_hit = (sample[0] + direction[0] * ray_min_dist,
+                            sample[1] + direction[1] * ray_min_dist,
+                            sample[2] + direction[2] * ray_min_dist)
+            print(u"  sample hit predicted at: {0}".format(expected_hit))
     if ray_min_dist is None:
         ray_min_dist = _ml_bbox_gap_estimate(all_pts, target_shapes,
                                               axis, sign)
@@ -4521,6 +4534,33 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
             print(u"  [negative offset] result={0}".format(
                 ray_min_dist + abs(offset)))
         return ray_min_dist + abs(offset), sign
+
+    # If Mesh A (selected subset) and Mesh B have no overlap along the
+    # OTHER two axes (i.e. they aren't over each other from above), the
+    # raycast dist is the true answer and we must NOT run binary search
+    # — otherwise small AABB touches produce false positives that stop
+    # motion early.
+    def _axes_transverse_overlap():
+        """Return True if src and tgt AABBs overlap on the two axes
+        perpendicular to the move axis."""
+        other = [i for i in (0, 1, 2) if i != axis]
+        for i in other:
+            a_min, a_max = src_aabb_static[i], src_aabb_static[i + 3]
+            b_min, b_max = tgt_aabb[i], tgt_aabb[i + 3]
+            if a_max < b_min or b_max < a_min:
+                return False
+        return True
+
+    if not _axes_transverse_overlap():
+        # No footprint overlap → the triangles can never physically
+        # intersect no matter how far along `axis` we move. Trust the
+        # raycast result (which already accounts for direction).
+        result = ray_min_dist - offset
+        if result < 0.0:
+            result = 0.0
+        if debug:
+            print(u"  [no transverse overlap] result={0}".format(result))
+        return result, sign
 
     # Non-negative offset: find the max non-colliding distance, then
     # subtract the offset to leave a gap.
