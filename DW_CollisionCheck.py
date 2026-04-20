@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.20.1914"
+VERSION = "2026.04.20.1919"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -153,6 +153,11 @@ _STRINGS = {
                              "jp": u"\u8ef8\u65b9\u5411\u306b\u8868\u9762\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093\u3002"},
     "ml_status_no_enclosed": {"en": "Component mode: select face(s), or 3+ vertices / edges that fully enclose a face.",
                               "jp": u"\u30b3\u30f3\u30dd\u30fc\u30cd\u30f3\u30c8\u30e2\u30fc\u30c9: \u30d5\u30a7\u30fc\u30b9\u3092\u9078\u629e\u3059\u308b\u304b\u3001\u30d5\u30a7\u30fc\u30b9\u3092\u56f2\u3080 3 \u70b9\u4ee5\u4e0a\u306e\u9802\u70b9 / \u30a8\u30c3\u30b8\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044\u3002"},
+    "ml_status_cancelled":   {"en": "Cancelled.", "jp": u"\u30ad\u30e3\u30f3\u30bb\u30eb\u3057\u307e\u3057\u305f\u3002"},
+    "ml_confirm_expand_title": {"en": "Expand selection to enclosing faces?",
+                                "jp": u"\u9078\u629e\u3092\u5185\u5305\u30d5\u30a7\u30fc\u30b9\u306b\u62e1\u5f35\u3057\u307e\u3059\u304b\uff1f"},
+    "ml_confirm_expand_body":  {"en": "The current selection does not fully enclose any face.\n\nExpand to adjacent faces ({n_faces} face(s), {n_verts} vertex/vertices) and run the landing?\n\nMaya's selection will be updated to match.",
+                                "jp": u"\u73fe\u5728\u306e\u9078\u629e\u3067\u306f\u30d5\u30a7\u30fc\u30b9\u3092\u5b8c\u5168\u306b\u56f2\u3081\u307e\u305b\u3093\u3002\n\n\u9694\u63a5\u3059\u308b\u30d5\u30a7\u30fc\u30b9\uff08{n_faces} \u30d5\u30a7\u30fc\u30b9\u3001{n_verts} \u9802\u70b9\uff09\u306b\u62e1\u5f35\u3057\u3066\u63a5\u5730\u3092\u5b9f\u884c\u3057\u307e\u3059\u304b\uff1f\n\nMaya \u306e\u9078\u629e\u72b6\u614b\u3082\u66f4\u65b0\u3055\u308c\u307e\u3059\u3002"},
     "ml_status_preview":    {"en": "Preview: moved {dist} along {axis}. Click Confirm or Revert.",
                              "jp": u"\u30d7\u30ec\u30d3\u30e5\u30fc: {axis}\u8ef8\u306b {dist} \u79fb\u52d5\u3002\u78ba\u5b9a\u307e\u305f\u306f\u5143\u306b\u623b\u3059\u3002"},
     "ml_status_confirmed":  {"en": "Confirmed: moved {dist} along {axis}.",
@@ -5056,21 +5061,21 @@ class MeshLandingDialog(QtWidgets.QDialog):
 
     # -- Preview / Confirm / Revert --
     def _gather_components(self):
-        """Collect the faces on Mesh A that are fully enclosed by the selection.
+        """Analyze current selection and return candidate face sets.
 
-        Rules:
-          * Face selection          → that face itself.
-          * Vertex selection        → a face only counts if ALL of its
-                                      vertices are in the selection.
-          * Edge selection          → a face only counts if ALL of its
-                                      edges are in the selection (i.e.
-                                      the selected edges form the full
-                                      boundary of that face).
-          * Mixed selection         → union of the above.
+        Returns a tuple (enclosed_map, adjacent_map, selection_items):
+          * enclosed_map: dict {shape: [vi,...]} — faces fully enclosed
+            by the selection (vertices, edges, or faces). This is the
+            "strict" / precise answer the user drew.
+          * adjacent_map: dict {shape: [vi,...]} — every face that
+            touches any selected component. This is the wider fallback
+            used when `enclosed_map` is empty.
+          * face_items_map: dict {shape: [face_item_str, ...]} —
+            the exact face components to re-select in Maya when the
+            fallback is accepted by the user.
 
-        Returns a dict {shape: [vert_index, ...]} listing every vertex
-        belonging to the enclosed faces. Returns empty dict if nothing
-        qualifies.
+        Either map may be empty if the selection does not touch any
+        Mesh A shape.
         """
         sel = cmds.ls(sl=True, fl=True, long=True) or []
         a_set = set(self._mesh_a_shapes)
@@ -5102,17 +5107,18 @@ class MeshLandingDialog(QtWidgets.QDialog):
             bucket[kind].add(idx)
 
         enclosed_faces_per_shape = {}  # shape -> set of face indices
+        adjacent_faces_per_shape = {}  # shape -> set of face indices
+
         for shape, buckets in per_shape.items():
             enclosed = set()
+            adjacent = set()
 
-            # Faces directly selected always qualify.
+            # Faces directly selected always qualify for both.
             enclosed.update(buckets["f"])
+            adjacent.update(buckets["f"])
 
-            # Vertex-enclosed faces: every vertex of the face is selected.
+            # --- Vertex-side analysis ---
             if buckets["vtx"]:
-                # Start from the broad set of faces touched by any
-                # selected vertex, then filter those whose full vertex
-                # list is a subset of the selection.
                 vtx_items = [u"{0}.vtx[{1}]".format(shape, vi)
                              for vi in buckets["vtx"]]
                 try:
@@ -5127,6 +5133,9 @@ class MeshLandingDialog(QtWidgets.QDialog):
                         fi = int(f_item.split(u"[")[-1].rstrip(u"]"))
                     except Exception:
                         continue
+                    # Adjacent: any face touched by any selected vertex.
+                    adjacent.add(fi)
+                    # Enclosed: face whose full vert set is inside sel.
                     try:
                         verts_of_f = cmds.polyListComponentConversion(
                             f_item, fromFace=True, toVertex=True) or []
@@ -5142,7 +5151,7 @@ class MeshLandingDialog(QtWidgets.QDialog):
                     if f_vidxs and f_vidxs.issubset(sel_vset):
                         enclosed.add(fi)
 
-            # Edge-enclosed faces: every edge of the face is selected.
+            # --- Edge-side analysis ---
             if buckets["e"]:
                 e_items = [u"{0}.e[{1}]".format(shape, ei)
                            for ei in buckets["e"]]
@@ -5158,6 +5167,7 @@ class MeshLandingDialog(QtWidgets.QDialog):
                         fi = int(f_item.split(u"[")[-1].rstrip(u"]"))
                     except Exception:
                         continue
+                    adjacent.add(fi)
                     try:
                         edges_of_f = cmds.polyListComponentConversion(
                             f_item, fromFace=True, toEdge=True) or []
@@ -5175,27 +5185,43 @@ class MeshLandingDialog(QtWidgets.QDialog):
 
             if enclosed:
                 enclosed_faces_per_shape[shape] = enclosed
+            if adjacent:
+                adjacent_faces_per_shape[shape] = adjacent
 
-        # Expand enclosed faces to the set of unique vertex indices.
-        vert_map = {}
-        for shape, faces in enclosed_faces_per_shape.items():
-            face_items = [u"{0}.f[{1}]".format(shape, fi)
-                          for fi in faces]
-            try:
-                verts = cmds.polyListComponentConversion(
-                    face_items, fromFace=True, toVertex=True) or []
-                verts = cmds.ls(verts, fl=True) or []
-            except Exception:
-                verts = []
-            idxs = []
-            for v in verts:
+        def _faces_to_vert_map(faces_per_shape):
+            out = {}
+            for shape, faces in faces_per_shape.items():
+                if not faces:
+                    continue
+                face_items = [u"{0}.f[{1}]".format(shape, fi)
+                              for fi in faces]
                 try:
-                    idxs.append(int(v.split(u"[")[-1].rstrip(u"]")))
+                    verts = cmds.polyListComponentConversion(
+                        face_items, fromFace=True, toVertex=True) or []
+                    verts = cmds.ls(verts, fl=True) or []
                 except Exception:
-                    pass
-            if idxs:
-                vert_map[shape] = list(set(idxs))
-        return vert_map
+                    verts = []
+                idxs = []
+                for v in verts:
+                    try:
+                        idxs.append(int(v.split(u"[")[-1].rstrip(u"]")))
+                    except Exception:
+                        pass
+                if idxs:
+                    out[shape] = list(set(idxs))
+            return out
+
+        def _faces_to_items(faces_per_shape):
+            out = {}
+            for shape, faces in faces_per_shape.items():
+                out[shape] = [u"{0}.f[{1}]".format(shape, fi)
+                              for fi in sorted(faces)]
+            return out
+
+        enclosed_map = _faces_to_vert_map(enclosed_faces_per_shape)
+        adjacent_map = _faces_to_vert_map(adjacent_faces_per_shape)
+        face_items_map = _faces_to_items(adjacent_faces_per_shape)
+        return enclosed_map, adjacent_map, face_items_map
 
     def _on_preview(self):
         if not MAYA_AVAILABLE:
@@ -5221,10 +5247,40 @@ class MeshLandingDialog(QtWidgets.QDialog):
 
         vert_map = None
         if is_component:
-            vert_map = self._gather_components()
-            if not vert_map:
-                # No fully-enclosed face found. Tell the user instead of
-                # silently falling back to object mode.
+            enclosed_map, adjacent_map, face_items_map = \
+                self._gather_components()
+            if enclosed_map:
+                # Selection fully encloses at least one face → use as-is.
+                vert_map = enclosed_map
+            elif adjacent_map:
+                # Nothing enclosed, but the selection touches some faces.
+                # Ask the user whether to proceed with the expanded set.
+                total_faces = sum(len(v) for v in face_items_map.values())
+                total_verts = sum(len(v) for v in adjacent_map.values())
+                msg_body = tr("ml_confirm_expand_body",
+                              n_faces=total_faces, n_verts=total_verts)
+                reply = QtWidgets.QMessageBox.question(
+                    self,
+                    tr("ml_confirm_expand_title"),
+                    msg_body,
+                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                    QtWidgets.QMessageBox.No)
+                if reply != QtWidgets.QMessageBox.Yes:
+                    self.status_msg.emit(tr("ml_status_cancelled"))
+                    return
+                # Switch Maya's selection to the expanded face set so the
+                # user can visually confirm what moved after the preview.
+                expanded_items = []
+                for shape, items in face_items_map.items():
+                    expanded_items.extend(items)
+                if expanded_items:
+                    try:
+                        cmds.select(expanded_items, r=True)
+                    except Exception:
+                        pass
+                vert_map = adjacent_map
+            else:
+                # Nothing usable at all.
                 self.status_msg.emit(tr("ml_status_no_enclosed"))
                 self._set_preview_label(tr("ml_status_no_enclosed"),
                                         warn=True)
