@@ -315,6 +315,49 @@ def _ml_mesh_to_triangles(mesh_shape):
         return []
 
 
+def _ml_mesh_to_triangles_with_ids(mesh_shape):
+    """Same as _ml_mesh_to_triangles but also returns per-triangle vert IDs.
+
+    Returns (triangles, vert_ids) where
+        triangles[i] = ((x,y,z), (x,y,z), (x,y,z))
+        vert_ids[i]  = (v0, v1, v2)  -- indices into the mesh's vertex list
+    """
+    try:
+        sel = om.MSelectionList()
+        sel.add(mesh_shape)
+        dag = om.MDagPath()
+        sel.getDagPath(0, dag)
+        try:
+            dag.extendToShape()
+        except Exception:
+            pass
+        fn = om.MFnMesh(dag)
+        pts = om.MPointArray()
+        fn.getPoints(pts, om.MSpace.kWorld)
+        tri_counts = om.MIntArray()
+        tri_verts = om.MIntArray()
+        fn.getTriangles(tri_counts, tri_verts)
+        triangles = []
+        vert_ids = []
+        idx = 0
+        for pi in range(fn.numPolygons()):
+            n_tris = tri_counts[pi]
+            for _ in range(n_tris):
+                i0 = tri_verts[idx]; idx += 1
+                i1 = tri_verts[idx]; idx += 1
+                i2 = tri_verts[idx]; idx += 1
+                p0 = pts[i0]; p1 = pts[i1]; p2 = pts[i2]
+                triangles.append((
+                    (p0.x, p0.y, p0.z),
+                    (p1.x, p1.y, p1.z),
+                    (p2.x, p2.y, p2.z),
+                ))
+                vert_ids.append((i0, i1, i2))
+        return triangles, vert_ids
+    except Exception:
+        return [], []
+
+
 def _ml_translate_triangles(triangles, delta):
     dx, dy, dz = delta
     out = []
@@ -508,31 +551,93 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
         if ray_min_dist is None or ray_min_dist <= 0.0:
             return None, 0
 
-    src_tris_static = []
+    # ----- Build per-triangle data with "which vertices move" info -----
+    # Each entry: (triangle_verts, (v0_moves, v1_moves, v2_moves))
+    src_tri_data = []  # [(tri, (bool, bool, bool)), ...]
+    any_fully_static = False
     for shape in source_shapes:
-        src_tris_static.extend(_ml_mesh_to_triangles(shape))
+        tris, vids = _ml_mesh_to_triangles_with_ids(shape)
+        if vert_indices and shape in vert_indices:
+            moving = set(vert_indices[shape])
+        else:
+            moving = None  # whole-shape mode: every vertex moves
+        for t, vid in zip(tris, vids):
+            if moving is None:
+                src_tri_data.append((t, (True, True, True)))
+            else:
+                flags = (vid[0] in moving,
+                         vid[1] in moving,
+                         vid[2] in moving)
+                if not any(flags):
+                    any_fully_static = True
+                    # Fully static triangles don't participate in the
+                    # collision check because they don't move. Skipping
+                    # them prevents "false collisions" where a vertex of
+                    # Mesh A that the user didn't select happens to sit
+                    # near / touch Mesh B.
+                    continue
+                src_tri_data.append((t, flags))
+
     tgt_tris = []
     for shape in target_shapes:
         tgt_tris.extend(_ml_mesh_to_triangles(shape))
 
-    if not src_tris_static or not tgt_tris:
+    if not src_tri_data or not tgt_tris:
         result = ray_min_dist - offset
         if result < 0.0:
             result = 0.0
         return result, sign
 
-    src_aabb_static = _ml_aabb_merge_tris(src_tris_static)
+    # Compute moving-subset AABB (used for broad-phase)
+    moving_tris_static = [d[0] for d in src_tri_data]
+    src_aabb_static = _ml_aabb_merge_tris(moving_tris_static)
     tgt_aabb = _ml_aabb_merge_tris(tgt_tris)
 
+    def _transform_tri(t, flags, delta):
+        """Add delta only to the vertices that move."""
+        dx, dy, dz = delta
+        def _v(v, moves):
+            if moves:
+                return (v[0] + dx, v[1] + dy, v[2] + dz)
+            return v
+        return (_v(t[0], flags[0]),
+                _v(t[1], flags[1]),
+                _v(t[2], flags[2]))
+
     def _collides_at(dist):
-        delta = [0.0, 0.0, 0.0]
-        delta[axis] = dist * sign
-        moved_aabb = _ml_translate_aabb(src_aabb_static, tuple(delta))
-        if not _ml_aabb_overlap(moved_aabb, tgt_aabb):
+        delta = (0.0, 0.0, 0.0)
+        dlist = [0.0, 0.0, 0.0]
+        dlist[axis] = dist * sign
+        delta = tuple(dlist)
+
+        # Broad-phase: AABB of the set of moving triangles, translated by
+        # the portion that actually moves. Since some vertices may stay
+        # fixed, this is conservative (slightly larger than the true
+        # post-move AABB for partially-selected triangles), which is fine
+        # for broad-phase rejection.
+        moved_aabb = _ml_translate_aabb(src_aabb_static, delta)
+        # Expand to include the static-vertex portions of partial tris.
+        # For partially-selected triangles, the true AABB spans both the
+        # moved and unmoved vertices. The original (pre-move) AABB covers
+        # unmoved vertices; the translated AABB covers moved ones.
+        # Union them:
+        broad_aabb = (
+            min(src_aabb_static[0], moved_aabb[0]),
+            min(src_aabb_static[1], moved_aabb[1]),
+            min(src_aabb_static[2], moved_aabb[2]),
+            max(src_aabb_static[3], moved_aabb[3]),
+            max(src_aabb_static[4], moved_aabb[4]),
+            max(src_aabb_static[5], moved_aabb[5]),
+        )
+        if not _ml_aabb_overlap(broad_aabb, tgt_aabb):
             return False
-        moved_tris = _ml_translate_triangles(src_tris_static, tuple(delta))
+
+        # Narrow-phase: transform each triangle according to per-vertex
+        # move flags and run the precise intersection test.
+        moved_tris = [_transform_tri(t, flags, delta)
+                      for (t, flags) in src_tri_data]
         return _ml_meshes_intersect(moved_tris, tgt_tris,
-                                     moved_aabb, tgt_aabb)
+                                     broad_aabb, tgt_aabb)
 
     initial_d = ray_min_dist - offset
     if initial_d < 0.0:
