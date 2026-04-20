@@ -490,16 +490,21 @@ def _ml_get_selected_vert_positions(mesh_shape, vert_indices):
 _ML_AXIS_NAMES = ["X", "Y", "Z"]
 
 
-def _ml_bbox_gap_estimate(source_shapes, target_shapes, axis, sign):
-    src_pts = []
-    for s in source_shapes:
-        src_pts.extend(_ml_get_world_verts(s))
+def _ml_bbox_gap_estimate(source_pts, target_shapes, axis, sign):
+    """Estimate gap between source points and target BBox along an axis.
+
+    `source_pts` is a pre-collected list of (x,y,z) positions — pass only
+    the selected-vertex positions in component mode so the bbox is
+    tight.
+    """
+    if not source_pts:
+        return None
     tgt_pts = []
     for s in target_shapes:
         tgt_pts.extend(_ml_get_world_verts(s))
-    if not src_pts or not tgt_pts:
+    if not tgt_pts:
         return None
-    src_vals = [p[axis] for p in src_pts]
+    src_vals = [p[axis] for p in source_pts]
     tgt_vals = [p[axis] for p in tgt_pts]
     if sign > 0:
         gap = min(tgt_vals) - max(src_vals)
@@ -546,51 +551,38 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
             if ray_min_dist is None or d < ray_min_dist:
                 ray_min_dist = d
     if ray_min_dist is None:
-        ray_min_dist = _ml_bbox_gap_estimate(source_shapes, target_shapes,
+        ray_min_dist = _ml_bbox_gap_estimate(all_pts, target_shapes,
                                               axis, sign)
         if ray_min_dist is None or ray_min_dist <= 0.0:
             return None, 0
 
-    # ----- Build per-triangle data with "which vertices move" info -----
-    # Component-mode collision strategy:
-    #   - Fully selected (3 of 3 verts moving): triangle translates
-    #     rigidly; participates in collision check.
-    #   - Partially selected (1-2 verts moving): triangle deforms. We
-    #     SKIP these from the collision check because the deformed
-    #     shape often has "static" vertices that are already coincident
-    #     with / inside Mesh B, producing false collisions that block
-    #     any meaningful motion.
-    #   - Fully static (0 verts moving): does not move, obviously
-    #     skipped.
-    # Object mode keeps all triangles (all vertices move).
-    src_tri_data = []   # [(triangle, (bool,bool,bool)), ...]
+    # ----- Build list of triangles that will actually move ---------------
+    # Object mode:     all triangles from every source mesh.
+    # Component mode:  ONLY triangles where all 3 vertices are in the
+    #                  user's selection. Partial / fully static triangles
+    #                  are excluded entirely; the unmoving mesh data is
+    #                  NOT used for collision detection at all.
+    src_moving_tris = []
     for shape in source_shapes:
         tris, vids = _ml_mesh_to_triangles_with_ids(shape)
         if vert_indices and shape in vert_indices:
             moving = set(vert_indices[shape])
+            for t, vid in zip(tris, vids):
+                if (vid[0] in moving and vid[1] in moving
+                        and vid[2] in moving):
+                    src_moving_tris.append(t)
         else:
-            moving = None  # whole-shape mode: every vertex moves
-        for t, vid in zip(tris, vids):
-            if moving is None:
-                # Object mode — whole triangle translates.
-                src_tri_data.append((t, (True, True, True)))
-            else:
-                flags = (vid[0] in moving,
-                         vid[1] in moving,
-                         vid[2] in moving)
-                # Only fully-selected triangles participate.
-                if all(flags):
-                    src_tri_data.append((t, (True, True, True)))
-                # else: skip (partial or fully static)
+            # Whole-shape mode
+            src_moving_tris.extend(tris)
 
     tgt_tris = []
     for shape in target_shapes:
         tgt_tris.extend(_ml_mesh_to_triangles(shape))
 
-    # If there are no fully-selected triangles to check (e.g. user
-    # selected only a handful of disconnected vertices), fall back to
-    # raycast-only — the rays already determined a safe distance.
-    if not src_tri_data or not tgt_tris:
+    # If there are no fully-selected triangles (user picked disconnected
+    # vertices), fall back to raycast-only — rays already gave us a
+    # vertex-level safe distance.
+    if not src_moving_tris or not tgt_tris:
         if offset >= 0:
             result = ray_min_dist - offset
             if result < 0.0:
@@ -600,9 +592,11 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
             result = ray_min_dist + abs(offset)
         return result, sign
 
-    # Precompute AABBs (all triangles are fully rigid translators here).
-    moving_tris_static = [d[0] for d in src_tri_data]
-    src_aabb_static = _ml_aabb_merge_tris(moving_tris_static)
+    # Precompute AABBs from the moving-triangle subset ONLY. This is key:
+    # the AABB must not include geometry that won't translate, otherwise
+    # broad-phase collision rejection (and the narrow-phase intersection
+    # test that follows) is polluted by static geometry.
+    src_aabb_static = _ml_aabb_merge_tris(src_moving_tris)
     tgt_aabb = _ml_aabb_merge_tris(tgt_tris)
 
     def _collides_at(dist):
@@ -612,7 +606,7 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
         moved_aabb = _ml_translate_aabb(src_aabb_static, delta)
         if not _ml_aabb_overlap(moved_aabb, tgt_aabb):
             return False
-        moved_tris = _ml_translate_triangles(moving_tris_static, delta)
+        moved_tris = _ml_translate_triangles(src_moving_tris, delta)
         return _ml_meshes_intersect(moved_tris, tgt_tris,
                                      moved_aabb, tgt_aabb)
 
