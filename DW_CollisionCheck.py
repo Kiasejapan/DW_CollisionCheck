@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.20.1819"
+VERSION = "2026.04.20.1823"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -4454,9 +4454,26 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
                             sample[2] + direction[2] * ray_min_dist)
             print(u"  sample hit predicted at: {0}".format(expected_hit))
     if ray_min_dist is None:
-        ray_min_dist = _ml_bbox_gap_estimate(all_pts, target_shapes,
-                                              axis, sign)
+        # Rays missed every triangle of Mesh B. Fall back to the world
+        # origin plane (Y=0 for Y-axis, etc.). This matches the user's
+        # intuition that "when there's nothing underneath, drop to the
+        # floor" where the floor is the world origin plane.
+        src_vals = [p[axis] for p in all_pts]
+        if sign < 0:
+            # Moving in the negative direction: distance from min src
+            # to the origin plane (0).
+            ray_min_dist = min(src_vals) - 0.0
+        else:
+            # Moving in the positive direction: distance from origin
+            # up to max src.
+            ray_min_dist = 0.0 - max(src_vals)
+        if debug:
+            print(u"  [ray-miss fallback: drop to world origin plane] "
+                  u"ray_min_dist={0}".format(ray_min_dist))
         if ray_min_dist is None or ray_min_dist <= 0.0:
+            # Already past the origin plane → nothing to do.
+            if debug:
+                print(u"  [FAIL] already past origin plane")
             return None, 0
 
     # ----- Build list of triangles that will actually move ---------------
@@ -5081,8 +5098,7 @@ class MeshLandingDialog(QtWidgets.QDialog):
             if is_component:
                 result = ml_compute_landing(
                     self._mesh_a_shapes, self._mesh_b_shapes,
-                    axis, sign, offset, vert_indices=vert_map,
-                    debug=True)
+                    axis, sign, offset, vert_indices=vert_map)
                 if result is None or result[0] is None or result[0] < 1.0e-8:
                     self.status_msg.emit(tr("ml_status_no_hit"))
                     self._set_preview_label(tr("ml_status_no_hit"),
@@ -5100,7 +5116,7 @@ class MeshLandingDialog(QtWidgets.QDialog):
             else:
                 result = ml_compute_landing(
                     self._mesh_a_shapes, self._mesh_b_shapes,
-                    axis, sign, offset, debug=True)
+                    axis, sign, offset)
                 if result is None or result[0] is None or result[0] < 1.0e-8:
                     self.status_msg.emit(tr("ml_status_no_hit"))
                     self._set_preview_label(tr("ml_status_no_hit"),
