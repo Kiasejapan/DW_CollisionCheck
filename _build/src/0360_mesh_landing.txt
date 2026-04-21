@@ -808,7 +808,9 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
 # ---------------------------------------------------------------------------
 
 def _build_mesh_landing_group(tool_window, parent_layout):
-    """Compact launcher in the Other tab. Actual settings live in a dialog."""
+    """Compact launcher. Matches the header+desc+launch layout of the
+    Vertex Snap and Edge Width Alignment groups so all three buttons
+    sit at the same horizontal position."""
     grp = QtWidgets.QGroupBox()
     grp.setStyleSheet(
         "QGroupBox{border:1px solid #4CAF50;border-radius:6px;"
@@ -816,30 +818,29 @@ def _build_mesh_landing_group(tool_window, parent_layout):
         "QGroupBox::title{subcontrol-origin:margin;left:10px;"
         "color:#EEE;font-size:11px;font-weight:bold}")
     glo = QtWidgets.QVBoxLayout(grp)
-    glo.setContentsMargins(8, 12, 8, 8)
-    glo.setSpacing(6)
+    glo.setContentsMargins(6, 10, 6, 6)
+    glo.setSpacing(4)
 
+    # Header row: title + launch button (launch aligned to right,
+    # matching the Vertex Snap and Edge Width Alignment groups).
+    hdr = QtWidgets.QHBoxLayout()
     tool_window._ml_grp_lbl = QtWidgets.QLabel(u"\u25A0 " + tr("ml_grp_title"))
     tool_window._ml_grp_lbl.setStyleSheet(
         "color:#4CAF50;font-size:11px;font-weight:bold")
-    glo.addWidget(tool_window._ml_grp_lbl)
+    hdr.addWidget(tool_window._ml_grp_lbl)
+    hdr.addStretch()
+    tool_window._ml_btn_launch = _mkbtn(tr("ml_btn_launch"), 24,
+                                         "#4CAF50", "#388E3C", fs=10)
+    tool_window._ml_btn_launch.clicked.connect(
+        lambda: _ml_launch(tool_window))
+    hdr.addWidget(tool_window._ml_btn_launch)
+    glo.addLayout(hdr)
 
     tool_window._ml_desc_lbl = QtWidgets.QLabel(tr("ml_grp_desc"))
     tool_window._ml_desc_lbl.setStyleSheet(
         "color:#AAA;font-size:10px;padding:2px 4px")
     tool_window._ml_desc_lbl.setWordWrap(True)
     glo.addWidget(tool_window._ml_desc_lbl)
-
-    btn_row = QtWidgets.QHBoxLayout()
-    btn_row.addStretch()
-    tool_window._ml_btn_launch = _mkbtn(tr("ml_btn_launch"), 28,
-                                         "#4CAF50", "#388E3C")
-    tool_window._ml_btn_launch.setFixedWidth(120)
-    tool_window._ml_btn_launch.clicked.connect(
-        lambda: _ml_launch(tool_window))
-    btn_row.addWidget(tool_window._ml_btn_launch)
-    btn_row.addStretch()
-    glo.addLayout(btn_row)
 
     # State — initialised on launch
     tool_window._ml_result_window = None

@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.21.1835"
+VERSION = "2026.04.21.1843"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -4714,7 +4714,9 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
 # ---------------------------------------------------------------------------
 
 def _build_mesh_landing_group(tool_window, parent_layout):
-    """Compact launcher in the Other tab. Actual settings live in a dialog."""
+    """Compact launcher. Matches the header+desc+launch layout of the
+    Vertex Snap and Edge Width Alignment groups so all three buttons
+    sit at the same horizontal position."""
     grp = QtWidgets.QGroupBox()
     grp.setStyleSheet(
         "QGroupBox{border:1px solid #4CAF50;border-radius:6px;"
@@ -4722,30 +4724,29 @@ def _build_mesh_landing_group(tool_window, parent_layout):
         "QGroupBox::title{subcontrol-origin:margin;left:10px;"
         "color:#EEE;font-size:11px;font-weight:bold}")
     glo = QtWidgets.QVBoxLayout(grp)
-    glo.setContentsMargins(8, 12, 8, 8)
-    glo.setSpacing(6)
+    glo.setContentsMargins(6, 10, 6, 6)
+    glo.setSpacing(4)
 
+    # Header row: title + launch button (launch aligned to right,
+    # matching the Vertex Snap and Edge Width Alignment groups).
+    hdr = QtWidgets.QHBoxLayout()
     tool_window._ml_grp_lbl = QtWidgets.QLabel(u"\u25A0 " + tr("ml_grp_title"))
     tool_window._ml_grp_lbl.setStyleSheet(
         "color:#4CAF50;font-size:11px;font-weight:bold")
-    glo.addWidget(tool_window._ml_grp_lbl)
+    hdr.addWidget(tool_window._ml_grp_lbl)
+    hdr.addStretch()
+    tool_window._ml_btn_launch = _mkbtn(tr("ml_btn_launch"), 24,
+                                         "#4CAF50", "#388E3C", fs=10)
+    tool_window._ml_btn_launch.clicked.connect(
+        lambda: _ml_launch(tool_window))
+    hdr.addWidget(tool_window._ml_btn_launch)
+    glo.addLayout(hdr)
 
     tool_window._ml_desc_lbl = QtWidgets.QLabel(tr("ml_grp_desc"))
     tool_window._ml_desc_lbl.setStyleSheet(
         "color:#AAA;font-size:10px;padding:2px 4px")
     tool_window._ml_desc_lbl.setWordWrap(True)
     glo.addWidget(tool_window._ml_desc_lbl)
-
-    btn_row = QtWidgets.QHBoxLayout()
-    btn_row.addStretch()
-    tool_window._ml_btn_launch = _mkbtn(tr("ml_btn_launch"), 28,
-                                         "#4CAF50", "#388E3C")
-    tool_window._ml_btn_launch.setFixedWidth(120)
-    tool_window._ml_btn_launch.clicked.connect(
-        lambda: _ml_launch(tool_window))
-    btn_row.addWidget(tool_window._ml_btn_launch)
-    btn_row.addStretch()
-    glo.addLayout(btn_row)
 
     # State — initialised on launch
     tool_window._ml_result_window = None
@@ -6321,16 +6322,17 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
 class _EdgeModeButton(QtWidgets.QAbstractButton):
     """Small icon toggle button for Ring / Loop expansion mode.
 
-    Draws a mini cylinder-net schematic:
-      * "ring"  — horizontal edges highlighted across a quad-net
-      * "loop"  — vertical edges highlighted across a quad-net
+    Draws a stylised cylinder with one edge direction highlighted:
+      * "ring"  — horizontal belt around the cylinder (orange loop)
+      * "loop"  — vertical line running down the cylinder (orange stripe)
 
-    Checked state is shown with an orange tint and a brighter frame
-    to match the rest of the Edge Width Alignment group (which uses
-    orange as its accent colour).
+    The cylinder silhouette stays visible in both states so the user
+    sees "same object, different edge direction highlighted".
+    Checked state swaps the frame/background to an orange tint to
+    match the Edge Width Alignment group's accent colour.
     """
 
-    _SIZE = 36   # square px
+    _SIZE = 44   # square px — bigger so the cylinder icon reads well
 
     def __init__(self, orientation="ring", tooltip=u"", parent=None):
         super(_EdgeModeButton, self).__init__(parent)
@@ -6350,42 +6352,81 @@ class _EdgeModeButton(QtWidgets.QAbstractButton):
         checked = self.isChecked()
         hover = self.underMouse()
 
-        # Frame / background.
-        bg = QtGui.QColor("#FF9800") if checked else QtGui.QColor("#3C3C3C")
-        if hover and not checked:
-            bg = QtGui.QColor("#4A4A4A")
-        frame = QtGui.QColor("#F57C00") if checked else QtGui.QColor("#555")
+        # Frame / background of the button itself.
+        if checked:
+            bg = QtGui.QColor("#FF9800")
+            frame = QtGui.QColor("#F57C00")
+        else:
+            bg = QtGui.QColor("#4A4A4A") if hover else QtGui.QColor("#3C3C3C")
+            frame = QtGui.QColor("#666")
         p.setPen(QtGui.QPen(frame, 1))
         p.setBrush(bg)
-        p.drawRoundedRect(1, 1, self._SIZE - 2, self._SIZE - 2, 4, 4)
+        p.drawRoundedRect(1, 1, self._SIZE - 2, self._SIZE - 2, 5, 5)
 
-        # Draw a 4-column x 4-row grid of "edges" with the relevant
-        # direction highlighted.
-        margin = 7
-        w = self._SIZE - margin * 2
-        h = self._SIZE - margin * 2
-        cols = 4
-        rows = 4
-        grey = QtGui.QColor("#888") if not checked else QtGui.QColor("#FFE0B2")
-        hi   = QtGui.QColor("#222") if checked else QtGui.QColor("#EEE")
+        # Colours for the cylinder shape.
+        if checked:
+            outline = QtGui.QColor("#5A3A00")
+            body    = QtGui.QColor("#FFF5E0")   # light cream body
+            hi      = QtGui.QColor("#E65100")   # darker orange for highlight
+        else:
+            outline = QtGui.QColor("#AAA")
+            body    = QtGui.QColor("#2B2B2B")
+            hi      = QtGui.QColor("#FF9800")   # orange highlight when inactive
 
-        # Vertical gridlines (columns of the net) — 5 lines for 4 cols.
-        for i in range(cols + 1):
-            x = margin + int(w * i / cols)
-            is_hi = (self._orient == "loop")
-            pen = QtGui.QPen(hi if is_hi else grey,
-                              2 if is_hi else 1)
-            p.setPen(pen)
-            p.drawLine(x, margin, x, margin + h)
+        # Cylinder geometry: centred vertically, taller than wide.
+        cx = self._SIZE / 2.0
+        cyl_w = self._SIZE * 0.40            # body width
+        cyl_h = self._SIZE * 0.70            # total cylinder height
+        ell_h = self._SIZE * 0.16            # ellipse cap height
+        cy_top = (self._SIZE - cyl_h) / 2.0
+        cy_bot = cy_top + cyl_h
+        left = cx - cyl_w / 2.0
+        right = cx + cyl_w / 2.0
 
-        # Horizontal gridlines — 5 for 4 rows.
-        for j in range(rows + 1):
-            y = margin + int(h * j / rows)
-            is_hi = (self._orient == "ring")
-            pen = QtGui.QPen(hi if is_hi else grey,
-                              2 if is_hi else 1)
-            p.setPen(pen)
-            p.drawLine(margin, y, margin + w, y)
+        # Body rect (the side walls area).
+        side_pen = QtGui.QPen(outline, 1)
+        p.setPen(side_pen)
+        p.setBrush(body)
+        # Fill the body as a plain rectangle first, then overlay
+        # the two ellipse caps so the outline reads correctly.
+        p.drawRect(QtCore.QRectF(left, cy_top + ell_h / 2.0,
+                                  cyl_w, cyl_h - ell_h))
+        # Left and right side verticals.
+        p.drawLine(QtCore.QPointF(left,  cy_top + ell_h / 2.0),
+                   QtCore.QPointF(left,  cy_bot - ell_h / 2.0))
+        p.drawLine(QtCore.QPointF(right, cy_top + ell_h / 2.0),
+                   QtCore.QPointF(right, cy_bot - ell_h / 2.0))
+
+        # Bottom cap (full ellipse).
+        p.setBrush(body)
+        p.drawEllipse(QtCore.QRectF(left, cy_bot - ell_h,
+                                     cyl_w, ell_h))
+
+        # Top cap (ellipse).
+        p.drawEllipse(QtCore.QRectF(left, cy_top, cyl_w, ell_h))
+
+        # Highlight stroke on top of everything.
+        hi_pen = QtGui.QPen(hi, 2.2)
+        hi_pen.setCapStyle(QtCore.Qt.RoundCap)
+        p.setPen(hi_pen)
+        p.setBrush(QtCore.Qt.NoBrush)
+
+        if self._orient == "ring":
+            # A horizontal "belt" — a full ellipse around the cylinder
+            # middle. This unambiguously reads as "ring".
+            mid_y = cy_top + cyl_h * 0.55
+            belt_rect = QtCore.QRectF(left, mid_y - ell_h / 2.0,
+                                        cyl_w, ell_h)
+            p.drawEllipse(belt_rect)
+        else:
+            # A vertical stripe — a line running top-to-bottom on the
+            # cylinder's centre. This reads as "loop" (perpendicular
+            # to the ring).
+            stripe_x = cx
+            stripe_top = cy_top + ell_h / 2.0
+            stripe_bot = cy_bot - ell_h / 2.0
+            p.drawLine(QtCore.QPointF(stripe_x, stripe_top),
+                       QtCore.QPointF(stripe_x, stripe_bot))
 
         p.end()
 
