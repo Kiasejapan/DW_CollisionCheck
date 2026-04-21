@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.21.1817"
+VERSION = "2026.04.21.1825"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -426,18 +426,17 @@ _STRINGS = {
                              "jp": u"\u5168\u3066\u306eSnap\u3092\u5143\u306b\u623b\u3057\u307e\u3057\u305f\u3002"},
 
     # ---- Edge Width Alignment (Snap tab) -----------------------------
-    "es_grp_title":         {"en": "Edge Width Alignment",           "jp": u"Edge Width Alignment"},
-    "es_grp_desc":          {"en": "Equalise the widths of a ring-loop of edges. Select edges and launch.",
-                             "jp": u"\u30ea\u30f3\u30b0\u30eb\u30fc\u30d7\u72b6\u306b\u9078\u629e\u3057\u305f\u30a8\u30c3\u30b8\u306e\u5e45\u3092\u63c3\u3048\u307e\u3059\u3002\u30a8\u30c3\u30b8\u3092\u9078\u629e\u3057\u3066\u8d77\u52d5\u3002"},
+    "es_grp_title":         {"en": "Edge Width Alignment",           "jp": u"\u30a8\u30c3\u30b8\u5e45\u306e\u6574\u5217"},
+    "es_grp_desc":          {"en": "Equalise the widths of a ring-loop of edges. Pick one edge (loop auto-expands) or several edges and launch.",
+                             "jp": u"\u30ea\u30f3\u30b0\u30eb\u30fc\u30d7\u72b6\u306e\u30a8\u30c3\u30b8\u5e45\u3092\u63c3\u3048\u307e\u3059\u30021\u672c\u9078\u629e\u3067\u30eb\u30fc\u30d7\u81ea\u52d5\u62e1\u5f35\u3001\u8907\u6570\u9078\u629e\u306b\u3082\u5bfe\u5fdc\u3002"},
     "es_btn_launch":        {"en": u"\u25B6 Launch",                  "jp": u"\u25B6 \u8d77\u52d5"},
-    "es_result_title":      {"en": "Edge Width Alignment",            "jp": u"Edge Width Alignment"},
+    "es_result_title":      {"en": "Edge Width Alignment",            "jp": u"\u30a8\u30c3\u30b8\u5e45\u306e\u6574\u5217"},
     "es_scope":             {"en": "{count} edge(s) selected.",
                              "jp": u"{count} \u672c\u306e\u30a8\u30c3\u30b8\u3092\u9078\u629e\u4e2d\u3002"},
     "es_scope_with_warn":   {"en": "{count} edge(s) selected. {warn} edge(s) could not be A/B-coloured cleanly.",
                              "jp": u"{count} \u672c\u306e\u30a8\u30c3\u30b8\u3092\u9078\u629e\u4e2d\u3002{warn} \u672c\u306f A/B \u5206\u985e\u304c\u4e0d\u78ba\u5b9a\u3067\u3059\u3002"},
     "es_lbl_uniform":       {"en": "Target width:",                   "jp": u"\u76ee\u6a19\u5e45:"},
     "es_lbl_uniform_hint":  {"en": "(used by the buttons below)",     "jp": u"\uff08\u4e0b\u306e\u30dc\u30bf\u30f3\u3067\u4f7f\u7528\uff09"},
-    "es_btn_swap":          {"en": u"\u21C4 Swap A \u2194 B",          "jp": u"\u21C4 A \u2194 B \u5165\u308c\u66ff\u3048"},
     "es_col_edge":          {"en": "Edge",                            "jp": u"\u30a8\u30c3\u30b8"},
     "es_col_length":        {"en": "Length",                          "jp": u"\u9577\u3055"},
     "es_col_status":        {"en": "A/B",                             "jp": u"A/B"},
@@ -455,7 +454,7 @@ _STRINGS = {
     "es_log_uniform_with_anchor": {"en": "{anchor}, len={value}",
                                     "jp": u"{anchor}, \u5e45={value}"},
     "es_status_no_edges":   {"en": "Edge Width Alignment: select at least one edge.",
-                             "jp": u"Edge Width Alignment: \u30a8\u30c3\u30b8\u3092 1 \u672c\u4ee5\u4e0a\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044\u3002"},
+                             "jp": u"\u30a8\u30c3\u30b8\u5e45\u306e\u6574\u5217: \u30a8\u30c3\u30b8\u3092 1 \u672c\u4ee5\u4e0a\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044\u3002"},
     "es_status_no_sel":     {"en": "Select row(s) in the table.",
                              "jp": u"\u30c6\u30fc\u30d6\u30eb\u3067\u884c\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044\u3002"},
     "es_status_snapped":    {"en": "Applied to {count} edge(s). Confirm or Revert.",
@@ -464,8 +463,6 @@ _STRINGS = {
                              "jp": u"\u78ba\u5b9a\u3002{count} \u672c\u306e\u30a8\u30c3\u30b8\u3092\u63c3\u3048\u307e\u3057\u305f\u3002"},
     "es_status_reverted":   {"en": "Reverted all edge alignments.",
                              "jp": u"\u5168\u3066\u306e\u30a8\u30c3\u30b8\u63c3\u3048\u3092\u5143\u306b\u623b\u3057\u307e\u3057\u305f\u3002"},
-    "es_status_swapped":    {"en": "A \u2194 B swapped for all rows.",
-                             "jp": u"\u5168\u884c\u306e A \u2194 B \u3092\u5165\u308c\u66ff\u3048\u307e\u3057\u305f\u3002"},
     "es_status_bad_length": {"en": "Target width must be greater than 0.",
                              "jp": u"\u76ee\u6a19\u5e45\u306f 0 \u3088\u308a\u5927\u304d\u3044\u5fc5\u8981\u304c\u3042\u308a\u307e\u3059\u3002"},
 }
@@ -5670,8 +5667,46 @@ class MeshLandingDialog(QtWidgets.QDialog):
 # Edge Snap: geometry helpers
 # ---------------------------------------------------------------------------
 
+def _es_expand_edge_loop_if_single(sel):
+    """If the selection is exactly one mesh edge, replace `sel` with
+    the full ring/loop that contains that edge. Otherwise return `sel`
+    unchanged.
+
+    Uses Maya's built-in `polySelect -edgeLoop` which walks from each
+    endpoint, continuing through faces along the opposite edge of a
+    quad. For non-quad topology it stops naturally.
+    """
+    # Look through sel to see how many edge items it contains.
+    edge_items = [s for s in sel if u".e[" in s]
+    if len(edge_items) != 1:
+        return sel
+    one = edge_items[0]
+    # Parse shape + edge index.
+    try:
+        shape_part, _, tail = one.partition(u".e[")
+        ei = int(tail.rstrip(u"]"))
+    except Exception:
+        return sel
+    try:
+        # polySelect -edgeLoop expects the mesh transform, not the
+        # .e[idx] path. Send the mesh name + edge index.
+        # It *adds* the loop to the current selection.
+        cmds.select(one, r=True)
+        cmds.polySelect(shape_part, edgeLoop=ei, add=True)
+    except Exception:
+        return sel
+    new_sel = cmds.ls(sl=True, fl=True, long=True) or []
+    if len(new_sel) >= 1:
+        return new_sel
+    return sel
+
+
 def _es_get_selected_edges():
     """Collect selected edges with per-edge metadata.
+
+    If the user selected exactly one edge at launch time, the full
+    edge loop containing that edge is auto-selected (by calling
+    Maya's `polySelect -edgeLoop`) before we gather the data.
 
     Returns list of dicts:
         {
@@ -5688,6 +5723,7 @@ def _es_get_selected_edges():
     if not MAYA_AVAILABLE:
         return []
     sel = cmds.ls(sl=True, fl=True, long=True) or []
+    sel = _es_expand_edge_loop_if_single(sel)
     edges = []
     seen = set()
     for item in sel:
@@ -5973,10 +6009,6 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
             "color:#777;font-size:9px;padding:0 4px")
         uni.addWidget(self._lbl_uniform_hint)
         uni.addStretch()
-        self._btn_swap = _mkbtn(tr("es_btn_swap"), 24,
-                                 "#607D8B", "#455A64", fs=10)
-        self._btn_swap.clicked.connect(self._on_swap_ab)
-        uni.addWidget(self._btn_swap)
         lo.addLayout(uni)
 
         # Pair table.
@@ -6194,16 +6226,6 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         self.status_msg.emit(tr("es_status_snapped",
                                   count=len(self._snap_log)))
 
-    def _on_swap_ab(self):
-        """Flip A/B assignment for every edge. Does not modify any
-        vertex positions, only how they're labelled in the table and
-        which endpoint snap-direction 0/1 affects."""
-        for e in self._edges:
-            e["a_idx"], e["b_idx"] = e["b_idx"], e["a_idx"]
-            e["a_pos"], e["b_pos"] = e["b_pos"], e["a_pos"]
-        self._populate()
-        self.status_msg.emit(tr("es_status_swapped"))
-
     def _refresh_positions(self):
         """Re-read world-space positions after a snap so length column
         reflects the latest state."""
@@ -6260,7 +6282,6 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         self.setWindowTitle(tr("es_result_title"))
         self._lbl_uniform.setText(tr("es_lbl_uniform"))
         self._lbl_uniform_hint.setText(tr("es_lbl_uniform_hint"))
-        self._btn_swap.setText(tr("es_btn_swap"))
         self._btn_to_a.setText(tr("es_btn_align_a"))
         self._btn_to_b.setText(tr("es_btn_align_b"))
         self._btn_mid.setText(tr("es_btn_align_mid"))

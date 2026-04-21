@@ -22,8 +22,46 @@
 # Edge Snap: geometry helpers
 # ---------------------------------------------------------------------------
 
+def _es_expand_edge_loop_if_single(sel):
+    """If the selection is exactly one mesh edge, replace `sel` with
+    the full ring/loop that contains that edge. Otherwise return `sel`
+    unchanged.
+
+    Uses Maya's built-in `polySelect -edgeLoop` which walks from each
+    endpoint, continuing through faces along the opposite edge of a
+    quad. For non-quad topology it stops naturally.
+    """
+    # Look through sel to see how many edge items it contains.
+    edge_items = [s for s in sel if u".e[" in s]
+    if len(edge_items) != 1:
+        return sel
+    one = edge_items[0]
+    # Parse shape + edge index.
+    try:
+        shape_part, _, tail = one.partition(u".e[")
+        ei = int(tail.rstrip(u"]"))
+    except Exception:
+        return sel
+    try:
+        # polySelect -edgeLoop expects the mesh transform, not the
+        # .e[idx] path. Send the mesh name + edge index.
+        # It *adds* the loop to the current selection.
+        cmds.select(one, r=True)
+        cmds.polySelect(shape_part, edgeLoop=ei, add=True)
+    except Exception:
+        return sel
+    new_sel = cmds.ls(sl=True, fl=True, long=True) or []
+    if len(new_sel) >= 1:
+        return new_sel
+    return sel
+
+
 def _es_get_selected_edges():
     """Collect selected edges with per-edge metadata.
+
+    If the user selected exactly one edge at launch time, the full
+    edge loop containing that edge is auto-selected (by calling
+    Maya's `polySelect -edgeLoop`) before we gather the data.
 
     Returns list of dicts:
         {
@@ -40,6 +78,7 @@ def _es_get_selected_edges():
     if not MAYA_AVAILABLE:
         return []
     sel = cmds.ls(sl=True, fl=True, long=True) or []
+    sel = _es_expand_edge_loop_if_single(sel)
     edges = []
     seen = set()
     for item in sel:
@@ -325,10 +364,6 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
             "color:#777;font-size:9px;padding:0 4px")
         uni.addWidget(self._lbl_uniform_hint)
         uni.addStretch()
-        self._btn_swap = _mkbtn(tr("es_btn_swap"), 24,
-                                 "#607D8B", "#455A64", fs=10)
-        self._btn_swap.clicked.connect(self._on_swap_ab)
-        uni.addWidget(self._btn_swap)
         lo.addLayout(uni)
 
         # Pair table.
@@ -546,16 +581,6 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         self.status_msg.emit(tr("es_status_snapped",
                                   count=len(self._snap_log)))
 
-    def _on_swap_ab(self):
-        """Flip A/B assignment for every edge. Does not modify any
-        vertex positions, only how they're labelled in the table and
-        which endpoint snap-direction 0/1 affects."""
-        for e in self._edges:
-            e["a_idx"], e["b_idx"] = e["b_idx"], e["a_idx"]
-            e["a_pos"], e["b_pos"] = e["b_pos"], e["a_pos"]
-        self._populate()
-        self.status_msg.emit(tr("es_status_swapped"))
-
     def _refresh_positions(self):
         """Re-read world-space positions after a snap so length column
         reflects the latest state."""
@@ -612,7 +637,6 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         self.setWindowTitle(tr("es_result_title"))
         self._lbl_uniform.setText(tr("es_lbl_uniform"))
         self._lbl_uniform_hint.setText(tr("es_lbl_uniform_hint"))
-        self._btn_swap.setText(tr("es_btn_swap"))
         self._btn_to_a.setText(tr("es_btn_align_a"))
         self._btn_to_b.setText(tr("es_btn_align_b"))
         self._btn_mid.setText(tr("es_btn_align_mid"))
