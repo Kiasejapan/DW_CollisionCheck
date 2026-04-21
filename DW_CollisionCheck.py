@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.21.1329"
+VERSION = "2026.04.21.1335"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -5325,24 +5325,6 @@ class MeshLandingDialog(QtWidgets.QDialog):
                 2: ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0))}
         u_vec, v_vec = perp.get(axis, ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0)))
 
-        def _tab_tris(p, size):
-            """Horizontal square centred on p, in the plane perpendicular
-            to the movement axis. Returns two triangles."""
-            p_pu_pv = (p[0] + u_vec[0] * size + v_vec[0] * size,
-                       p[1] + u_vec[1] * size + v_vec[1] * size,
-                       p[2] + u_vec[2] * size + v_vec[2] * size)
-            p_pu_nv = (p[0] + u_vec[0] * size - v_vec[0] * size,
-                       p[1] + u_vec[1] * size - v_vec[1] * size,
-                       p[2] + u_vec[2] * size - v_vec[2] * size)
-            p_nu_pv = (p[0] - u_vec[0] * size + v_vec[0] * size,
-                       p[1] - u_vec[1] * size + v_vec[1] * size,
-                       p[2] - u_vec[2] * size + v_vec[2] * size)
-            p_nu_nv = (p[0] - u_vec[0] * size - v_vec[0] * size,
-                       p[1] - u_vec[1] * size - v_vec[1] * size,
-                       p[2] - u_vec[2] * size - v_vec[2] * size)
-            return [(p_pu_pv, p_pu_nv, p_nu_nv),
-                    (p_pu_pv, p_nu_nv, p_nu_pv)]
-
         def _edge_endpoints(shape, ei):
             try:
                 verts = cmds.polyListComponentConversion(
@@ -5371,6 +5353,87 @@ class MeshLandingDialog(QtWidgets.QDialog):
                 pass
             return None
 
+        def _edge_width_offsets(pa, pb, size):
+            """Pick two tiny perpendicular offsets (to both the edge
+            direction and the movement axis) that give a ribbon minimal
+            footprint along the movement axis — so the virtual edge
+            follows the TRUE slope of the mesh edge rather than flooding
+            an axis-perpendicular plane at every sample.
+
+            Returns (off_u, off_v) — each is a 3-tuple offset of length
+            `width`, where:
+              * off_u is perpendicular to both the edge direction and
+                the axis. A ribbon extended along ±off_u has zero extent
+                on the axis AND zero extent along the edge.
+              * off_v is along the axis, scaled MUCH smaller than off_u
+                (just for triangle non-degeneracy). Most of the footprint
+                is on off_u so the ribbon acts like a thin strip hugging
+                the real edge slope.
+            """
+            # Edge direction (normalized)
+            ex = pb[0] - pa[0]
+            ey = pb[1] - pa[1]
+            ez = pb[2] - pa[2]
+            el = (ex * ex + ey * ey + ez * ez) ** 0.5
+            if el < 1.0e-8:
+                return None, None
+            ex /= el; ey /= el; ez /= el
+
+            # Axis direction
+            ax = 1.0 if axis == 0 else 0.0
+            ay = 1.0 if axis == 1 else 0.0
+            az = 1.0 if axis == 2 else 0.0
+
+            # off_u = edge_dir × axis (perpendicular to both)
+            ux = ey * az - ez * ay
+            uy = ez * ax - ex * az
+            uz = ex * ay - ey * ax
+            ul = (ux * ux + uy * uy + uz * uz) ** 0.5
+            if ul < 1.0e-8:
+                # Edge is parallel to movement axis — fall back to an
+                # arbitrary perpendicular direction.
+                if abs(ex) < 0.9:
+                    ux, uy, uz = 1.0, 0.0, 0.0
+                else:
+                    ux, uy, uz = 0.0, 1.0, 0.0
+                # Re-orthogonalize to edge.
+                dot = ex * ux + ey * uy + ez * uz
+                ux -= dot * ex; uy -= dot * ey; uz -= dot * ez
+                ul = (ux * ux + uy * uy + uz * uz) ** 0.5
+                if ul < 1.0e-8:
+                    return None, None
+            ux /= ul; uy /= ul; uz /= ul
+
+            width = size
+            off_u = (ux * width, uy * width, uz * width)
+
+            # A tiny axial nudge for non-degeneracy; keep it far smaller
+            # than the width so axial footprint stays near zero.
+            tiny = width * 0.02
+            off_v = (ax * tiny, ay * tiny, az * tiny)
+            return off_u, off_v
+
+        def _ribbon_segment(p0, p1, off_u, off_v):
+            """Build a thin quad between p0 and p1 along off_u, plus a
+            tiny triangle using off_v for the narrow-phase intersection
+            code to latch onto. Returns a list of triangles."""
+            # Main ribbon face (zero axial extent).
+            a0 = (p0[0] + off_u[0], p0[1] + off_u[1], p0[2] + off_u[2])
+            a1 = (p0[0] - off_u[0], p0[1] - off_u[1], p0[2] - off_u[2])
+            b0 = (p1[0] + off_u[0], p1[1] + off_u[1], p1[2] + off_u[2])
+            b1 = (p1[0] - off_u[0], p1[1] - off_u[1], p1[2] - off_u[2])
+            # Small axial nudges give the quad's triangles non-zero
+            # volume — critical for the axis-overlap broad-phase test
+            # to consider the ribbon "overlapping" with the target AABB.
+            a0v = (a0[0] + off_v[0], a0[1] + off_v[1], a0[2] + off_v[2])
+            b0v = (b0[0] + off_v[0], b0[1] + off_v[1], b0[2] + off_v[2])
+            return [
+                (a0,  b0,  b1),
+                (a0,  b1,  a1),
+                (a0v, b0v, b1),     # slightly offset above-plane copy
+                (a0v, b1,  a1),
+            ]
+
         vert_map = {}
         virtual_tris_map = {}
 
@@ -5378,9 +5441,7 @@ class MeshLandingDialog(QtWidgets.QDialog):
             size = _virtual_size(shape)
             tris = []
 
-            # Step 1: collect the set of "moving" vertex indices — the
-            # verts that will actually be translated by xform after
-            # the preview commits.
+            # Step 1: collect the set of "moving" vertex indices.
             moving_vset = set(buckets["vtx"])
             for ei in buckets["e"]:
                 ep = _edge_endpoints(shape, ei)
@@ -5392,7 +5453,6 @@ class MeshLandingDialog(QtWidgets.QDialog):
                 continue
 
             # Step 2: find every mesh edge incident on a moving vertex.
-            # These are the edges that will deform under the movement.
             moving_vtx_items = [u"{0}.vtx[{1}]".format(shape, vi)
                                 for vi in moving_vset]
             try:
@@ -5402,7 +5462,6 @@ class MeshLandingDialog(QtWidgets.QDialog):
             except Exception:
                 incident_edges = []
 
-            # Collect unique incident edge indices.
             incident_eset = set()
             for e_item in incident_edges:
                 try:
@@ -5411,8 +5470,14 @@ class MeshLandingDialog(QtWidgets.QDialog):
                 except Exception:
                     pass
 
-            # Step 3 & 4: walk each incident edge, sample positions,
-            # and keep only those that are in the moving portion.
+            # Step 3: for each incident edge, build an edge-following
+            # ribbon made of consecutive thin segments. The ribbon's
+            # main face extends perpendicular to BOTH the edge and the
+            # movement axis — so it has NO extent along the movement
+            # axis at any sample point. That's the key: the ribbon
+            # follows the actual slope of the mesh edge rather than
+            # creating horizontal footprints that catch the ground too
+            # early.
             for ei in incident_eset:
                 ep = _edge_endpoints(shape, ei)
                 if ep is None:
@@ -5425,49 +5490,43 @@ class MeshLandingDialog(QtWidgets.QDialog):
                 a_moves = ep[0] in moving_vset
                 b_moves = ep[1] in moving_vset
 
-                # Edge length → decide sample count. We want samples
-                # every ~`size` world units so the tabs overlap slightly.
+                # Determine the portion of the edge to cover.
+                if a_moves and b_moves:
+                    t_start, t_end = 0.0, 1.0
+                elif a_moves:
+                    t_start, t_end = 0.0, 0.5
+                elif b_moves:
+                    t_start, t_end = 0.5, 1.0
+                else:
+                    continue
+
+                off_u, off_v = _edge_width_offsets(pa, pb, size)
+                if off_u is None:
+                    continue
+
                 dx = pb[0] - pa[0]
                 dy = pb[1] - pa[1]
                 dz = pb[2] - pa[2]
-                elen = (dx * dx + dy * dy + dz * dz) ** 0.5
-                if elen < 1.0e-8:
-                    n_samples = 1
-                else:
-                    n_samples = max(2, int(elen / size) + 1)
-                    # Cap to avoid explosive tri counts on huge meshes.
-                    if n_samples > 32:
-                        n_samples = 32
+                elen_full = (dx * dx + dy * dy + dz * dz) ** 0.5
+                covered_len = elen_full * (t_end - t_start)
+                if covered_len < 1.0e-8:
+                    continue
 
-                # Both endpoints move → every sample moves; tabs
-                # along the whole edge.
-                # Only one endpoint moves → only the half near the
-                # moving endpoint physically translates with the
-                # selection. Skip samples on the static half so the
-                # virtual collider doesn't jitter at the unmoving end.
-                for i in range(n_samples):
-                    if n_samples == 1:
-                        t = 0.5
-                    else:
-                        t = float(i) / float(n_samples - 1)
+                n_seg = max(1, int(covered_len / size) + 1)
+                if n_seg > 32:
+                    n_seg = 32
 
-                    # Determine whether this sample is in the moving
-                    # portion of the edge.
-                    if a_moves and b_moves:
-                        is_moving = True
-                    elif a_moves:     # only endpoint A moves
-                        is_moving = (t <= 0.5)
-                    elif b_moves:     # only endpoint B moves
-                        is_moving = (t >= 0.5)
-                    else:
-                        is_moving = False
-                    if not is_moving:
-                        continue
+                def _pt(tt):
+                    return (pa[0] + dx * tt,
+                            pa[1] + dy * tt,
+                            pa[2] + dz * tt)
 
-                    sx = pa[0] + dx * t
-                    sy = pa[1] + dy * t
-                    sz = pa[2] + dz * t
-                    tris.extend(_tab_tris((sx, sy, sz), size))
+                for i in range(n_seg):
+                    t0 = t_start + (t_end - t_start) * float(i) / n_seg
+                    t1 = t_start + (t_end - t_start) * float(i + 1) / n_seg
+                    p0 = _pt(t0)
+                    p1 = _pt(t1)
+                    tris.extend(_ribbon_segment(p0, p1, off_u, off_v))
 
             if tris:
                 virtual_tris_map[shape] = tris
