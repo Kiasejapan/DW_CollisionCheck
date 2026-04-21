@@ -546,24 +546,13 @@ def _ml_bbox_gap_estimate(source_pts, target_shapes, axis, sign):
 
 
 def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
-                       vert_indices=None, virtual_triangles=None,
-                       deformable_triangles=None, debug=False):
+                       vert_indices=None, debug=False):
     """Compute landing delta. Returns (distance, sign) or (None, 0).
 
     If `vert_indices` is given (component mode), ONLY the selected
     vertices participate. Source shapes that have no entry in
     `vert_indices` are ignored completely — they won't be moved and
     won't contribute to raycast, bounding-box, or triangle data.
-
-    `virtual_triangles` is a list of rigid (p0,p1,p2) triangles that
-    translate fully with the selection (legacy, kept for future use).
-
-    `deformable_triangles` is a list of ((p0,p1,p2), (m0,m1,m2))
-    entries where m_i is a boolean — True means that vertex moves with
-    the selection, False means it stays put. Triangles that deform
-    (partial selection) are modelled correctly instead of being
-    treated as fully rigid. Extra raycast origins are taken only from
-    the MOVING vertices of these triangles.
     """
     is_component_mode = vert_indices is not None
 
@@ -593,26 +582,6 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
         else:
             pts = _ml_get_world_verts(shape)
         all_pts.extend(pts)
-
-    # Include virtual triangle vertices as raycast origins too.
-    if virtual_triangles:
-        for tri in virtual_triangles:
-            all_pts.extend(tri)
-
-    # For deformable triangles, only the MOVING vertices become raycast
-    # origins (the static vertices won't travel, so they can't lead
-    # the landing).
-    if deformable_triangles:
-        seen_pts = set()
-        for tri, flags in deformable_triangles:
-            for p, moves in zip(tri, flags):
-                if not moves:
-                    continue
-                key = (round(p[0], 6), round(p[1], 6), round(p[2], 6))
-                if key in seen_pts:
-                    continue
-                seen_pts.add(key)
-                all_pts.append(p)
 
     if not all_pts:
         if debug:
@@ -697,11 +666,10 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
     #                  user's selection. Shapes with no entries in
     #                  vert_indices are entirely excluded (they won't
     #                  move, so they must not constrain the motion).
-    # Additionally, any caller-provided virtual triangles translate
-    # rigidly with the selection, and deformable_triangles translate
-    # only their moving vertices.
-    src_moving_tris = []       # rigid tris (all 3 verts move)
-    src_deformable = []        # (tri, flags) tris (partial move)
+    # Additionally, any caller-provided virtual triangles (built from
+    # sparse vertex / edge selections) participate in the collision
+    # check as if they were real geometry.
+    src_moving_tris = []
     for shape in source_shapes:
         if is_component_mode:
             if shape not in vert_indices:
@@ -716,92 +684,38 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
             tris = _ml_mesh_to_triangles(shape)
             src_moving_tris.extend(tris)
 
-    if virtual_triangles:
-        src_moving_tris.extend(virtual_triangles)
-
-    if deformable_triangles:
-        for tri, flags in deformable_triangles:
-            n_move = sum(1 for m in flags if m)
-            if n_move == 0:
-                continue   # fully static — skip
-            if n_move == 3:
-                src_moving_tris.append(tri)
-            else:
-                src_deformable.append((tri, flags))
-
     tgt_tris = []
     for shape in target_shapes:
         tgt_tris.extend(_ml_mesh_to_triangles(shape))
 
     if debug:
-        n_virtual = len(virtual_triangles) if virtual_triangles else 0
-        n_def = len(src_deformable)
-        print(u"  moving_tris={0} (incl. {1} virtual)  "
-              u"deformable={2}  tgt_tris={3}"
-              .format(len(src_moving_tris), n_virtual, n_def,
-                      len(tgt_tris)))
+        print(u"  moving_tris={0}  tgt_tris={1}"
+              .format(len(src_moving_tris), len(tgt_tris)))
 
-    # If nothing at all to test against, fall back to raycast-only.
-    if (not src_moving_tris and not src_deformable) or not tgt_tris:
+    # If there are no fully-selected triangles (user picked disconnected
+    # vertices), fall back to raycast-only — rays already gave us a
+    # vertex-level safe distance.
+    if not src_moving_tris or not tgt_tris:
         if offset >= 0:
             result = ray_min_dist - offset
             if result < 0.0:
                 result = 0.0
         else:
+            # Negative offset: embed by |offset| past the raycast hit.
             result = ray_min_dist + abs(offset)
         if debug:
             print(u"  [raycast-only] result={0}".format(result))
         return result, sign
 
-    # Precompute AABBs. For deformable triangles we can only bound the
-    # MOVING vertices statically — the moved-bound is updated each step
-    # inside _collides_at.
-    def _aabb_union(a, b):
-        if a is None:
-            return b
-        if b is None:
-            return a
-        return (min(a[0], b[0]), min(a[1], b[1]), min(a[2], b[2]),
-                max(a[3], b[3]), max(a[4], b[4]), max(a[5], b[5]))
-
-    rigid_aabb = _ml_aabb_merge_tris(src_moving_tris) \
-        if src_moving_tris else None
-
-    # For deformable triangles, collect the moving-vertex AABB AND the
-    # static-vertex AABB separately so we can translate just the moving
-    # side at query time.
-    def _split_def_aabbs(def_list):
-        mov_min = [1e18, 1e18, 1e18]
-        mov_max = [-1e18, -1e18, -1e18]
-        sta_min = [1e18, 1e18, 1e18]
-        sta_max = [-1e18, -1e18, -1e18]
-        has_mov = False
-        has_sta = False
-        for tri, flags in def_list:
-            for v, m in zip(tri, flags):
-                if m:
-                    has_mov = True
-                    for i in range(3):
-                        if v[i] < mov_min[i]:
-                            mov_min[i] = v[i]
-                        if v[i] > mov_max[i]:
-                            mov_max[i] = v[i]
-                else:
-                    has_sta = True
-                    for i in range(3):
-                        if v[i] < sta_min[i]:
-                            sta_min[i] = v[i]
-                        if v[i] > sta_max[i]:
-                            sta_max[i] = v[i]
-        mov_aabb = (tuple(mov_min) + tuple(mov_max)) if has_mov else None
-        sta_aabb = (tuple(sta_min) + tuple(sta_max)) if has_sta else None
-        return mov_aabb, sta_aabb
-
-    def_mov_aabb, def_sta_aabb = _split_def_aabbs(src_deformable)
+    # Precompute AABBs from the moving-triangle subset ONLY. This is key:
+    # the AABB must not include geometry that won't translate, otherwise
+    # broad-phase collision rejection (and the narrow-phase intersection
+    # test that follows) is polluted by static geometry.
+    src_aabb_static = _ml_aabb_merge_tris(src_moving_tris)
     tgt_aabb = _ml_aabb_merge_tris(tgt_tris)
     if debug:
-        print(u"  rigid_aabb={0} def_mov_aabb={1} def_sta_aabb={2}"
-              .format(rigid_aabb, def_mov_aabb, def_sta_aabb))
+        print(u"  src_aabb: ({0:.3f},{1:.3f},{2:.3f})-({3:.3f},{4:.3f},{5:.3f})"
+              .format(*src_aabb_static))
         print(u"  tgt_aabb: ({0:.3f},{1:.3f},{2:.3f})-({3:.3f},{4:.3f},{5:.3f})"
               .format(*tgt_aabb))
 
@@ -809,45 +723,12 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
         dlist = [0.0, 0.0, 0.0]
         dlist[axis] = dist * sign
         delta = tuple(dlist)
-
-        # 1) Broad-phase: translated AABB of every moving component.
-        moved_rigid_aabb = (_ml_translate_aabb(rigid_aabb, delta)
-                             if rigid_aabb else None)
-        moved_def_mov_aabb = (_ml_translate_aabb(def_mov_aabb, delta)
-                               if def_mov_aabb else None)
-        # Combined moved AABB includes the deformable static portion
-        # untranslated (it stays where it is) because a deformed
-        # triangle spans moving + static vertices.
-        combined_aabb = None
-        combined_aabb = _aabb_union(combined_aabb, moved_rigid_aabb)
-        combined_aabb = _aabb_union(combined_aabb, moved_def_mov_aabb)
-        combined_aabb = _aabb_union(combined_aabb, def_sta_aabb)
-        if combined_aabb is None:
+        moved_aabb = _ml_translate_aabb(src_aabb_static, delta)
+        if not _ml_aabb_overlap(moved_aabb, tgt_aabb):
             return False
-        if not _ml_aabb_overlap(combined_aabb, tgt_aabb):
-            return False
-
-        # 2) Narrow-phase: build actual moved triangles.
-        moved_tris = []
-        if src_moving_tris:
-            moved_tris.extend(_ml_translate_triangles(
-                src_moving_tris, delta))
-        if src_deformable:
-            for tri, flags in src_deformable:
-                new_tri = []
-                for v, m in zip(tri, flags):
-                    if m:
-                        new_tri.append((v[0] + delta[0],
-                                        v[1] + delta[1],
-                                        v[2] + delta[2]))
-                    else:
-                        new_tri.append(v)
-                moved_tris.append(tuple(new_tri))
-
-        # Use the combined AABB for the narrow-phase call (it already
-        # has the full bound including deformed portions).
+        moved_tris = _ml_translate_triangles(src_moving_tris, delta)
         return _ml_meshes_intersect(moved_tris, tgt_tris,
-                                     combined_aabb, tgt_aabb)
+                                     moved_aabb, tgt_aabb)
 
     # ----- Resolve final distance -----
     if offset < 0:
@@ -866,17 +747,9 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
     def _axes_transverse_overlap():
         """Return True if src and tgt AABBs overlap on the two axes
         perpendicular to the move axis."""
-        # Use whichever source AABBs we have (rigid moving, def moving, def static).
-        src_aabb_transverse = None
-        src_aabb_transverse = _aabb_union(src_aabb_transverse, rigid_aabb)
-        src_aabb_transverse = _aabb_union(src_aabb_transverse, def_mov_aabb)
-        src_aabb_transverse = _aabb_union(src_aabb_transverse, def_sta_aabb)
-        if src_aabb_transverse is None:
-            return True  # Nothing to test — don't short-circuit here.
         other = [i for i in (0, 1, 2) if i != axis]
         for i in other:
-            a_min = src_aabb_transverse[i]
-            a_max = src_aabb_transverse[i + 3]
+            a_min, a_max = src_aabb_static[i], src_aabb_static[i + 3]
             b_min, b_max = tgt_aabb[i], tgt_aabb[i + 3]
             if a_max < b_min or b_max < a_min:
                 return False
@@ -1498,119 +1371,6 @@ class MeshLandingDialog(QtWidgets.QDialog):
         face_items_map = _faces_to_items(adjacent_faces_per_shape)
         return enclosed_map, adjacent_map, face_items_map
 
-    def _build_deformable_tris_from_selection(self):
-        """Gather mesh triangles around the selection with per-vertex move flags.
-
-        For every triangle in Mesh A that has at least one vertex in the
-        user's selection, record the triangle along with a (m0,m1,m2)
-        tuple describing which of its vertices will move when the
-        preview applies the translation.
-
-        The moving set is: every selected vertex + both endpoints of
-        every selected edge + every vertex of every selected face.
-
-        Returns (vert_map, deformable_tris_map) where
-          vert_map             = {shape: [vert_index, ...]} — verts
-                                 Maya should physically translate.
-          deformable_tris_map  = {shape: [(tri, flags), ...]} —
-                                 mesh triangles (world-space points)
-                                 with per-vertex move flags. These are
-                                 forwarded to ml_compute_landing so the
-                                 collision test deforms them correctly.
-        """
-        sel = cmds.ls(sl=True, fl=True, long=True) or []
-        a_set = set(self._mesh_a_shapes)
-
-        # Bucket selection by shape.
-        per_shape = {}   # shape -> {"vtx": set, "e": set, "f": set}
-        for item in sel:
-            if u".vtx[" in item:
-                sep, kind = u".vtx[", "vtx"
-            elif u".e[" in item:
-                sep, kind = u".e[", "e"
-            elif u".f[" in item:
-                sep, kind = u".f[", "f"
-            else:
-                continue
-            shape_part = item.split(sep)[0]
-            shapes = _ml_get_mesh_shapes([shape_part])
-            if not shapes:
-                continue
-            shape = shapes[0]
-            if shape not in a_set:
-                continue
-            try:
-                idx = int(item.split(u"[")[-1].rstrip(u"]"))
-            except Exception:
-                continue
-            bucket = per_shape.setdefault(
-                shape, {"vtx": set(), "e": set(), "f": set()})
-            bucket[kind].add(idx)
-
-        vert_map = {}
-        deformable_tris_map = {}
-
-        for shape, buckets in per_shape.items():
-            # Step 1: expand selection to the set of moving vert indices.
-            moving_vset = set(buckets["vtx"])
-
-            # Edge endpoints.
-            if buckets["e"]:
-                e_items = [u"{0}.e[{1}]".format(shape, ei)
-                           for ei in buckets["e"]]
-                try:
-                    verts = cmds.polyListComponentConversion(
-                        e_items, fromEdge=True, toVertex=True) or []
-                    verts = cmds.ls(verts, fl=True) or []
-                except Exception:
-                    verts = []
-                for v in verts:
-                    try:
-                        moving_vset.add(int(v.split(u"[")[-1].rstrip(u"]")))
-                    except Exception:
-                        pass
-
-            # Face vertices.
-            if buckets["f"]:
-                f_items = [u"{0}.f[{1}]".format(shape, fi)
-                           for fi in buckets["f"]]
-                try:
-                    verts = cmds.polyListComponentConversion(
-                        f_items, fromFace=True, toVertex=True) or []
-                    verts = cmds.ls(verts, fl=True) or []
-                except Exception:
-                    verts = []
-                for v in verts:
-                    try:
-                        moving_vset.add(int(v.split(u"[")[-1].rstrip(u"]")))
-                    except Exception:
-                        pass
-
-            if not moving_vset:
-                continue
-
-            # Step 2: pull every mesh triangle that has at least one
-            # moving vertex. Build (tri_points, flags) tuples.
-            try:
-                tris, vids = _ml_mesh_to_triangles_with_ids(shape)
-            except Exception:
-                continue
-
-            def_list = []
-            for t, vid in zip(tris, vids):
-                flags = (vid[0] in moving_vset,
-                         vid[1] in moving_vset,
-                         vid[2] in moving_vset)
-                if not any(flags):
-                    continue   # triangle untouched — skip
-                def_list.append((t, flags))
-
-            if def_list:
-                deformable_tris_map[shape] = def_list
-            vert_map[shape] = sorted(moving_vset)
-
-        return vert_map, deformable_tris_map
-
     @staticmethod
     def _split_into_islands(vert_map):
         """Split a {shape: [vert_idx,...]} map into disconnected islands.
@@ -1703,24 +1463,46 @@ class MeshLandingDialog(QtWidgets.QDialog):
         is_component = self._rb_comp.isChecked()
 
         vert_map = None
-        deformable_tris_map = None   # {shape: [(tri, flags), ...]}
         if is_component:
             enclosed_map, adjacent_map, face_items_map = \
                 self._gather_components()
             if enclosed_map:
                 # Selection fully encloses at least one face → use as-is.
                 vert_map = enclosed_map
-            else:
-                # No enclosed face. Pull every mesh triangle adjacent
-                # to the selection with per-vertex move flags so the
-                # collision check deforms them correctly.
-                vert_map, deformable_tris_map = \
-                    self._build_deformable_tris_from_selection()
-                if not vert_map:
-                    self.status_msg.emit(tr("ml_status_no_enclosed"))
-                    self._set_preview_label(tr("ml_status_no_enclosed"),
-                                            warn=True)
+            elif adjacent_map:
+                # Nothing enclosed, but the selection touches some faces.
+                # Ask the user whether to proceed with the expanded set.
+                total_faces = sum(len(v) for v in face_items_map.values())
+                total_verts = sum(len(v) for v in adjacent_map.values())
+                msg_body = tr("ml_confirm_expand_body",
+                              n_faces=total_faces, n_verts=total_verts)
+                reply = QtWidgets.QMessageBox.question(
+                    self,
+                    tr("ml_confirm_expand_title"),
+                    msg_body,
+                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                    QtWidgets.QMessageBox.No)
+                if reply != QtWidgets.QMessageBox.Yes:
+                    self.status_msg.emit(tr("ml_status_cancelled"))
                     return
+                # Switch Maya's selection to the expanded face set so
+                # the user can visually confirm what moved after the
+                # preview.
+                expanded_items = []
+                for shape, items in face_items_map.items():
+                    expanded_items.extend(items)
+                if expanded_items:
+                    try:
+                        cmds.select(expanded_items, r=True)
+                    except Exception:
+                        pass
+                vert_map = adjacent_map
+            else:
+                # Nothing usable at all.
+                self.status_msg.emit(tr("ml_status_no_enclosed"))
+                self._set_preview_label(tr("ml_status_no_enclosed"),
+                                        warn=True)
+                return
 
         # Wrap the preview in a single undo chunk so Ctrl+Z collapses it.
         cmds.undoInfo(openChunk=True, chunkName="DW_MeshLanding_Preview")
@@ -1737,53 +1519,10 @@ class MeshLandingDialog(QtWidgets.QDialog):
                 actual_sign_report = 0
                 fail_count = 0
                 for island_vert_map in islands:
-                    # Gather deformable triangles for this island. A
-                    # deformable triangle is assigned to an island if at
-                    # least one of its MOVING vertices belongs to that
-                    # island's vert set.
-                    island_def_tris = []
-                    if deformable_tris_map:
-                        for shape, island_vidxs in island_vert_map.items():
-                            shape_def = deformable_tris_map.get(shape, [])
-                            if not shape_def:
-                                continue
-                            island_vset = set(island_vidxs)
-                            # We need to know vert IDs per triangle for
-                            # this filtering step, so use the stored
-                            # shape triangles+ids directly.
-                            try:
-                                _, vids_all = \
-                                    _ml_mesh_to_triangles_with_ids(shape)
-                            except Exception:
-                                vids_all = []
-                            for (tri, flags), vid in zip(shape_def,
-                                                          vids_all):
-                                # Keep only triangles whose moving
-                                # vertex set intersects this island.
-                                moving_in_island = False
-                                for i in range(3):
-                                    if flags[i] and vid[i] in island_vset:
-                                        moving_in_island = True
-                                        break
-                                if not moving_in_island:
-                                    continue
-                                # Re-derive flags against THIS island
-                                # only (so verts that move in other
-                                # islands count as static here).
-                                new_flags = (
-                                    flags[0] and vid[0] in island_vset,
-                                    flags[1] and vid[1] in island_vset,
-                                    flags[2] and vid[2] in island_vset,
-                                )
-                                if any(new_flags):
-                                    island_def_tris.append(
-                                        (tri, new_flags))
                     result = ml_compute_landing(
                         self._mesh_a_shapes, self._mesh_b_shapes,
                         axis, sign, offset,
-                        vert_indices=island_vert_map,
-                        deformable_triangles=(
-                            island_def_tris or None))
+                        vert_indices=island_vert_map)
                     if result is None or result[0] is None \
                             or result[0] < 1.0e-8:
                         fail_count += 1
