@@ -1389,29 +1389,28 @@ class MeshLandingDialog(QtWidgets.QDialog):
         return enclosed_map, adjacent_map, face_items_map
 
     def _build_virtual_tris_from_selection(self, axis):
-        """Build tiny synthetic triangles at selected vertices / edges.
+        """Build tiny synthetic polygons at selected vertices / edges.
 
         Used when the user's selection doesn't fully enclose any face
         but we still want the landing algorithm to treat the selected
         components as collidable geometry.
 
-        Strategy (edge-first):
-          1. Start from user-selected edges.
-          2. For user-selected vertices, find every mesh edge whose
-             BOTH endpoints are in the selection — those implicit
-             edges get a virtual strip too. This keeps the "virtual
-             surface" continuous along selected chains (preventing
-             the ground from poking between two neighbouring selected
-             verts, which caused the embedding seen in user reports).
-          3. Any selected vertex with NO selected neighbour gets a
-             small fallback triangle centred on itself (so lone picks
-             still collide).
+        Strategy: produce one small "tab" polygon per selected vertex
+        (and per endpoint of each selected edge). The tab lies in the
+        plane perpendicular to the movement axis and is centred on the
+        vertex's world position. This guarantees the tab has zero extent
+        along the movement axis, so it acts as a ground-plane probe at
+        exactly that vertex's height.
+
+        Each selected vertex therefore collides independently at its
+        own height. Combined with island grouping (which keeps
+        connected selections moving as one unit), the LOWEST tab on a
+        chain hits the target first and stops the whole chain — no
+        lower vertices get to embed past the target surface.
 
         Returns (vert_map, virtual_tris_map) where
-          vert_map         = {shape: [vert_index, ...]} — the verts
-                             Maya should actually move.
-          virtual_tris_map = {shape: [(p0,p1,p2), ...]} — synthetic
-                             triangles passed to ml_compute_landing.
+          vert_map         = {shape: [vert_index, ...]} — verts to move.
+          virtual_tris_map = {shape: [(p0,p1,p2), ...]} — synthetic tris.
         """
         sel = cmds.ls(sl=True, fl=True, long=True) or []
         a_set = set(self._mesh_a_shapes)
@@ -1439,30 +1438,50 @@ class MeshLandingDialog(QtWidgets.QDialog):
             bucket = per_shape.setdefault(shape, {"vtx": set(), "e": set()})
             bucket[kind].add(idx)
 
-        # Auto-scale: size each virtual triangle to ~1% of the mesh's
-        # bounding-box diagonal, clamped to a sane range.
+        # Size heuristic: ~5% of the mesh's BBox diagonal, clamped.
+        # Bigger than before (was 1%) so the tab reliably straddles a
+        # target triangle edge during the narrow-phase overlap test.
         def _virtual_size(shape):
             try:
                 bb = cmds.exactWorldBoundingBox(shape)
                 diag = ((bb[3]-bb[0])**2 + (bb[4]-bb[1])**2
                         + (bb[5]-bb[2])**2) ** 0.5
-                s = diag * 0.01
-                if s < 1.0e-4:
-                    s = 1.0e-4
-                if s > 0.1:
-                    s = 0.1
+                s = diag * 0.05
+                if s < 1.0e-3:
+                    s = 1.0e-3
+                if s > 1.0:
+                    s = 1.0
                 return s
             except Exception:
-                return 1.0e-3
+                return 1.0e-2
 
-        # Two orthogonal unit vectors in the plane perpendicular to `axis`.
+        # Two orthogonal unit vectors in the plane perpendicular to axis.
         perp = {0: ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
                 1: ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
                 2: ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0))}
         u_vec, v_vec = perp.get(axis, ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0)))
 
+        def _tab_tris(p, size):
+            """Horizontal square centred on p, lying in the plane
+            perpendicular to the movement axis. Returns two triangles."""
+            # Four corners at (±u ± v) * size
+            p_pu_pv = (p[0] + u_vec[0] * size + v_vec[0] * size,
+                       p[1] + u_vec[1] * size + v_vec[1] * size,
+                       p[2] + u_vec[2] * size + v_vec[2] * size)
+            p_pu_nv = (p[0] + u_vec[0] * size - v_vec[0] * size,
+                       p[1] + u_vec[1] * size - v_vec[1] * size,
+                       p[2] + u_vec[2] * size - v_vec[2] * size)
+            p_nu_pv = (p[0] - u_vec[0] * size + v_vec[0] * size,
+                       p[1] - u_vec[1] * size + v_vec[1] * size,
+                       p[2] - u_vec[2] * size + v_vec[2] * size)
+            p_nu_nv = (p[0] - u_vec[0] * size - v_vec[0] * size,
+                       p[1] - u_vec[1] * size - v_vec[1] * size,
+                       p[2] - u_vec[2] * size - v_vec[2] * size)
+            return [(p_pu_pv, p_pu_nv, p_nu_nv),
+                    (p_pu_pv, p_nu_nv, p_nu_pv)]
+
         def _edge_endpoints(shape, ei):
-            """Return (vi0, vi1) for edge ei on shape, or None."""
+            """Return [vi0, vi1] for edge ei on shape, or None."""
             try:
                 verts = cmds.polyListComponentConversion(
                     u"{0}.e[{1}]".format(shape, ei),
@@ -1478,7 +1497,7 @@ class MeshLandingDialog(QtWidgets.QDialog):
                     return None
             if len(out) != 2:
                 return None
-            return (out[0], out[1])
+            return out
 
         def _vtx_pos(shape, vi):
             try:
@@ -1490,110 +1509,32 @@ class MeshLandingDialog(QtWidgets.QDialog):
                 pass
             return None
 
-        def _strip_tris(a, b, size):
-            """Thin quad perpendicular to `axis` spanning world-space a→b."""
-            off = (u_vec[0] * size,
-                   u_vec[1] * size,
-                   u_vec[2] * size)
-            off2 = (v_vec[0] * size,
-                    v_vec[1] * size,
-                    v_vec[2] * size)
-            # Build a small cross-shaped strip (two thin quads perpendicular
-            # to each other) so the virtual edge has non-zero thickness in
-            # both perp directions — helps the collision test catch it no
-            # matter which side of the target it meets first.
-            a0 = (a[0] + off[0], a[1] + off[1], a[2] + off[2])
-            a1 = (a[0] - off[0], a[1] - off[1], a[2] - off[2])
-            b0 = (b[0] + off[0], b[1] + off[1], b[2] + off[2])
-            b1 = (b[0] - off[0], b[1] - off[1], b[2] - off[2])
-            a2p = (a[0] + off2[0], a[1] + off2[1], a[2] + off2[2])
-            a2m = (a[0] - off2[0], a[1] - off2[1], a[2] - off2[2])
-            b2p = (b[0] + off2[0], b[1] + off2[1], b[2] + off2[2])
-            b2m = (b[0] - off2[0], b[1] - off2[1], b[2] - off2[2])
-            return [
-                (a0, b0, b1), (a0, b1, a1),     # u-vec quad
-                (a2p, b2p, b2m), (a2p, b2m, a2m)  # v-vec quad
-            ]
-
         vert_map = {}
         virtual_tris_map = {}
 
         for shape, buckets in per_shape.items():
             size = _virtual_size(shape)
             tris = []
-            used_verts = set()
-            edge_pairs = set()   # set of frozenset({vi0, vi1})
+            target_verts = set(buckets["vtx"])
 
-            # 1) User-selected edges → add their endpoint pairs.
+            # Selected edges contribute their endpoints.
             for ei in buckets["e"]:
                 ep = _edge_endpoints(shape, ei)
                 if ep is None:
                     continue
-                edge_pairs.add(frozenset(ep))
-                used_verts.update(ep)
+                target_verts.update(ep)
 
-            # 2) Implicit edges between two selected verts.
-            #    Convert all selected verts to edges, keep edges whose
-            #    BOTH endpoints are in the selection.
-            if buckets["vtx"]:
-                vtx_items = [u"{0}.vtx[{1}]".format(shape, vi)
-                             for vi in buckets["vtx"]]
-                try:
-                    inc_edges = cmds.polyListComponentConversion(
-                        vtx_items, toEdge=True) or []
-                    inc_edges = cmds.ls(inc_edges, fl=True) or []
-                except Exception:
-                    inc_edges = []
-                sel_vset = buckets["vtx"]
-                for e_item in inc_edges:
-                    try:
-                        ei2 = int(e_item.split(u"[")[-1].rstrip(u"]"))
-                    except Exception:
-                        continue
-                    ep = _edge_endpoints(shape, ei2)
-                    if ep is None:
-                        continue
-                    if ep[0] in sel_vset and ep[1] in sel_vset:
-                        edge_pairs.add(frozenset(ep))
-                        used_verts.update(ep)
-
-            # 3) Build strips for every collected edge pair.
-            for pair in edge_pairs:
-                pl = list(pair)
-                if len(pl) != 2:
-                    continue
-                a = _vtx_pos(shape, pl[0])
-                b = _vtx_pos(shape, pl[1])
-                if a is None or b is None:
-                    continue
-                tris.extend(_strip_tris(a, b, size))
-
-            # 4) Lone selected vertices (no selected neighbour).
-            lone = set(buckets["vtx"]) - used_verts
-            for vi in lone:
+            # One flat horizontal tab per target vertex.
+            for vi in target_verts:
                 p = _vtx_pos(shape, vi)
                 if p is None:
                     continue
-                # Small cross: triangle in u-v plane around p.
-                p0 = (p[0] + u_vec[0] * size,
-                      p[1] + u_vec[1] * size,
-                      p[2] + u_vec[2] * size)
-                p1 = (p[0] - u_vec[0] * size * 0.5 + v_vec[0] * size * 0.87,
-                      p[1] - u_vec[1] * size * 0.5 + v_vec[1] * size * 0.87,
-                      p[2] - u_vec[2] * size * 0.5 + v_vec[2] * size * 0.87)
-                p2 = (p[0] - u_vec[0] * size * 0.5 - v_vec[0] * size * 0.87,
-                      p[1] - u_vec[1] * size * 0.5 - v_vec[1] * size * 0.87,
-                      p[2] - u_vec[2] * size * 0.5 - v_vec[2] * size * 0.87)
-                tris.append((p0, p1, p2))
-                used_verts.add(vi)
+                tris.extend(_tab_tris(p, size))
 
             if tris:
                 virtual_tris_map[shape] = tris
-            # The vertices Maya should physically move = every selected
-            # vertex + every endpoint of every selected edge.
-            moving_vset = set(buckets["vtx"]) | used_verts
-            if moving_vset:
-                vert_map[shape] = sorted(moving_vset)
+            if target_verts:
+                vert_map[shape] = sorted(target_verts)
 
         return vert_map, virtual_tris_map
 
