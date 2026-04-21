@@ -1,0 +1,717 @@
+# -*- coding: utf-8 -*-
+# ============================================================================
+# 0370_edge_snap.txt
+# Edge Snap feature for DW_CollisionCheck "Snap" tab.
+#
+# Equalises the "width" (length) of selected edges. Typical use case:
+# a belt, a step, or any row of edges that should all have the same
+# width. The user selects edges (a ring-loop-like selection), the
+# tool assigns each endpoint to side A or side B via bipartite BFS,
+# and then the user can snap each pair toward A, toward B, toward the
+# midpoint, or to a uniform target length.
+#
+# Depends on (defined earlier in the concatenated build):
+#   VERSION, PY2, MAYA_AVAILABLE, cmds,
+#   QtCore, QtGui, QtWidgets,
+#   tr(), _STRINGS  (strings added in 0020_strings.txt),
+#   _mkbtn()        (defined in 0200_ui_helpers.txt)
+# ============================================================================
+
+
+# ---------------------------------------------------------------------------
+# Edge Snap: geometry helpers
+# ---------------------------------------------------------------------------
+
+def _es_get_selected_edges():
+    """Collect selected edges with per-edge metadata.
+
+    Returns list of dicts:
+        {
+            "edge":    "|pCube1|pCubeShape1.e[12]",
+            "shape":   "|pCube1|pCubeShape1",
+            "v0_idx":  7,
+            "v1_idx":  8,
+            "p0":      (x,y,z),
+            "p1":      (x,y,z),
+        }
+
+    Empty list if Maya unavailable or nothing valid selected.
+    """
+    if not MAYA_AVAILABLE:
+        return []
+    sel = cmds.ls(sl=True, fl=True, long=True) or []
+    edges = []
+    seen = set()
+    for item in sel:
+        if u".e[" not in item:
+            continue
+        if item in seen:
+            continue
+        seen.add(item)
+        try:
+            shape_part, _, tail = item.partition(u".e[")
+            ei = int(tail.rstrip(u"]"))
+        except Exception:
+            continue
+        # Convert to the mesh shape long name.
+        try:
+            node_type = cmds.nodeType(shape_part)
+            if node_type == "mesh":
+                shape = cmds.ls(shape_part, long=True)[0]
+            else:
+                # shape_part was a transform — get its mesh shape child.
+                shs = cmds.listRelatives(shape_part, shapes=True,
+                                          noIntermediate=True,
+                                          fullPath=True, type="mesh") or []
+                if not shs:
+                    continue
+                shape = shs[0]
+        except Exception:
+            continue
+        # Get the 2 endpoint vert indices.
+        try:
+            verts = cmds.polyListComponentConversion(
+                item, fromEdge=True, toVertex=True) or []
+            verts = cmds.ls(verts, fl=True) or []
+        except Exception:
+            continue
+        if len(verts) < 2:
+            continue
+        v_idxs = []
+        for v in verts[:2]:
+            try:
+                v_idxs.append(int(v.split(u"[")[-1].rstrip(u"]")))
+            except Exception:
+                v_idxs = []
+                break
+        if len(v_idxs) != 2:
+            continue
+        try:
+            p0 = cmds.pointPosition(
+                u"{0}.vtx[{1}]".format(shape, v_idxs[0]), w=True)
+            p1 = cmds.pointPosition(
+                u"{0}.vtx[{1}]".format(shape, v_idxs[1]), w=True)
+        except Exception:
+            continue
+        edges.append({
+            "edge":   item,
+            "shape":  shape,
+            "v0_idx": v_idxs[0],
+            "v1_idx": v_idxs[1],
+            "p0":     (p0[0], p0[1], p0[2]),
+            "p1":     (p1[0], p1[1], p1[2]),
+        })
+    return edges
+
+
+def _es_bipartite_assign(edges):
+    """Assign each edge's endpoints to side A or side B via BFS.
+
+    For every connected component of the selection graph (vertices
+    linked by selected edges), we try a 2-colouring. If the component
+    is bipartite, the colouring is used directly. If not (odd cycle),
+    we still produce a best-effort colouring — the edges whose
+    colouring failed are flagged so the UI can warn / still assign
+    something deterministic.
+
+    Returns a list parallel to `edges`, each entry being one of
+        "ok"        — colouring succeeded for this edge
+        "fallback"  — colouring uncertain; we kept the first endpoint
+                      as side A as a best effort.
+    After the call, each edge dict gets two new fields:
+        "a_idx", "a_pos", "b_idx", "b_pos"
+    so downstream code can treat A vs B uniformly regardless of which
+    endpoint the edge originally pointed to.
+    """
+    # Build graph: vertex -> list of (neighbour_vert, edge_index)
+    # Vertex key is (shape, vert_idx).
+    adj = {}
+    for ei, e in enumerate(edges):
+        k0 = (e["shape"], e["v0_idx"])
+        k1 = (e["shape"], e["v1_idx"])
+        adj.setdefault(k0, []).append((k1, ei))
+        adj.setdefault(k1, []).append((k0, ei))
+
+    color = {}    # vertex_key -> 0 (side A) or 1 (side B)
+    status = ["ok"] * len(edges)
+
+    # BFS over every component.
+    for start in list(adj.keys()):
+        if start in color:
+            continue
+        color[start] = 0
+        queue = [start]
+        while queue:
+            v = queue.pop(0)
+            c = color[v]
+            for nb, ei in adj.get(v, []):
+                if nb not in color:
+                    color[nb] = 1 - c
+                    queue.append(nb)
+                else:
+                    if color[nb] == c:
+                        # Non-bipartite — both endpoints of this edge
+                        # got the same colour. Mark the offending edge
+                        # and keep the colouring as-is.
+                        status[ei] = "fallback"
+
+    # Fill in a_idx / b_idx / a_pos / b_pos.
+    for ei, e in enumerate(edges):
+        k0 = (e["shape"], e["v0_idx"])
+        k1 = (e["shape"], e["v1_idx"])
+        c0 = color.get(k0, 0)
+        c1 = color.get(k1, 1)
+        # Convention: side A = colour 0, side B = colour 1.
+        # If the colouring is degenerate (both same), just keep v0 as A.
+        if c0 == 0 and c1 == 1:
+            a_idx, a_pos = e["v0_idx"], e["p0"]
+            b_idx, b_pos = e["v1_idx"], e["p1"]
+        elif c0 == 1 and c1 == 0:
+            a_idx, a_pos = e["v1_idx"], e["p1"]
+            b_idx, b_pos = e["v0_idx"], e["p0"]
+        else:
+            a_idx, a_pos = e["v0_idx"], e["p0"]
+            b_idx, b_pos = e["v1_idx"], e["p1"]
+            status[ei] = "fallback"
+        e["a_idx"] = a_idx
+        e["a_pos"] = a_pos
+        e["b_idx"] = b_idx
+        e["b_pos"] = b_pos
+    return status
+
+
+def _es_edge_length(e):
+    ax, ay, az = e["a_pos"]
+    bx, by, bz = e["b_pos"]
+    dx = bx - ax; dy = by - ay; dz = bz - az
+    return (dx * dx + dy * dy + dz * dz) ** 0.5
+
+
+def _es_set_vtx_pos(shape, vi, pos):
+    """Set a vertex's world-space position via cmds.xform."""
+    try:
+        cmds.xform(u"{0}.vtx[{1}]".format(shape, vi),
+                   ws=True, t=(pos[0], pos[1], pos[2]))
+    except Exception:
+        pass
+
+
+def _es_snap_edge(e, direction):
+    """Snap one edge in a given direction.
+
+    direction semantics (same numbering as Vertex Snap so the code is
+    consistent; the UI labels map as shown):
+        0 = A→B      : move A to B's position  (label: "B側に揃える")
+        1 = B→A      : move B to A's position  (label: "A側に揃える")
+        2 = Mid      : both to midpoint        (label: "中央で揃える")
+    """
+    shape = e["shape"]
+    a_idx, a_pos = e["a_idx"], e["a_pos"]
+    b_idx, b_pos = e["b_idx"], e["b_pos"]
+    if direction == 0:        # A→B : A moves to B
+        _es_set_vtx_pos(shape, a_idx, b_pos)
+    elif direction == 1:      # B→A : B moves to A
+        _es_set_vtx_pos(shape, b_idx, a_pos)
+    else:                     # Mid : both to midpoint
+        mid = ((a_pos[0] + b_pos[0]) * 0.5,
+               (a_pos[1] + b_pos[1]) * 0.5,
+               (a_pos[2] + b_pos[2]) * 0.5)
+        _es_set_vtx_pos(shape, a_idx, mid)
+        _es_set_vtx_pos(shape, b_idx, mid)
+
+
+def _es_snap_edge_to_length(e, target_length):
+    """Scale an edge so its new length = target_length, centred on
+    the current midpoint. A/B direction preserved."""
+    ax, ay, az = e["a_pos"]
+    bx, by, bz = e["b_pos"]
+    dx = bx - ax; dy = by - ay; dz = bz - az
+    curlen = (dx * dx + dy * dy + dz * dz) ** 0.5
+    if curlen < 1.0e-10:
+        return   # degenerate; cannot scale direction
+    # Unit vector from A to B.
+    ux = dx / curlen
+    uy = dy / curlen
+    uz = dz / curlen
+    half = target_length * 0.5
+    mx = (ax + bx) * 0.5
+    my = (ay + by) * 0.5
+    mz = (az + bz) * 0.5
+    new_a = (mx - ux * half, my - uy * half, mz - uz * half)
+    new_b = (mx + ux * half, my + uy * half, mz + uz * half)
+    _es_set_vtx_pos(e["shape"], e["a_idx"], new_a)
+    _es_set_vtx_pos(e["shape"], e["b_idx"], new_b)
+
+
+# ---------------------------------------------------------------------------
+# Edge Snap: stylesheet scraps
+# ---------------------------------------------------------------------------
+
+_ES_SPIN_SS = (
+    "QDoubleSpinBox{background-color:#2B2B2B;color:#EEE;"
+    "border:1px solid #555;border-radius:3px;padding:1px;font-size:10px}")
+
+_ES_TABLE_SS = (
+    "QTableWidget{background-color:#2B2B2B;color:#EEE;"
+    "alternate-background-color:#323232;gridline-color:#444;"
+    "font-size:10px;selection-background-color:#3A5A7C;"
+    "selection-color:#FFF}"
+    "QHeaderView::section{background-color:#3C3C3C;color:#CCC;"
+    "padding:3px;border:1px solid #444;font-size:10px}")
+
+
+# ---------------------------------------------------------------------------
+# Edge Snap: result window
+# ---------------------------------------------------------------------------
+
+class EdgeSnapResultWindow(QtWidgets.QDialog):
+    """Row-per-edge table with direction buttons, uniform-length mode,
+    per-row snap logging, confirm/revert (single undo chunk)."""
+
+    status_msg = QtCore.Signal(str)
+
+    def __init__(self, parent=None):
+        super(EdgeSnapResultWindow, self).__init__(parent)
+        self.setObjectName("DW_EdgeSnap_Result")
+        self.setWindowTitle(tr("es_result_title"))
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose, False)
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
+        self.setMinimumSize(620, 460)
+        self.setStyleSheet(
+            "QDialog{background-color:#333;color:#EEE}"
+            "QLabel{color:#EEE}")
+        self._edges = []          # list of edge dicts
+        self._status = []         # per-edge bipartite status ("ok"/"fallback")
+        self._snap_log = {}       # edge_str -> direction name
+        self._undo_open = False
+        self._build()
+
+    # -- UI construction --
+    def _build(self):
+        lo = QtWidgets.QVBoxLayout(self)
+        lo.setContentsMargins(8, 8, 8, 8)
+        lo.setSpacing(6)
+
+        # Scope / status line at top.
+        self._scope_lbl = QtWidgets.QLabel(u"")
+        self._scope_lbl.setStyleSheet(
+            "color:#8BC34A;background-color:#2B2B2B;"
+            "padding:3px 8px;border-radius:3px;font-size:10px")
+        self._scope_lbl.setWordWrap(True)
+        lo.addWidget(self._scope_lbl)
+
+        # Uniform-length row: spinbox + apply button.
+        uni = QtWidgets.QHBoxLayout()
+        uni.setSpacing(6)
+        self._lbl_uniform = QtWidgets.QLabel(tr("es_lbl_uniform"))
+        self._lbl_uniform.setStyleSheet("color:#AAA;font-size:10px")
+        uni.addWidget(self._lbl_uniform)
+        self._spin_uniform = QtWidgets.QDoubleSpinBox()
+        self._spin_uniform.setRange(0.0, 1.0e6)
+        self._spin_uniform.setDecimals(4)
+        self._spin_uniform.setSingleStep(0.01)
+        self._spin_uniform.setValue(0.0)
+        self._spin_uniform.setFixedWidth(100)
+        self._spin_uniform.setStyleSheet(_ES_SPIN_SS)
+        uni.addWidget(self._spin_uniform)
+        self._btn_uniform = _mkbtn(tr("es_btn_uniform"), 24,
+                                    "#4CAF50", "#388E3C", fs=10)
+        self._btn_uniform.clicked.connect(self._on_uniform_apply)
+        uni.addWidget(self._btn_uniform)
+        uni.addStretch()
+        self._btn_swap = _mkbtn(tr("es_btn_swap"), 24,
+                                 "#607D8B", "#455A64", fs=10)
+        self._btn_swap.clicked.connect(self._on_swap_ab)
+        uni.addWidget(self._btn_swap)
+        lo.addLayout(uni)
+
+        # Pair table.
+        self._table = QtWidgets.QTableWidget(0, 5)
+        self._update_headers()
+        h = self._table.horizontalHeader()
+        self._table.setColumnWidth(0, 42)
+        h.setSectionResizeMode(0, QtWidgets.QHeaderView.Fixed)
+        h.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
+        h.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+        h.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
+        h.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)
+        self._table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectRows)
+        self._table.setSelectionMode(
+            QtWidgets.QAbstractItemView.ExtendedSelection)
+        self._table.setEditTriggers(
+            QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._table.setAlternatingRowColors(True)
+        self._table.verticalHeader().setVisible(False)
+        self._table.verticalHeader().setDefaultSectionSize(22)
+        self._table.setStyleSheet(_ES_TABLE_SS)
+        self._table.itemSelectionChanged.connect(self._on_selection_changed)
+        lo.addWidget(self._table, 1)
+
+        # Direction buttons row.
+        dr = QtWidgets.QHBoxLayout()
+        dr.setSpacing(4)
+        self._btn_to_a = _mkbtn(tr("es_btn_align_a"), 26,
+                                 "#2196F3", "#1976D2", fs=10)
+        self._btn_to_a.clicked.connect(lambda: self._on_snap(1))
+        dr.addWidget(self._btn_to_a)
+        self._btn_to_b = _mkbtn(tr("es_btn_align_b"), 26,
+                                 "#FF9800", "#F57C00", fs=10)
+        self._btn_to_b.clicked.connect(lambda: self._on_snap(0))
+        dr.addWidget(self._btn_to_b)
+        self._btn_mid = _mkbtn(tr("es_btn_align_mid"), 26,
+                                "#9C27B0", "#7B1FA2", fs=10)
+        self._btn_mid.clicked.connect(lambda: self._on_snap(2))
+        dr.addWidget(self._btn_mid)
+        dr.addStretch()
+        lo.addLayout(dr)
+
+        # Confirm / revert / close.
+        cr = QtWidgets.QHBoxLayout()
+        cr.setSpacing(4)
+        self._btn_confirm = _mkbtn(tr("es_btn_confirm"), 26,
+                                    "#4CAF50", "#388E3C", fs=10)
+        self._btn_confirm.clicked.connect(self._on_confirm)
+        self._btn_confirm.setEnabled(False)
+        cr.addWidget(self._btn_confirm)
+        self._btn_revert = _mkbtn(tr("es_btn_revert"), 26,
+                                   "#F44336", "#D32F2F", fs=10)
+        self._btn_revert.clicked.connect(self._on_revert)
+        self._btn_revert.setEnabled(False)
+        cr.addWidget(self._btn_revert)
+        cr.addStretch()
+        self._btn_close = _mkbtn(tr("btn_close"), 26, "#555", "#444", fs=10)
+        self._btn_close.clicked.connect(self.hide)
+        cr.addWidget(self._btn_close)
+        lo.addLayout(cr)
+
+    def _update_headers(self):
+        self._table.setHorizontalHeaderLabels([
+            u"",
+            tr("es_col_edge"),
+            tr("es_col_length"),
+            tr("es_col_status"),
+            tr("es_col_log"),
+        ])
+
+    # -- Data setup --
+    def set_data(self, edges):
+        self._edges = list(edges)
+        self._status = _es_bipartite_assign(self._edges)
+        self._snap_log = {}
+        self._close_undo()
+        # Scope line.
+        n = len(self._edges)
+        n_bad = sum(1 for s in self._status if s != "ok")
+        if n_bad > 0:
+            self._scope_lbl.setText(
+                tr("es_scope_with_warn", count=n, warn=n_bad))
+        else:
+            self._scope_lbl.setText(tr("es_scope", count=n))
+        # Populate average length into the spinbox.
+        lens = [_es_edge_length(e) for e in self._edges]
+        if lens:
+            avg = sum(lens) / float(len(lens))
+            self._spin_uniform.blockSignals(True)
+            try:
+                self._spin_uniform.setValue(avg)
+            finally:
+                self._spin_uniform.blockSignals(False)
+        self._populate()
+        self._update_confirm_state()
+
+    def _populate(self):
+        self._table.blockSignals(True)
+        try:
+            self._table.setRowCount(len(self._edges))
+            for r, e in enumerate(self._edges):
+                status = self._status[r]
+                log = self._snap_log.get(e["edge"], "")
+
+                # Col 0: snap mark (✓ if already snapped).
+                mark = u"\u2714" if log else u""
+                item = QtWidgets.QTableWidgetItem(mark)
+                item.setTextAlignment(QtCore.Qt.AlignCenter)
+                if log:
+                    item.setForeground(QtGui.QColor("#4CAF50"))
+                self._table.setItem(r, 0, item)
+
+                # Col 1: short edge name.
+                short = e["edge"].split("|")[-1]
+                item = QtWidgets.QTableWidgetItem(short)
+                self._table.setItem(r, 1, item)
+
+                # Col 2: current length.
+                cur_len = _es_edge_length(e)
+                item = QtWidgets.QTableWidgetItem(
+                    u"{0:.4f}".format(cur_len))
+                item.setTextAlignment(QtCore.Qt.AlignRight
+                                       | QtCore.Qt.AlignVCenter)
+                self._table.setItem(r, 2, item)
+
+                # Col 3: bipartite status.
+                st_txt = (tr("es_status_ok") if status == "ok"
+                          else tr("es_status_fallback"))
+                item = QtWidgets.QTableWidgetItem(st_txt)
+                if status != "ok":
+                    item.setForeground(QtGui.QColor("#FF9800"))
+                self._table.setItem(r, 3, item)
+
+                # Col 4: snap log.
+                item = QtWidgets.QTableWidgetItem(log)
+                self._table.setItem(r, 4, item)
+        finally:
+            self._table.blockSignals(False)
+
+    # -- Interaction --
+    def _on_selection_changed(self):
+        if not MAYA_AVAILABLE:
+            return
+        rows = sorted(set(i.row()
+                           for i in self._table.selectionModel().selectedRows()))
+        if not rows:
+            return
+        comps = []
+        for r in rows:
+            if r < len(self._edges):
+                comps.append(self._edges[r]["edge"])
+        if comps:
+            try:
+                cmds.select(comps, r=True)
+            except Exception:
+                pass
+
+    def _ensure_undo_open(self):
+        if not self._undo_open:
+            cmds.undoInfo(openChunk=True, chunkName="DW_EdgeSnap")
+            self._undo_open = True
+
+    def _selected_rows(self):
+        rows = sorted(set(i.row()
+                           for i in self._table.selectionModel().selectedRows()))
+        return rows
+
+    def _on_snap(self, direction):
+        """direction: 0=A→B (align to B), 1=B→A (align to A), 2=Mid."""
+        if not MAYA_AVAILABLE:
+            return
+        rows = self._selected_rows()
+        if not rows:
+            self.status_msg.emit(tr("es_status_no_sel"))
+            return
+        self._ensure_undo_open()
+        for r in rows:
+            if r >= len(self._edges):
+                continue
+            e = self._edges[r]
+            _es_snap_edge(e, direction)
+            self._snap_log[e["edge"]] = (
+                tr("es_log_align_a") if direction == 1
+                else (tr("es_log_align_b") if direction == 0
+                      else tr("es_log_align_mid")))
+        self._refresh_positions()
+        self._populate()
+        self._update_confirm_state()
+        self.status_msg.emit(tr("es_status_snapped",
+                                  count=len(self._snap_log)))
+
+    def _on_uniform_apply(self):
+        """Set each selected (or all) edges to the spinbox target length,
+        keeping each edge's midpoint and direction."""
+        if not MAYA_AVAILABLE:
+            return
+        rows = self._selected_rows()
+        if not rows:
+            # No selection → apply to all rows.
+            rows = list(range(len(self._edges)))
+        if not rows:
+            self.status_msg.emit(tr("es_status_no_sel"))
+            return
+        target = float(self._spin_uniform.value())
+        if target <= 0:
+            self.status_msg.emit(tr("es_status_bad_length"))
+            return
+        self._ensure_undo_open()
+        for r in rows:
+            if r >= len(self._edges):
+                continue
+            e = self._edges[r]
+            _es_snap_edge_to_length(e, target)
+            self._snap_log[e["edge"]] = tr("es_log_uniform",
+                                             value=u"{0:.4f}".format(target))
+        self._refresh_positions()
+        self._populate()
+        self._update_confirm_state()
+        self.status_msg.emit(tr("es_status_snapped",
+                                  count=len(self._snap_log)))
+
+    def _on_swap_ab(self):
+        """Flip A/B assignment for every edge. Does not modify any
+        vertex positions, only how they're labelled in the table and
+        which endpoint snap-direction 0/1 affects."""
+        for e in self._edges:
+            e["a_idx"], e["b_idx"] = e["b_idx"], e["a_idx"]
+            e["a_pos"], e["b_pos"] = e["b_pos"], e["a_pos"]
+        self._populate()
+        self.status_msg.emit(tr("es_status_swapped"))
+
+    def _refresh_positions(self):
+        """Re-read world-space positions after a snap so length column
+        reflects the latest state."""
+        if not MAYA_AVAILABLE:
+            return
+        for e in self._edges:
+            try:
+                p0 = cmds.pointPosition(
+                    u"{0}.vtx[{1}]".format(e["shape"], e["a_idx"]), w=True)
+                p1 = cmds.pointPosition(
+                    u"{0}.vtx[{1}]".format(e["shape"], e["b_idx"]), w=True)
+                e["a_pos"] = (p0[0], p0[1], p0[2])
+                e["b_pos"] = (p1[0], p1[1], p1[2])
+            except Exception:
+                pass
+
+    # -- Confirm / Revert --
+    def _on_confirm(self):
+        n = len(self._snap_log)
+        self._close_undo()
+        self._snap_log = {}
+        self._update_confirm_state()
+        self._populate()
+        self.status_msg.emit(tr("es_status_confirmed", count=n))
+
+    def _on_revert(self):
+        self._close_undo()
+        if MAYA_AVAILABLE:
+            try:
+                cmds.undo()
+            except Exception:
+                pass
+        self._snap_log = {}
+        self._refresh_positions()
+        self._update_confirm_state()
+        self._populate()
+        self.status_msg.emit(tr("es_status_reverted"))
+
+    def _close_undo(self):
+        if self._undo_open:
+            try:
+                cmds.undoInfo(closeChunk=True)
+            except Exception:
+                pass
+            self._undo_open = False
+
+    def _update_confirm_state(self):
+        has_log = len(self._snap_log) > 0
+        self._btn_confirm.setEnabled(has_log)
+        self._btn_revert.setEnabled(has_log)
+
+    # -- Language refresh --
+    def refresh_labels(self):
+        self.setWindowTitle(tr("es_result_title"))
+        self._lbl_uniform.setText(tr("es_lbl_uniform"))
+        self._btn_uniform.setText(tr("es_btn_uniform"))
+        self._btn_swap.setText(tr("es_btn_swap"))
+        self._btn_to_a.setText(tr("es_btn_align_a"))
+        self._btn_to_b.setText(tr("es_btn_align_b"))
+        self._btn_mid.setText(tr("es_btn_align_mid"))
+        self._btn_confirm.setText(tr("es_btn_confirm"))
+        self._btn_revert.setText(tr("es_btn_revert"))
+        self._btn_close.setText(tr("btn_close"))
+        self._update_headers()
+
+    def closeEvent(self, event):
+        # Auto-revert uncommitted snaps when the dialog closes.
+        if self._undo_open:
+            self._close_undo()
+            if MAYA_AVAILABLE:
+                try:
+                    cmds.undo()
+                except Exception:
+                    pass
+        super(EdgeSnapResultWindow, self).closeEvent(event)
+
+
+# ---------------------------------------------------------------------------
+# Edge Snap: tab-side launcher + plumbing
+# ---------------------------------------------------------------------------
+
+def _build_edge_snap_group(tool_window, parent_layout):
+    """Build the Edge Snap group for the Snap tab."""
+    grp = QtWidgets.QGroupBox()
+    grp.setStyleSheet(
+        "QGroupBox{border:1px solid #FF9800;border-radius:6px;"
+        "background-color:#2E2E2E;margin-top:6px}"
+        "QGroupBox::title{subcontrol-origin:margin;left:10px;"
+        "color:#EEE;font-size:11px;font-weight:bold}")
+    lo = QtWidgets.QVBoxLayout(grp)
+    lo.setContentsMargins(6, 10, 6, 6)
+    lo.setSpacing(4)
+
+    hdr = QtWidgets.QHBoxLayout()
+    tool_window._es_grp_lbl = QtWidgets.QLabel(
+        u"\u25A0 " + tr("es_grp_title"))
+    tool_window._es_grp_lbl.setStyleSheet(
+        "color:#FF9800;font-size:11px;font-weight:bold")
+    hdr.addWidget(tool_window._es_grp_lbl)
+    hdr.addStretch()
+    tool_window._es_btn_launch = _mkbtn(
+        tr("es_btn_launch"), 24, "#FF9800", "#F57C00", fs=10)
+    tool_window._es_btn_launch.clicked.connect(
+        lambda: _es_launch(tool_window))
+    hdr.addWidget(tool_window._es_btn_launch)
+    lo.addLayout(hdr)
+
+    tool_window._es_desc_lbl = QtWidgets.QLabel(tr("es_grp_desc"))
+    tool_window._es_desc_lbl.setStyleSheet(
+        "color:#AAA;font-size:10px;padding:2px 4px")
+    tool_window._es_desc_lbl.setWordWrap(True)
+    lo.addWidget(tool_window._es_desc_lbl)
+
+    tool_window._es_result_window = None
+    parent_layout.addWidget(grp)
+    return grp
+
+
+def _es_launch(tool_window):
+    """Collect selected edges, open/refresh the result window."""
+    edges = _es_get_selected_edges()
+    if not edges:
+        if hasattr(tool_window, "_status_bar"):
+            tool_window._status_bar.setText(tr("es_status_no_edges"))
+        return
+
+    if tool_window._es_result_window is None:
+        tool_window._es_result_window = EdgeSnapResultWindow(
+            parent=tool_window)
+        tool_window._es_result_window.status_msg.connect(
+            lambda t: tool_window._status_bar.setText(t)
+            if hasattr(tool_window, "_status_bar") else None)
+
+    tool_window._es_result_window.set_data(edges)
+    tool_window._es_result_window.show()
+    tool_window._es_result_window.raise_()
+    tool_window._es_result_window.activateWindow()
+
+
+def _es_refresh_labels(tool_window):
+    """Called from CollisionCheckToolWindow._refresh_labels()."""
+    if hasattr(tool_window, "_es_grp_lbl"):
+        tool_window._es_grp_lbl.setText(u"\u25A0 " + tr("es_grp_title"))
+    if hasattr(tool_window, "_es_btn_launch"):
+        tool_window._es_btn_launch.setText(tr("es_btn_launch"))
+    if hasattr(tool_window, "_es_desc_lbl"):
+        tool_window._es_desc_lbl.setText(tr("es_grp_desc"))
+    w = getattr(tool_window, "_es_result_window", None)
+    if w is not None:
+        w.refresh_labels()
+
+
+def _es_close_result_window(tool_window):
+    """Called from CollisionCheckToolWindow close/reload."""
+    w = getattr(tool_window, "_es_result_window", None)
+    if w is not None:
+        try:
+            w.close()
+        except Exception:
+            pass

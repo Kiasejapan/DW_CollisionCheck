@@ -410,6 +410,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         snap_scroll_lo.setContentsMargins(4, 4, 4, 4)
         snap_scroll_lo.setSpacing(8)
         _build_vertex_snap_group(self, snap_scroll_lo)
+        _build_edge_snap_group(self, snap_scroll_lo)
         _build_mesh_landing_group(self, snap_scroll_lo)
         snap_scroll_lo.addStretch()
         snap_scroll.setWidget(snap_scroll_w)
@@ -696,6 +697,8 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
             pass
         # Vertex Snap labels
         _vs_refresh_labels(self)
+        # Edge Snap labels
+        _es_refresh_labels(self)
         self._cb_use_timeline.setText(tr("chk_use_timeline"))
         self._lbl_fr.setText(tr("lbl_frame_range"))
         self._lbl_step.setText(tr("lbl_frame_step"))
