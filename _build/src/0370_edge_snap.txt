@@ -196,51 +196,56 @@ def _es_set_vtx_pos(shape, vi, pos):
         pass
 
 
-def _es_snap_edge(e, direction):
-    """Snap one edge in a given direction.
+def _es_snap_edge_to_length(e, target_length, anchor):
+    """Scale one edge so its new length = target_length, anchored on
+    one of the two endpoints or on the current midpoint.
 
-    direction semantics (same numbering as Vertex Snap so the code is
-    consistent; the UI labels map as shown):
-        0 = A→B      : move A to B's position  (label: "B側に揃える")
-        1 = B→A      : move B to A's position  (label: "A側に揃える")
-        2 = Mid      : both to midpoint        (label: "中央で揃える")
+    anchor:
+        0 = keep A, move B along the current edge direction so the
+            edge length becomes target_length ("A-anchored")
+        1 = keep B, move A along the current edge direction so the
+            edge length becomes target_length ("B-anchored")
+        2 = keep midpoint, scale both endpoints symmetrically
+            ("centre-anchored", legacy behaviour)
+
+    The A→B direction vector is preserved (we only rescale along it).
+    If the edge is degenerate (near-zero length) we skip it because we
+    have no direction to preserve.
     """
-    shape = e["shape"]
-    a_idx, a_pos = e["a_idx"], e["a_pos"]
-    b_idx, b_pos = e["b_idx"], e["b_pos"]
-    if direction == 0:        # A→B : A moves to B
-        _es_set_vtx_pos(shape, a_idx, b_pos)
-    elif direction == 1:      # B→A : B moves to A
-        _es_set_vtx_pos(shape, b_idx, a_pos)
-    else:                     # Mid : both to midpoint
-        mid = ((a_pos[0] + b_pos[0]) * 0.5,
-               (a_pos[1] + b_pos[1]) * 0.5,
-               (a_pos[2] + b_pos[2]) * 0.5)
-        _es_set_vtx_pos(shape, a_idx, mid)
-        _es_set_vtx_pos(shape, b_idx, mid)
-
-
-def _es_snap_edge_to_length(e, target_length):
-    """Scale an edge so its new length = target_length, centred on
-    the current midpoint. A/B direction preserved."""
     ax, ay, az = e["a_pos"]
     bx, by, bz = e["b_pos"]
     dx = bx - ax; dy = by - ay; dz = bz - az
     curlen = (dx * dx + dy * dy + dz * dz) ** 0.5
     if curlen < 1.0e-10:
-        return   # degenerate; cannot scale direction
-    # Unit vector from A to B.
+        return
     ux = dx / curlen
     uy = dy / curlen
     uz = dz / curlen
-    half = target_length * 0.5
-    mx = (ax + bx) * 0.5
-    my = (ay + by) * 0.5
-    mz = (az + bz) * 0.5
-    new_a = (mx - ux * half, my - uy * half, mz - uz * half)
-    new_b = (mx + ux * half, my + uy * half, mz + uz * half)
-    _es_set_vtx_pos(e["shape"], e["a_idx"], new_a)
-    _es_set_vtx_pos(e["shape"], e["b_idx"], new_b)
+    shape = e["shape"]
+    if anchor == 0:
+        # Keep A; put B exactly at distance `target_length` from A
+        # along the current direction.
+        new_b = (ax + ux * target_length,
+                 ay + uy * target_length,
+                 az + uz * target_length)
+        _es_set_vtx_pos(shape, e["b_idx"], new_b)
+    elif anchor == 1:
+        # Keep B; put A exactly at distance `target_length` from B,
+        # i.e. B minus the unit vector times target.
+        new_a = (bx - ux * target_length,
+                 by - uy * target_length,
+                 bz - uz * target_length)
+        _es_set_vtx_pos(shape, e["a_idx"], new_a)
+    else:
+        # Keep midpoint; symmetric scale.
+        half = target_length * 0.5
+        mx = (ax + bx) * 0.5
+        my = (ay + by) * 0.5
+        mz = (az + bz) * 0.5
+        new_a = (mx - ux * half, my - uy * half, mz - uz * half)
+        new_b = (mx + ux * half, my + uy * half, mz + uz * half)
+        _es_set_vtx_pos(shape, e["a_idx"], new_a)
+        _es_set_vtx_pos(shape, e["b_idx"], new_b)
 
 
 # ---------------------------------------------------------------------------
@@ -314,10 +319,11 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         self._spin_uniform.setFixedWidth(100)
         self._spin_uniform.setStyleSheet(_ES_SPIN_SS)
         uni.addWidget(self._spin_uniform)
-        self._btn_uniform = _mkbtn(tr("es_btn_uniform"), 24,
-                                    "#4CAF50", "#388E3C", fs=10)
-        self._btn_uniform.clicked.connect(self._on_uniform_apply)
-        uni.addWidget(self._btn_uniform)
+        # Hint label so it's clear the direction buttons below use this.
+        self._lbl_uniform_hint = QtWidgets.QLabel(tr("es_lbl_uniform_hint"))
+        self._lbl_uniform_hint.setStyleSheet(
+            "color:#777;font-size:9px;padding:0 4px")
+        uni.addWidget(self._lbl_uniform_hint)
         uni.addStretch()
         self._btn_swap = _mkbtn(tr("es_btn_swap"), 24,
                                  "#607D8B", "#455A64", fs=10)
@@ -348,20 +354,25 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
         lo.addWidget(self._table, 1)
 
-        # Direction buttons row.
+        # Direction buttons row. Each button applies the uniform
+        # target length to the currently selected rows (or all rows
+        # if nothing is selected), with different anchor behaviour:
+        #   Align-to-A : keep A endpoint, move B to exactly length away
+        #   Align-to-B : keep B endpoint, move A to exactly length away
+        #   Centre     : keep midpoint, scale both endpoints symmetrically
         dr = QtWidgets.QHBoxLayout()
         dr.setSpacing(4)
         self._btn_to_a = _mkbtn(tr("es_btn_align_a"), 26,
                                  "#2196F3", "#1976D2", fs=10)
-        self._btn_to_a.clicked.connect(lambda: self._on_snap(1))
+        self._btn_to_a.clicked.connect(lambda: self._on_uniform_apply(0))
         dr.addWidget(self._btn_to_a)
         self._btn_to_b = _mkbtn(tr("es_btn_align_b"), 26,
                                  "#FF9800", "#F57C00", fs=10)
-        self._btn_to_b.clicked.connect(lambda: self._on_snap(0))
+        self._btn_to_b.clicked.connect(lambda: self._on_uniform_apply(1))
         dr.addWidget(self._btn_to_b)
         self._btn_mid = _mkbtn(tr("es_btn_align_mid"), 26,
                                 "#9C27B0", "#7B1FA2", fs=10)
-        self._btn_mid.clicked.connect(lambda: self._on_snap(2))
+        self._btn_mid.clicked.connect(lambda: self._on_uniform_apply(2))
         dr.addWidget(self._btn_mid)
         dr.addStretch()
         lo.addLayout(dr)
@@ -491,33 +502,15 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
                            for i in self._table.selectionModel().selectedRows()))
         return rows
 
-    def _on_snap(self, direction):
-        """direction: 0=A→B (align to B), 1=B→A (align to A), 2=Mid."""
-        if not MAYA_AVAILABLE:
-            return
-        rows = self._selected_rows()
-        if not rows:
-            self.status_msg.emit(tr("es_status_no_sel"))
-            return
-        self._ensure_undo_open()
-        for r in rows:
-            if r >= len(self._edges):
-                continue
-            e = self._edges[r]
-            _es_snap_edge(e, direction)
-            self._snap_log[e["edge"]] = (
-                tr("es_log_align_a") if direction == 1
-                else (tr("es_log_align_b") if direction == 0
-                      else tr("es_log_align_mid")))
-        self._refresh_positions()
-        self._populate()
-        self._update_confirm_state()
-        self.status_msg.emit(tr("es_status_snapped",
-                                  count=len(self._snap_log)))
+    def _on_uniform_apply(self, anchor):
+        """Apply the uniform target length to the selected (or all)
+        edges, anchored as specified.
 
-    def _on_uniform_apply(self):
-        """Set each selected (or all) edges to the spinbox target length,
-        keeping each edge's midpoint and direction."""
+        anchor:
+            0 = keep A, move B   (Align-to-A)
+            1 = keep B, move A   (Align-to-B)
+            2 = keep midpoint    (Centre)
+        """
         if not MAYA_AVAILABLE:
             return
         rows = self._selected_rows()
@@ -532,13 +525,21 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
             self.status_msg.emit(tr("es_status_bad_length"))
             return
         self._ensure_undo_open()
+        if anchor == 0:
+            anchor_label = tr("es_log_align_a")
+        elif anchor == 1:
+            anchor_label = tr("es_log_align_b")
+        else:
+            anchor_label = tr("es_log_align_mid")
         for r in rows:
             if r >= len(self._edges):
                 continue
             e = self._edges[r]
-            _es_snap_edge_to_length(e, target)
-            self._snap_log[e["edge"]] = tr("es_log_uniform",
-                                             value=u"{0:.4f}".format(target))
+            _es_snap_edge_to_length(e, target, anchor)
+            self._snap_log[e["edge"]] = tr(
+                "es_log_uniform_with_anchor",
+                anchor=anchor_label,
+                value=u"{0:.4f}".format(target))
         self._refresh_positions()
         self._populate()
         self._update_confirm_state()
@@ -610,7 +611,7 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
     def refresh_labels(self):
         self.setWindowTitle(tr("es_result_title"))
         self._lbl_uniform.setText(tr("es_lbl_uniform"))
-        self._btn_uniform.setText(tr("es_btn_uniform"))
+        self._lbl_uniform_hint.setText(tr("es_lbl_uniform_hint"))
         self._btn_swap.setText(tr("es_btn_swap"))
         self._btn_to_a.setText(tr("es_btn_align_a"))
         self._btn_to_b.setText(tr("es_btn_align_b"))

@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.21.1805"
+VERSION = "2026.04.21.1817"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -425,18 +425,18 @@ _STRINGS = {
     "vs_status_reverted":   {"en": "Reverted all snaps.",
                              "jp": u"\u5168\u3066\u306eSnap\u3092\u5143\u306b\u623b\u3057\u307e\u3057\u305f\u3002"},
 
-    # ---- Edge Snap (Snap tab) ----------------------------------------
-    "es_grp_title":         {"en": "Edge Snap",                      "jp": u"\u30a8\u30c3\u30b8\u30b9\u30ca\u30c3\u30d7"},
+    # ---- Edge Width Alignment (Snap tab) -----------------------------
+    "es_grp_title":         {"en": "Edge Width Alignment",           "jp": u"Edge Width Alignment"},
     "es_grp_desc":          {"en": "Equalise the widths of a ring-loop of edges. Select edges and launch.",
                              "jp": u"\u30ea\u30f3\u30b0\u30eb\u30fc\u30d7\u72b6\u306b\u9078\u629e\u3057\u305f\u30a8\u30c3\u30b8\u306e\u5e45\u3092\u63c3\u3048\u307e\u3059\u3002\u30a8\u30c3\u30b8\u3092\u9078\u629e\u3057\u3066\u8d77\u52d5\u3002"},
     "es_btn_launch":        {"en": u"\u25B6 Launch",                  "jp": u"\u25B6 \u8d77\u52d5"},
-    "es_result_title":      {"en": "Edge Snap \u2014 Edge Widths",    "jp": u"\u30a8\u30c3\u30b8\u30b9\u30ca\u30c3\u30d7 \u2014 \u30a8\u30c3\u30b8\u5e45"},
+    "es_result_title":      {"en": "Edge Width Alignment",            "jp": u"Edge Width Alignment"},
     "es_scope":             {"en": "{count} edge(s) selected.",
                              "jp": u"{count} \u672c\u306e\u30a8\u30c3\u30b8\u3092\u9078\u629e\u4e2d\u3002"},
     "es_scope_with_warn":   {"en": "{count} edge(s) selected. {warn} edge(s) could not be A/B-coloured cleanly.",
                              "jp": u"{count} \u672c\u306e\u30a8\u30c3\u30b8\u3092\u9078\u629e\u4e2d\u3002{warn} \u672c\u306f A/B \u5206\u985e\u304c\u4e0d\u78ba\u5b9a\u3067\u3059\u3002"},
-    "es_lbl_uniform":       {"en": "Uniform length:",                 "jp": u"\u5747\u4e00\u5e45:"},
-    "es_btn_uniform":       {"en": "Apply to rows",                   "jp": u"\u884c\u306b\u9069\u7528"},
+    "es_lbl_uniform":       {"en": "Target width:",                   "jp": u"\u76ee\u6a19\u5e45:"},
+    "es_lbl_uniform_hint":  {"en": "(used by the buttons below)",     "jp": u"\uff08\u4e0b\u306e\u30dc\u30bf\u30f3\u3067\u4f7f\u7528\uff09"},
     "es_btn_swap":          {"en": u"\u21C4 Swap A \u2194 B",          "jp": u"\u21C4 A \u2194 B \u5165\u308c\u66ff\u3048"},
     "es_col_edge":          {"en": "Edge",                            "jp": u"\u30a8\u30c3\u30b8"},
     "es_col_length":        {"en": "Length",                          "jp": u"\u9577\u3055"},
@@ -444,29 +444,30 @@ _STRINGS = {
     "es_col_log":           {"en": "Applied",                         "jp": u"\u9069\u7528\u6e08"},
     "es_status_ok":         {"en": "OK",                              "jp": u"OK"},
     "es_status_fallback":   {"en": "!",                               "jp": u"!"},
-    "es_btn_align_a":       {"en": "Align to A",                      "jp": u"A \u5074\u306b\u63c3\u3048\u308b"},
-    "es_btn_align_b":       {"en": "Align to B",                      "jp": u"B \u5074\u306b\u63c3\u3048\u308b"},
-    "es_btn_align_mid":     {"en": "Centre",                          "jp": u"\u4e2d\u592e\u3067\u63c3\u3048\u308b"},
+    "es_btn_align_a":       {"en": "Keep A side",                     "jp": u"A \u5074\u3092\u56fa\u5b9a"},
+    "es_btn_align_b":       {"en": "Keep B side",                     "jp": u"B \u5074\u3092\u56fa\u5b9a"},
+    "es_btn_align_mid":     {"en": "Keep centre",                     "jp": u"\u4e2d\u592e\u3092\u56fa\u5b9a"},
     "es_btn_confirm":       {"en": u"\u2714 Confirm",                  "jp": u"\u2714 \u78ba\u5b9a"},
     "es_btn_revert":        {"en": u"\u21A9 Revert",                   "jp": u"\u21A9 \u5143\u306b\u623b\u3059"},
-    "es_log_align_a":       {"en": u"\u2192 A",                        "jp": u"\u2192 A"},
-    "es_log_align_b":       {"en": u"\u2192 B",                        "jp": u"\u2192 B"},
-    "es_log_align_mid":     {"en": u"\u2192 Mid",                      "jp": u"\u2192 \u4e2d\u592e"},
-    "es_log_uniform":       {"en": "={value}",                         "jp": u"={value}"},
-    "es_status_no_edges":   {"en": "Edge Snap: select at least one edge.",
-                             "jp": u"\u30a8\u30c3\u30b8\u30b9\u30ca\u30c3\u30d7: \u30a8\u30c3\u30b8\u3092 1 \u672c\u4ee5\u4e0a\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044\u3002"},
+    "es_log_align_a":       {"en": u"keep A",                          "jp": u"A \u56fa\u5b9a"},
+    "es_log_align_b":       {"en": u"keep B",                          "jp": u"B \u56fa\u5b9a"},
+    "es_log_align_mid":     {"en": u"keep centre",                     "jp": u"\u4e2d\u592e\u56fa\u5b9a"},
+    "es_log_uniform_with_anchor": {"en": "{anchor}, len={value}",
+                                    "jp": u"{anchor}, \u5e45={value}"},
+    "es_status_no_edges":   {"en": "Edge Width Alignment: select at least one edge.",
+                             "jp": u"Edge Width Alignment: \u30a8\u30c3\u30b8\u3092 1 \u672c\u4ee5\u4e0a\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044\u3002"},
     "es_status_no_sel":     {"en": "Select row(s) in the table.",
                              "jp": u"\u30c6\u30fc\u30d6\u30eb\u3067\u884c\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044\u3002"},
     "es_status_snapped":    {"en": "Applied to {count} edge(s). Confirm or Revert.",
                              "jp": u"{count} \u672c\u306e\u30a8\u30c3\u30b8\u306b\u9069\u7528\u3002\u78ba\u5b9a\u307e\u305f\u306f\u5143\u306b\u623b\u3059\u3002"},
-    "es_status_confirmed":  {"en": "Confirmed. {count} edge(s) snapped.",
-                             "jp": u"\u78ba\u5b9a\u3002{count} \u672c\u306e\u30a8\u30c3\u30b8\u3092Snap\u6e08\u307f\u3002"},
-    "es_status_reverted":   {"en": "Reverted all edge snaps.",
-                             "jp": u"\u5168\u3066\u306e\u30a8\u30c3\u30b8Snap\u3092\u5143\u306b\u623b\u3057\u307e\u3057\u305f\u3002"},
+    "es_status_confirmed":  {"en": "Confirmed. {count} edge(s) aligned.",
+                             "jp": u"\u78ba\u5b9a\u3002{count} \u672c\u306e\u30a8\u30c3\u30b8\u3092\u63c3\u3048\u307e\u3057\u305f\u3002"},
+    "es_status_reverted":   {"en": "Reverted all edge alignments.",
+                             "jp": u"\u5168\u3066\u306e\u30a8\u30c3\u30b8\u63c3\u3048\u3092\u5143\u306b\u623b\u3057\u307e\u3057\u305f\u3002"},
     "es_status_swapped":    {"en": "A \u2194 B swapped for all rows.",
                              "jp": u"\u5168\u884c\u306e A \u2194 B \u3092\u5165\u308c\u66ff\u3048\u307e\u3057\u305f\u3002"},
-    "es_status_bad_length": {"en": "Uniform length must be greater than 0.",
-                             "jp": u"\u5747\u4e00\u5e45\u306f 0 \u3088\u308a\u5927\u304d\u3044\u5fc5\u8981\u304c\u3042\u308a\u307e\u3059\u3002"},
+    "es_status_bad_length": {"en": "Target width must be greater than 0.",
+                             "jp": u"\u76ee\u6a19\u5e45\u306f 0 \u3088\u308a\u5927\u304d\u3044\u5fc5\u8981\u304c\u3042\u308a\u307e\u3059\u3002"},
 }
 
 # Python 2/3 unicode type compatibility for tr()
@@ -5843,51 +5844,56 @@ def _es_set_vtx_pos(shape, vi, pos):
         pass
 
 
-def _es_snap_edge(e, direction):
-    """Snap one edge in a given direction.
+def _es_snap_edge_to_length(e, target_length, anchor):
+    """Scale one edge so its new length = target_length, anchored on
+    one of the two endpoints or on the current midpoint.
 
-    direction semantics (same numbering as Vertex Snap so the code is
-    consistent; the UI labels map as shown):
-        0 = A→B      : move A to B's position  (label: "B側に揃える")
-        1 = B→A      : move B to A's position  (label: "A側に揃える")
-        2 = Mid      : both to midpoint        (label: "中央で揃える")
+    anchor:
+        0 = keep A, move B along the current edge direction so the
+            edge length becomes target_length ("A-anchored")
+        1 = keep B, move A along the current edge direction so the
+            edge length becomes target_length ("B-anchored")
+        2 = keep midpoint, scale both endpoints symmetrically
+            ("centre-anchored", legacy behaviour)
+
+    The A→B direction vector is preserved (we only rescale along it).
+    If the edge is degenerate (near-zero length) we skip it because we
+    have no direction to preserve.
     """
-    shape = e["shape"]
-    a_idx, a_pos = e["a_idx"], e["a_pos"]
-    b_idx, b_pos = e["b_idx"], e["b_pos"]
-    if direction == 0:        # A→B : A moves to B
-        _es_set_vtx_pos(shape, a_idx, b_pos)
-    elif direction == 1:      # B→A : B moves to A
-        _es_set_vtx_pos(shape, b_idx, a_pos)
-    else:                     # Mid : both to midpoint
-        mid = ((a_pos[0] + b_pos[0]) * 0.5,
-               (a_pos[1] + b_pos[1]) * 0.5,
-               (a_pos[2] + b_pos[2]) * 0.5)
-        _es_set_vtx_pos(shape, a_idx, mid)
-        _es_set_vtx_pos(shape, b_idx, mid)
-
-
-def _es_snap_edge_to_length(e, target_length):
-    """Scale an edge so its new length = target_length, centred on
-    the current midpoint. A/B direction preserved."""
     ax, ay, az = e["a_pos"]
     bx, by, bz = e["b_pos"]
     dx = bx - ax; dy = by - ay; dz = bz - az
     curlen = (dx * dx + dy * dy + dz * dz) ** 0.5
     if curlen < 1.0e-10:
-        return   # degenerate; cannot scale direction
-    # Unit vector from A to B.
+        return
     ux = dx / curlen
     uy = dy / curlen
     uz = dz / curlen
-    half = target_length * 0.5
-    mx = (ax + bx) * 0.5
-    my = (ay + by) * 0.5
-    mz = (az + bz) * 0.5
-    new_a = (mx - ux * half, my - uy * half, mz - uz * half)
-    new_b = (mx + ux * half, my + uy * half, mz + uz * half)
-    _es_set_vtx_pos(e["shape"], e["a_idx"], new_a)
-    _es_set_vtx_pos(e["shape"], e["b_idx"], new_b)
+    shape = e["shape"]
+    if anchor == 0:
+        # Keep A; put B exactly at distance `target_length` from A
+        # along the current direction.
+        new_b = (ax + ux * target_length,
+                 ay + uy * target_length,
+                 az + uz * target_length)
+        _es_set_vtx_pos(shape, e["b_idx"], new_b)
+    elif anchor == 1:
+        # Keep B; put A exactly at distance `target_length` from B,
+        # i.e. B minus the unit vector times target.
+        new_a = (bx - ux * target_length,
+                 by - uy * target_length,
+                 bz - uz * target_length)
+        _es_set_vtx_pos(shape, e["a_idx"], new_a)
+    else:
+        # Keep midpoint; symmetric scale.
+        half = target_length * 0.5
+        mx = (ax + bx) * 0.5
+        my = (ay + by) * 0.5
+        mz = (az + bz) * 0.5
+        new_a = (mx - ux * half, my - uy * half, mz - uz * half)
+        new_b = (mx + ux * half, my + uy * half, mz + uz * half)
+        _es_set_vtx_pos(shape, e["a_idx"], new_a)
+        _es_set_vtx_pos(shape, e["b_idx"], new_b)
 
 
 # ---------------------------------------------------------------------------
@@ -5961,10 +5967,11 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         self._spin_uniform.setFixedWidth(100)
         self._spin_uniform.setStyleSheet(_ES_SPIN_SS)
         uni.addWidget(self._spin_uniform)
-        self._btn_uniform = _mkbtn(tr("es_btn_uniform"), 24,
-                                    "#4CAF50", "#388E3C", fs=10)
-        self._btn_uniform.clicked.connect(self._on_uniform_apply)
-        uni.addWidget(self._btn_uniform)
+        # Hint label so it's clear the direction buttons below use this.
+        self._lbl_uniform_hint = QtWidgets.QLabel(tr("es_lbl_uniform_hint"))
+        self._lbl_uniform_hint.setStyleSheet(
+            "color:#777;font-size:9px;padding:0 4px")
+        uni.addWidget(self._lbl_uniform_hint)
         uni.addStretch()
         self._btn_swap = _mkbtn(tr("es_btn_swap"), 24,
                                  "#607D8B", "#455A64", fs=10)
@@ -5995,20 +6002,25 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
         lo.addWidget(self._table, 1)
 
-        # Direction buttons row.
+        # Direction buttons row. Each button applies the uniform
+        # target length to the currently selected rows (or all rows
+        # if nothing is selected), with different anchor behaviour:
+        #   Align-to-A : keep A endpoint, move B to exactly length away
+        #   Align-to-B : keep B endpoint, move A to exactly length away
+        #   Centre     : keep midpoint, scale both endpoints symmetrically
         dr = QtWidgets.QHBoxLayout()
         dr.setSpacing(4)
         self._btn_to_a = _mkbtn(tr("es_btn_align_a"), 26,
                                  "#2196F3", "#1976D2", fs=10)
-        self._btn_to_a.clicked.connect(lambda: self._on_snap(1))
+        self._btn_to_a.clicked.connect(lambda: self._on_uniform_apply(0))
         dr.addWidget(self._btn_to_a)
         self._btn_to_b = _mkbtn(tr("es_btn_align_b"), 26,
                                  "#FF9800", "#F57C00", fs=10)
-        self._btn_to_b.clicked.connect(lambda: self._on_snap(0))
+        self._btn_to_b.clicked.connect(lambda: self._on_uniform_apply(1))
         dr.addWidget(self._btn_to_b)
         self._btn_mid = _mkbtn(tr("es_btn_align_mid"), 26,
                                 "#9C27B0", "#7B1FA2", fs=10)
-        self._btn_mid.clicked.connect(lambda: self._on_snap(2))
+        self._btn_mid.clicked.connect(lambda: self._on_uniform_apply(2))
         dr.addWidget(self._btn_mid)
         dr.addStretch()
         lo.addLayout(dr)
@@ -6138,33 +6150,15 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
                            for i in self._table.selectionModel().selectedRows()))
         return rows
 
-    def _on_snap(self, direction):
-        """direction: 0=A→B (align to B), 1=B→A (align to A), 2=Mid."""
-        if not MAYA_AVAILABLE:
-            return
-        rows = self._selected_rows()
-        if not rows:
-            self.status_msg.emit(tr("es_status_no_sel"))
-            return
-        self._ensure_undo_open()
-        for r in rows:
-            if r >= len(self._edges):
-                continue
-            e = self._edges[r]
-            _es_snap_edge(e, direction)
-            self._snap_log[e["edge"]] = (
-                tr("es_log_align_a") if direction == 1
-                else (tr("es_log_align_b") if direction == 0
-                      else tr("es_log_align_mid")))
-        self._refresh_positions()
-        self._populate()
-        self._update_confirm_state()
-        self.status_msg.emit(tr("es_status_snapped",
-                                  count=len(self._snap_log)))
+    def _on_uniform_apply(self, anchor):
+        """Apply the uniform target length to the selected (or all)
+        edges, anchored as specified.
 
-    def _on_uniform_apply(self):
-        """Set each selected (or all) edges to the spinbox target length,
-        keeping each edge's midpoint and direction."""
+        anchor:
+            0 = keep A, move B   (Align-to-A)
+            1 = keep B, move A   (Align-to-B)
+            2 = keep midpoint    (Centre)
+        """
         if not MAYA_AVAILABLE:
             return
         rows = self._selected_rows()
@@ -6179,13 +6173,21 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
             self.status_msg.emit(tr("es_status_bad_length"))
             return
         self._ensure_undo_open()
+        if anchor == 0:
+            anchor_label = tr("es_log_align_a")
+        elif anchor == 1:
+            anchor_label = tr("es_log_align_b")
+        else:
+            anchor_label = tr("es_log_align_mid")
         for r in rows:
             if r >= len(self._edges):
                 continue
             e = self._edges[r]
-            _es_snap_edge_to_length(e, target)
-            self._snap_log[e["edge"]] = tr("es_log_uniform",
-                                             value=u"{0:.4f}".format(target))
+            _es_snap_edge_to_length(e, target, anchor)
+            self._snap_log[e["edge"]] = tr(
+                "es_log_uniform_with_anchor",
+                anchor=anchor_label,
+                value=u"{0:.4f}".format(target))
         self._refresh_positions()
         self._populate()
         self._update_confirm_state()
@@ -6257,7 +6259,7 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
     def refresh_labels(self):
         self.setWindowTitle(tr("es_result_title"))
         self._lbl_uniform.setText(tr("es_lbl_uniform"))
-        self._btn_uniform.setText(tr("es_btn_uniform"))
+        self._lbl_uniform_hint.setText(tr("es_lbl_uniform_hint"))
         self._btn_swap.setText(tr("es_btn_swap"))
         self._btn_to_a.setText(tr("es_btn_align_a"))
         self._btn_to_b.setText(tr("es_btn_align_b"))
