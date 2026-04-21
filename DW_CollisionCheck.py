@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.21.1825"
+VERSION = "2026.04.21.1831"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -427,8 +427,8 @@ _STRINGS = {
 
     # ---- Edge Width Alignment (Snap tab) -----------------------------
     "es_grp_title":         {"en": "Edge Width Alignment",           "jp": u"\u30a8\u30c3\u30b8\u5e45\u306e\u6574\u5217"},
-    "es_grp_desc":          {"en": "Equalise the widths of a ring-loop of edges. Pick one edge (loop auto-expands) or several edges and launch.",
-                             "jp": u"\u30ea\u30f3\u30b0\u30eb\u30fc\u30d7\u72b6\u306e\u30a8\u30c3\u30b8\u5e45\u3092\u63c3\u3048\u307e\u3059\u30021\u672c\u9078\u629e\u3067\u30eb\u30fc\u30d7\u81ea\u52d5\u62e1\u5f35\u3001\u8907\u6570\u9078\u629e\u306b\u3082\u5bfe\u5fdc\u3002"},
+    "es_grp_desc":          {"en": "Equalise the widths of a ring of edges. Pick one edge (auto-expands along Ring or Loop) or several edges and launch.",
+                             "jp": u"\u30a8\u30c3\u30b8\u306e\u5e45\u3092\u63c3\u3048\u307e\u3059\u30021\u672c\u9078\u629e\u3067\u30ea\u30f3\u30b0 or \u30eb\u30fc\u30d7\u81ea\u52d5\u62e1\u5f35\u3001\u8907\u6570\u9078\u629e\u306b\u3082\u5bfe\u5fdc\u3002"},
     "es_btn_launch":        {"en": u"\u25B6 Launch",                  "jp": u"\u25B6 \u8d77\u52d5"},
     "es_result_title":      {"en": "Edge Width Alignment",            "jp": u"\u30a8\u30c3\u30b8\u5e45\u306e\u6574\u5217"},
     "es_scope":             {"en": "{count} edge(s) selected.",
@@ -437,6 +437,9 @@ _STRINGS = {
                              "jp": u"{count} \u672c\u306e\u30a8\u30c3\u30b8\u3092\u9078\u629e\u4e2d\u3002{warn} \u672c\u306f A/B \u5206\u985e\u304c\u4e0d\u78ba\u5b9a\u3067\u3059\u3002"},
     "es_lbl_uniform":       {"en": "Target width:",                   "jp": u"\u76ee\u6a19\u5e45:"},
     "es_lbl_uniform_hint":  {"en": "(used by the buttons below)",     "jp": u"\uff08\u4e0b\u306e\u30dc\u30bf\u30f3\u3067\u4f7f\u7528\uff09"},
+    "es_lbl_expand_mode":   {"en": "Auto-select:",                    "jp": u"\u81ea\u52d5\u9078\u629e:"},
+    "es_mode_ring":         {"en": "Ring (belt)",                     "jp": u"\u30ea\u30f3\u30b0\uff08\u6a2a\uff09"},
+    "es_mode_loop":         {"en": "Loop (perpendicular)",            "jp": u"\u30eb\u30fc\u30d7\uff08\u7e26\uff09"},
     "es_col_edge":          {"en": "Edge",                            "jp": u"\u30a8\u30c3\u30b8"},
     "es_col_length":        {"en": "Length",                          "jp": u"\u9577\u3055"},
     "es_col_status":        {"en": "A/B",                             "jp": u"A/B"},
@@ -5667,32 +5670,35 @@ class MeshLandingDialog(QtWidgets.QDialog):
 # Edge Snap: geometry helpers
 # ---------------------------------------------------------------------------
 
-def _es_expand_edge_loop_if_single(sel):
+def _es_expand_edge_loop_if_single(sel, mode="ring"):
     """If the selection is exactly one mesh edge, replace `sel` with
-    the full ring/loop that contains that edge. Otherwise return `sel`
-    unchanged.
+    the full ring OR loop containing that edge. Otherwise return
+    `sel` unchanged.
 
-    Uses Maya's built-in `polySelect -edgeLoop` which walks from each
-    endpoint, continuing through faces along the opposite edge of a
-    quad. For non-quad topology it stops naturally.
+    mode:
+        "ring" (default) — walks via opposite sides of the edge's
+                           adjacent quad faces (horizontal, "belt"
+                           direction). Usual choice for width-
+                           alignment on belts / steps.
+        "loop"           — walks via the endpoint vertices, stepping
+                           through the opposite edge of each quad
+                           (the direction perpendicular to ring).
     """
-    # Look through sel to see how many edge items it contains.
     edge_items = [s for s in sel if u".e[" in s]
     if len(edge_items) != 1:
         return sel
     one = edge_items[0]
-    # Parse shape + edge index.
     try:
         shape_part, _, tail = one.partition(u".e[")
         ei = int(tail.rstrip(u"]"))
     except Exception:
         return sel
     try:
-        # polySelect -edgeLoop expects the mesh transform, not the
-        # .e[idx] path. Send the mesh name + edge index.
-        # It *adds* the loop to the current selection.
         cmds.select(one, r=True)
-        cmds.polySelect(shape_part, edgeLoop=ei, add=True)
+        if mode == "loop":
+            cmds.polySelect(shape_part, edgeLoop=ei, add=True)
+        else:
+            cmds.polySelect(shape_part, edgeRing=ei, add=True)
     except Exception:
         return sel
     new_sel = cmds.ls(sl=True, fl=True, long=True) or []
@@ -5701,12 +5707,16 @@ def _es_expand_edge_loop_if_single(sel):
     return sel
 
 
-def _es_get_selected_edges():
+def _es_get_selected_edges(expand_mode="ring"):
     """Collect selected edges with per-edge metadata.
 
     If the user selected exactly one edge at launch time, the full
-    edge loop containing that edge is auto-selected (by calling
-    Maya's `polySelect -edgeLoop`) before we gather the data.
+    edge ring (or loop, depending on expand_mode) containing that
+    edge is auto-selected before we gather the data.
+
+    expand_mode:
+        "ring" — `polySelect -edgeRing`, belt direction (default).
+        "loop" — `polySelect -edgeLoop`, perpendicular direction.
 
     Returns list of dicts:
         {
@@ -5723,7 +5733,7 @@ def _es_get_selected_edges():
     if not MAYA_AVAILABLE:
         return []
     sel = cmds.ls(sl=True, fl=True, long=True) or []
-    sel = _es_expand_edge_loop_if_single(sel)
+    sel = _es_expand_edge_loop_if_single(sel, mode=expand_mode)
     edges = []
     seen = set()
     for item in sel:
@@ -6338,6 +6348,29 @@ def _build_edge_snap_group(tool_window, parent_layout):
     tool_window._es_desc_lbl.setWordWrap(True)
     lo.addWidget(tool_window._es_desc_lbl)
 
+    # Auto-expand mode: Ring (belt direction, default) vs Loop.
+    # Only matters when the user selects exactly one edge before
+    # clicking Launch; both radios are ignored when 2+ edges are
+    # already selected.
+    mode_row = QtWidgets.QHBoxLayout()
+    mode_row.setContentsMargins(4, 0, 4, 0)
+    mode_row.setSpacing(8)
+    tool_window._es_mode_lbl = QtWidgets.QLabel(tr("es_lbl_expand_mode"))
+    tool_window._es_mode_lbl.setStyleSheet(
+        "color:#AAA;font-size:10px")
+    mode_row.addWidget(tool_window._es_mode_lbl)
+    rb_ss = ("QRadioButton{color:#DDD;font-size:10px}"
+             "QRadioButton::indicator{width:11px;height:11px}")
+    tool_window._es_rb_ring = QtWidgets.QRadioButton(tr("es_mode_ring"))
+    tool_window._es_rb_ring.setStyleSheet(rb_ss)
+    tool_window._es_rb_ring.setChecked(True)
+    mode_row.addWidget(tool_window._es_rb_ring)
+    tool_window._es_rb_loop = QtWidgets.QRadioButton(tr("es_mode_loop"))
+    tool_window._es_rb_loop.setStyleSheet(rb_ss)
+    mode_row.addWidget(tool_window._es_rb_loop)
+    mode_row.addStretch()
+    lo.addLayout(mode_row)
+
     tool_window._es_result_window = None
     parent_layout.addWidget(grp)
     return grp
@@ -6345,7 +6378,12 @@ def _build_edge_snap_group(tool_window, parent_layout):
 
 def _es_launch(tool_window):
     """Collect selected edges, open/refresh the result window."""
-    edges = _es_get_selected_edges()
+    # Pick the expand mode from the radio buttons.
+    mode = "ring"
+    if getattr(tool_window, "_es_rb_loop", None) is not None \
+            and tool_window._es_rb_loop.isChecked():
+        mode = "loop"
+    edges = _es_get_selected_edges(expand_mode=mode)
     if not edges:
         if hasattr(tool_window, "_status_bar"):
             tool_window._status_bar.setText(tr("es_status_no_edges"))
@@ -6372,6 +6410,12 @@ def _es_refresh_labels(tool_window):
         tool_window._es_btn_launch.setText(tr("es_btn_launch"))
     if hasattr(tool_window, "_es_desc_lbl"):
         tool_window._es_desc_lbl.setText(tr("es_grp_desc"))
+    if hasattr(tool_window, "_es_mode_lbl"):
+        tool_window._es_mode_lbl.setText(tr("es_lbl_expand_mode"))
+    if hasattr(tool_window, "_es_rb_ring"):
+        tool_window._es_rb_ring.setText(tr("es_mode_ring"))
+    if hasattr(tool_window, "_es_rb_loop"):
+        tool_window._es_rb_loop.setText(tr("es_mode_loop"))
     w = getattr(tool_window, "_es_result_window", None)
     if w is not None:
         w.refresh_labels()
