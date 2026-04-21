@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.21.1306"
+VERSION = "2026.04.21.1329"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -5249,41 +5249,49 @@ class MeshLandingDialog(QtWidgets.QDialog):
         return enclosed_map, adjacent_map, face_items_map
 
     def _build_virtual_tris_from_selection(self, axis):
-        """Build tiny synthetic polygons at selected vertices / edges.
+        """Build tiny synthetic polygons that represent the deforming zone.
 
-        Used when the user's selection doesn't fully enclose any face
-        but we still want the landing algorithm to treat the selected
-        components as collidable geometry.
+        Used when the user's selection doesn't fully enclose any face.
 
-        Strategy: produce one small "tab" polygon per selected vertex
-        (and per endpoint of each selected edge). The tab lies in the
-        plane perpendicular to the movement axis and is centred on the
-        vertex's world position. This guarantees the tab has zero extent
-        along the movement axis, so it acts as a ground-plane probe at
-        exactly that vertex's height.
-
-        Each selected vertex therefore collides independently at its
-        own height. Combined with island grouping (which keeps
-        connected selections moving as one unit), the LOWEST tab on a
-        chain hits the target first and stops the whole chain — no
-        lower vertices get to embed past the target surface.
+        Strategy:
+          1. From the raw selection, identify every "moving vertex"
+             (selected verts + endpoints of selected edges).
+          2. Find every mesh edge that touches at least one moving
+             vertex — these are the edges that will physically deform
+             when the moving verts are translated.
+          3. Sample positions along each of those edges (endpoints +
+             intermediate points). The number of samples scales with
+             the edge's length relative to the virtual-tab size.
+          4. For each sampled position, blend between "moving" and
+             "static" based on which endpoint(s) of the edge are
+             actually in the moving set. Only positions that WILL
+             move get a virtual tab — the static portion of a partly
+             selected edge doesn't need one because it won't travel
+             with the selection.
+          5. At each moving sample point, place a small horizontal tab
+             perpendicular to the movement axis (zero extent on the
+             axis itself). Together the tabs form a near-continuous
+             "skirt" of collision probes along the deforming region.
 
         Returns (vert_map, virtual_tris_map) where
           vert_map         = {shape: [vert_index, ...]} — verts to move.
-          virtual_tris_map = {shape: [(p0,p1,p2), ...]} — synthetic tris.
+          virtual_tris_map = {shape: [(p0,p1,p2), ...]} — synthetic tris
+                             already positioned at their moving offsets
+                             (they will translate rigidly with the
+                             selection in the collision check).
         """
         sel = cmds.ls(sl=True, fl=True, long=True) or []
         a_set = set(self._mesh_a_shapes)
 
         # Bucket selection by shape.
-        per_shape = {}  # shape -> {"vtx": set, "e": set}
+        per_shape = {}
         for item in sel:
             if u".vtx[" in item:
                 sep, kind = u".vtx[", "vtx"
             elif u".e[" in item:
                 sep, kind = u".e[", "e"
             else:
-                continue   # faces go through _gather_components
+                continue
             shape_part = item.split(sep)[0]
             shapes = _ml_get_mesh_shapes([shape_part])
             if not shapes:
@@ -5298,33 +5306,28 @@ class MeshLandingDialog(QtWidgets.QDialog):
             bucket = per_shape.setdefault(shape, {"vtx": set(), "e": set()})
             bucket[kind].add(idx)
 
-        # Size heuristic: ~5% of the mesh's BBox diagonal, clamped.
-        # Bigger than before (was 1%) so the tab reliably straddles a
-        # target triangle edge during the narrow-phase overlap test.
         def _virtual_size(shape):
             try:
                 bb = cmds.exactWorldBoundingBox(shape)
                 diag = ((bb[3]-bb[0])**2 + (bb[4]-bb[1])**2
                         + (bb[5]-bb[2])**2) ** 0.5
-                s = diag * 0.05
+                s = diag * 0.03
                 if s < 1.0e-3:
                     s = 1.0e-3
-                if s > 1.0:
-                    s = 1.0
+                if s > 0.5:
+                    s = 0.5
                 return s
             except Exception:
                 return 1.0e-2
 
-        # Two orthogonal unit vectors in the plane perpendicular to axis.
         perp = {0: ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
                 1: ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
                 2: ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0))}
         u_vec, v_vec = perp.get(axis, ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0)))
 
         def _tab_tris(p, size):
-            """Horizontal square centred on p, lying in the plane
-            perpendicular to the movement axis. Returns two triangles."""
-            # Four corners at (±u ± v) * size
+            """Horizontal square centred on p, in the plane perpendicular
+            to the movement axis. Returns two triangles."""
             p_pu_pv = (p[0] + u_vec[0] * size + v_vec[0] * size,
                        p[1] + u_vec[1] * size + v_vec[1] * size,
                        p[2] + u_vec[2] * size + v_vec[2] * size)
@@ -5341,7 +5344,6 @@ class MeshLandingDialog(QtWidgets.QDialog):
                     (p_pu_pv, p_nu_nv, p_nu_pv)]
 
         def _edge_endpoints(shape, ei):
-            """Return [vi0, vi1] for edge ei on shape, or None."""
             try:
                 verts = cmds.polyListComponentConversion(
                     u"{0}.e[{1}]".format(shape, ei),
@@ -5375,26 +5377,101 @@ class MeshLandingDialog(QtWidgets.QDialog):
         for shape, buckets in per_shape.items():
             size = _virtual_size(shape)
             tris = []
-            target_verts = set(buckets["vtx"])
 
-            # Selected edges contribute their endpoints.
+            # Step 1: collect the set of "moving" vertex indices — the
+            # verts that will actually be translated by xform after
+            # the preview commits.
+            moving_vset = set(buckets["vtx"])
             for ei in buckets["e"]:
                 ep = _edge_endpoints(shape, ei)
                 if ep is None:
                     continue
-                target_verts.update(ep)
+                moving_vset.update(ep)
 
-            # One flat horizontal tab per target vertex.
-            for vi in target_verts:
-                p = _vtx_pos(shape, vi)
-                if p is None:
+            if not moving_vset:
+                continue
+
+            # Step 2: find every mesh edge incident on a moving vertex.
+            # These are the edges that will deform under the movement.
+            moving_vtx_items = [u"{0}.vtx[{1}]".format(shape, vi)
+                                for vi in moving_vset]
+            try:
+                incident_edges = cmds.polyListComponentConversion(
+                    moving_vtx_items, toEdge=True) or []
+                incident_edges = cmds.ls(incident_edges, fl=True) or []
+            except Exception:
+                incident_edges = []
+
+            # Collect unique incident edge indices.
+            incident_eset = set()
+            for e_item in incident_edges:
+                try:
+                    incident_eset.add(
+                        int(e_item.split(u"[")[-1].rstrip(u"]")))
+                except Exception:
+                    pass
+
+            # Step 3 & 4: walk each incident edge, sample positions,
+            # and keep only those that are in the moving portion.
+            for ei in incident_eset:
+                ep = _edge_endpoints(shape, ei)
+                if ep is None:
                     continue
-                tris.extend(_tab_tris(p, size))
+                pa = _vtx_pos(shape, ep[0])
+                pb = _vtx_pos(shape, ep[1])
+                if pa is None or pb is None:
+                    continue
+
+                a_moves = ep[0] in moving_vset
+                b_moves = ep[1] in moving_vset
+
+                # Edge length → decide sample count. We want samples
+                # every ~`size` world units so the tabs overlap slightly.
+                dx = pb[0] - pa[0]
+                dy = pb[1] - pa[1]
+                dz = pb[2] - pa[2]
+                elen = (dx * dx + dy * dy + dz * dz) ** 0.5
+                if elen < 1.0e-8:
+                    n_samples = 1
+                else:
+                    n_samples = max(2, int(elen / size) + 1)
+                    # Cap to avoid explosive tri counts on huge meshes.
+                    if n_samples > 32:
+                        n_samples = 32
+
+                # Both endpoints move → every sample moves; tabs
+                # along the whole edge.
+                # Only one endpoint moves → only the half near the
+                # moving endpoint physically translates with the
+                # selection. Skip samples on the static half so the
+                # virtual collider doesn't jitter at the unmoving end.
+                for i in range(n_samples):
+                    if n_samples == 1:
+                        t = 0.5
+                    else:
+                        t = float(i) / float(n_samples - 1)
+
+                    # Determine whether this sample is in the moving
+                    # portion of the edge.
+                    if a_moves and b_moves:
+                        is_moving = True
+                    elif a_moves:     # only endpoint A moves
+                        is_moving = (t <= 0.5)
+                    elif b_moves:     # only endpoint B moves
+                        is_moving = (t >= 0.5)
+                    else:
+                        is_moving = False
+                    if not is_moving:
+                        continue
+
+                    sx = pa[0] + dx * t
+                    sy = pa[1] + dy * t
+                    sz = pa[2] + dz * t
+                    tris.extend(_tab_tris((sx, sy, sz), size))
 
             if tris:
                 virtual_tris_map[shape] = tris
-            if target_verts:
-                vert_map[shape] = sorted(target_verts)
+            vert_map[shape] = sorted(moving_vset)
 
         return vert_map, virtual_tris_map
 
