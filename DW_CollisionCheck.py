@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.20.1935"
+VERSION = "2026.04.21.1254"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -4406,13 +4406,21 @@ def _ml_bbox_gap_estimate(source_pts, target_shapes, axis, sign):
 
 
 def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
-                       vert_indices=None, debug=False):
+                       vert_indices=None, virtual_triangles=None,
+                       debug=False):
     """Compute landing delta. Returns (distance, sign) or (None, 0).
 
     If `vert_indices` is given (component mode), ONLY the selected
     vertices participate. Source shapes that have no entry in
     `vert_indices` are ignored completely — they won't be moved and
     won't contribute to raycast, bounding-box, or triangle data.
+
+    If `virtual_triangles` is given, it's a list of (p0, p1, p2)
+    tuples in world space. These synthetic triangles are added to the
+    source-side triangle set for collision detection AND their
+    vertices are used as raycast origins. This lets the algorithm
+    treat lone vertices / edges as if they were small facets, without
+    actually creating geometry in the scene.
     """
     is_component_mode = vert_indices is not None
 
@@ -4442,13 +4450,20 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
         else:
             pts = _ml_get_world_verts(shape)
         all_pts.extend(pts)
+
+    # Include virtual triangle vertices as raycast origins too.
+    if virtual_triangles:
+        for tri in virtual_triangles:
+            all_pts.extend(tri)
+
     if not all_pts:
         if debug:
             print(u"  [FAIL] no source points collected")
         return None, 0
 
     if debug:
-        print(u"  collected {0} source pts".format(len(all_pts)))
+        print(u"  collected {0} source pts (incl. virtual)"
+              .format(len(all_pts)))
 
     if sign == 0:
         src_cx = sum(p[axis] for p in all_pts) / len(all_pts)
@@ -4524,6 +4539,9 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
     #                  user's selection. Shapes with no entries in
     #                  vert_indices are entirely excluded (they won't
     #                  move, so they must not constrain the motion).
+    # Additionally, any caller-provided virtual triangles (built from
+    # sparse vertex / edge selections) participate in the collision
+    # check as if they were real geometry.
     src_moving_tris = []
     for shape in source_shapes:
         if is_component_mode:
@@ -4539,13 +4557,17 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
             tris = _ml_mesh_to_triangles(shape)
             src_moving_tris.extend(tris)
 
+    if virtual_triangles:
+        src_moving_tris.extend(virtual_triangles)
+
     tgt_tris = []
     for shape in target_shapes:
         tgt_tris.extend(_ml_mesh_to_triangles(shape))
 
     if debug:
-        print(u"  moving_tris={0}  tgt_tris={1}".format(
-            len(src_moving_tris), len(tgt_tris)))
+        n_virtual = len(virtual_triangles) if virtual_triangles else 0
+        print(u"  moving_tris={0} (incl. {1} virtual)  tgt_tris={2}"
+              .format(len(src_moving_tris), n_virtual, len(tgt_tris)))
 
     # If there are no fully-selected triangles (user picked disconnected
     # vertices), fall back to raycast-only — rays already gave us a
@@ -5226,6 +5248,223 @@ class MeshLandingDialog(QtWidgets.QDialog):
         face_items_map = _faces_to_items(adjacent_faces_per_shape)
         return enclosed_map, adjacent_map, face_items_map
 
+    def _build_virtual_tris_from_selection(self, axis):
+        """Build tiny synthetic triangles at selected vertices / edges.
+
+        Used when the user's selection doesn't fully enclose any face
+        but we still want the landing algorithm to treat the selected
+        components as collidable geometry.
+
+        For each selected vertex -> a tiny triangle (fan) centered on
+        that vertex in the plane perpendicular to `axis` (roughly
+        facing the target direction).
+        For each selected edge    -> a very thin quad (two triangles)
+        spanning the edge, in the same perpendicular orientation.
+
+        Returns (vert_map, virtual_tris_map) where
+          vert_map          = {shape: [vert_index, ...]} — the verts
+                              Maya should actually move (the selection
+                              itself).
+          virtual_tris_map  = {shape: [(p0,p1,p2), ...]} — synthetic
+                              triangles passed to ml_compute_landing.
+        """
+        sel = cmds.ls(sl=True, fl=True, long=True) or []
+        a_set = set(self._mesh_a_shapes)
+
+        # Bucket selection by shape.
+        per_shape = {}  # shape -> {"vtx": set, "e": set}
+        for item in sel:
+            if u".vtx[" in item:
+                sep, kind = u".vtx[", "vtx"
+            elif u".e[" in item:
+                sep, kind = u".e[", "e"
+            else:
+                continue   # faces go through _gather_components
+            shape_part = item.split(sep)[0]
+            shapes = _ml_get_mesh_shapes([shape_part])
+            if not shapes:
+                continue
+            shape = shapes[0]
+            if shape not in a_set:
+                continue
+            try:
+                idx = int(item.split(u"[")[-1].rstrip(u"]"))
+            except Exception:
+                continue
+            bucket = per_shape.setdefault(shape, {"vtx": set(), "e": set()})
+            bucket[kind].add(idx)
+
+        # Auto-scale: size each virtual triangle to ~1% of the mesh's
+        # bounding-box diagonal, clamped to a sane range. Small enough
+        # to not collide with unintended geometry, large enough to be
+        # numerically robust.
+        def _virtual_size(shape):
+            try:
+                bb = cmds.exactWorldBoundingBox(shape)
+                diag = ((bb[3]-bb[0])**2 + (bb[4]-bb[1])**2
+                        + (bb[5]-bb[2])**2) ** 0.5
+                s = diag * 0.01
+                if s < 1.0e-4:
+                    s = 1.0e-4
+                if s > 0.1:
+                    s = 0.1
+                return s
+            except Exception:
+                return 1.0e-3
+
+        # Two orthogonal unit vectors in the plane perpendicular to `axis`.
+        # axis=0 (X) -> Y and Z ; axis=1 (Y) -> X and Z ; axis=2 (Z) -> X and Y
+        perp = {0: ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
+                1: ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+                2: ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0))}
+        u_vec, v_vec = perp.get(axis, ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0)))
+
+        vert_map = {}
+        virtual_tris_map = {}
+
+        for shape, buckets in per_shape.items():
+            size = _virtual_size(shape)
+            tris = []
+            vidxs_for_shape = set()
+
+            # --- Vertex: make a small triangle centered on the vertex ---
+            for vi in buckets["vtx"]:
+                try:
+                    p = cmds.xform(u"{0}.vtx[{1}]".format(shape, vi),
+                                   q=True, ws=True, t=True)
+                except Exception:
+                    continue
+                if not p or len(p) < 3:
+                    continue
+                # Equilateral-ish small triangle around p in the perp plane.
+                p0 = (p[0] + u_vec[0] * size,
+                      p[1] + u_vec[1] * size,
+                      p[2] + u_vec[2] * size)
+                p1 = (p[0] - u_vec[0] * size * 0.5 + v_vec[0] * size * 0.87,
+                      p[1] - u_vec[1] * size * 0.5 + v_vec[1] * size * 0.87,
+                      p[2] - u_vec[2] * size * 0.5 + v_vec[2] * size * 0.87)
+                p2 = (p[0] - u_vec[0] * size * 0.5 - v_vec[0] * size * 0.87,
+                      p[1] - u_vec[1] * size * 0.5 - v_vec[1] * size * 0.87,
+                      p[2] - u_vec[2] * size * 0.5 - v_vec[2] * size * 0.87)
+                tris.append((p0, p1, p2))
+                vidxs_for_shape.add(vi)
+
+            # --- Edge: get both endpoints, build a thin quad ---
+            for ei in buckets["e"]:
+                e_item = u"{0}.e[{1}]".format(shape, ei)
+                try:
+                    verts = cmds.polyListComponentConversion(
+                        e_item, fromEdge=True, toVertex=True) or []
+                    verts = cmds.ls(verts, fl=True) or []
+                except Exception:
+                    continue
+                if len(verts) < 2:
+                    continue
+                pts = []
+                vi_pair = []
+                for v in verts[:2]:
+                    try:
+                        vi_pair.append(int(v.split(u"[")[-1].rstrip(u"]")))
+                    except Exception:
+                        continue
+                    try:
+                        pp = cmds.xform(v, q=True, ws=True, t=True)
+                        pts.append((pp[0], pp[1], pp[2]))
+                    except Exception:
+                        pass
+                if len(pts) < 2:
+                    continue
+                a = pts[0]
+                b = pts[1]
+                # A thin quad perpendicular to `axis` spanning the edge.
+                # Width = 2 * size along u_vec; length = along the edge.
+                off = (u_vec[0] * size,
+                       u_vec[1] * size,
+                       u_vec[2] * size)
+                a0 = (a[0] + off[0], a[1] + off[1], a[2] + off[2])
+                a1 = (a[0] - off[0], a[1] - off[1], a[2] - off[2])
+                b0 = (b[0] + off[0], b[1] + off[1], b[2] + off[2])
+                b1 = (b[0] - off[0], b[1] - off[1], b[2] - off[2])
+                tris.append((a0, b0, b1))
+                tris.append((a0, b1, a1))
+                vidxs_for_shape.update(vi_pair)
+
+            if tris:
+                virtual_tris_map[shape] = tris
+            if vidxs_for_shape:
+                vert_map[shape] = sorted(vidxs_for_shape)
+
+        return vert_map, virtual_tris_map
+
+    @staticmethod
+    def _split_into_islands(vert_map):
+        """Split a {shape: [vert_idx,...]} map into disconnected islands.
+
+        Two vertices belong to the same island if a chain of shared-edge
+        connections links them. Each island is returned as its own
+        {shape: [vert_idx,...]} dict, so it can be fed directly into
+        ml_compute_landing as a separate landing problem.
+
+        Vertices from different shapes are always in different islands
+        (we never bridge across objects).
+        """
+        islands = []
+        for shape, vidxs in vert_map.items():
+            if not vidxs:
+                continue
+            vset = set(vidxs)
+
+            # Build adjacency: v -> set of neighboring selected verts,
+            # via edges that connect two selected verts.
+            adj = {v: set() for v in vset}
+            try:
+                vtx_items = [u"{0}.vtx[{1}]".format(shape, vi)
+                             for vi in vset]
+                edges = cmds.polyListComponentConversion(
+                    vtx_items, toEdge=True) or []
+                edges = cmds.ls(edges, fl=True) or []
+            except Exception:
+                edges = []
+            for e in edges:
+                try:
+                    verts = cmds.polyListComponentConversion(
+                        e, fromEdge=True, toVertex=True) or []
+                    verts = cmds.ls(verts, fl=True) or []
+                    pair = []
+                    for v in verts:
+                        try:
+                            pair.append(int(v.split(u"[")[-1].rstrip(u"]")))
+                        except Exception:
+                            pass
+                    if len(pair) == 2 and pair[0] in vset and pair[1] in vset:
+                        adj[pair[0]].add(pair[1])
+                        adj[pair[1]].add(pair[0])
+                except Exception:
+                    continue
+
+            # BFS/DFS to find connected components.
+            visited = set()
+            for start in vset:
+                if start in visited:
+                    continue
+                stack = [start]
+                comp = []
+                while stack:
+                    v = stack.pop()
+                    if v in visited:
+                        continue
+                    visited.add(v)
+                    comp.append(v)
+                    for n in adj.get(v, ()):
+                        if n not in visited:
+                            stack.append(n)
+                islands.append({shape: comp})
+
+        # Edge-case: no islands were produced (vert_map was empty).
+        if not islands and vert_map:
+            islands.append(dict(vert_map))
+        return islands
+
     def _on_preview(self):
         if not MAYA_AVAILABLE:
             return
@@ -5249,45 +5488,25 @@ class MeshLandingDialog(QtWidgets.QDialog):
         is_component = self._rb_comp.isChecked()
 
         vert_map = None
+        virtual_tris_map = None   # {shape: [(p0,p1,p2), ...]}
         if is_component:
             enclosed_map, adjacent_map, face_items_map = \
                 self._gather_components()
             if enclosed_map:
                 # Selection fully encloses at least one face → use as-is.
                 vert_map = enclosed_map
-            elif adjacent_map:
-                # Nothing enclosed, but the selection touches some faces.
-                # Ask the user whether to proceed with the expanded set.
-                total_faces = sum(len(v) for v in face_items_map.values())
-                total_verts = sum(len(v) for v in adjacent_map.values())
-                msg_body = tr("ml_confirm_expand_body",
-                              n_faces=total_faces, n_verts=total_verts)
-                reply = QtWidgets.QMessageBox.question(
-                    self,
-                    tr("ml_confirm_expand_title"),
-                    msg_body,
-                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-                    QtWidgets.QMessageBox.No)
-                if reply != QtWidgets.QMessageBox.Yes:
-                    self.status_msg.emit(tr("ml_status_cancelled"))
-                    return
-                # Switch Maya's selection to the expanded face set so the
-                # user can visually confirm what moved after the preview.
-                expanded_items = []
-                for shape, items in face_items_map.items():
-                    expanded_items.extend(items)
-                if expanded_items:
-                    try:
-                        cmds.select(expanded_items, r=True)
-                    except Exception:
-                        pass
-                vert_map = adjacent_map
             else:
-                # Nothing usable at all.
-                self.status_msg.emit(tr("ml_status_no_enclosed"))
-                self._set_preview_label(tr("ml_status_no_enclosed"),
-                                        warn=True)
-                return
+                # No enclosed face. Build virtual triangles directly at
+                # the selected vertices / edges so the collision check
+                # has something to test against, without widening the
+                # user's selection.
+                vert_map, virtual_tris_map = \
+                    self._build_virtual_tris_from_selection(axis)
+                if not vert_map:
+                    self.status_msg.emit(tr("ml_status_no_enclosed"))
+                    self._set_preview_label(tr("ml_status_no_enclosed"),
+                                            warn=True)
+                    return
 
         # Wrap the preview in a single undo chunk so Ctrl+Z collapses it.
         cmds.undoInfo(openChunk=True, chunkName="DW_MeshLanding_Preview")
@@ -5296,42 +5515,87 @@ class MeshLandingDialog(QtWidgets.QDialog):
             self._snapshot = self._capture_snapshot(is_component, vert_map)
 
             if is_component:
-                result = ml_compute_landing(
-                    self._mesh_a_shapes, self._mesh_b_shapes,
-                    axis, sign, offset, vert_indices=vert_map)
-                if result is None or result[0] is None or result[0] < 1.0e-8:
+                # Split selected verts into connected islands so each
+                # disjoint group lands independently.
+                islands = self._split_into_islands(vert_map)
+                any_hit = False
+                max_dist = 0.0
+                actual_sign_report = 0
+                fail_count = 0
+                for island_vert_map in islands:
+                    # Gather virtual triangles relevant to this island.
+                    island_v_tris = []
+                    if virtual_tris_map:
+                        for shape in island_vert_map.keys():
+                            island_v_tris.extend(
+                                virtual_tris_map.get(shape, []))
+                    result = ml_compute_landing(
+                        self._mesh_a_shapes, self._mesh_b_shapes,
+                        axis, sign, offset,
+                        vert_indices=island_vert_map,
+                        virtual_triangles=(island_v_tris or None))
+                    if result is None or result[0] is None \
+                            or result[0] < 1.0e-8:
+                        fail_count += 1
+                        continue
+                    d, actual_sign = result
+                    delta = [0.0, 0.0, 0.0]
+                    delta[axis] = d * actual_sign
+                    for shape, vidxs in island_vert_map.items():
+                        comps = [u"{0}.vtx[{1}]".format(shape, vi)
+                                 for vi in vidxs]
+                        if comps:
+                            cmds.xform(comps, ws=True, r=True,
+                                       t=(delta[0], delta[1], delta[2]))
+                    any_hit = True
+                    if d > max_dist:
+                        max_dist = d
+                        actual_sign_report = actual_sign
+                if not any_hit:
                     self.status_msg.emit(tr("ml_status_no_hit"))
                     self._set_preview_label(tr("ml_status_no_hit"),
                                             warn=True)
                     self._snapshot = None
                     return
-                dist, actual_sign = result
-                delta = [0.0, 0.0, 0.0]
-                delta[axis] = dist * actual_sign
-                for shape, vidxs in vert_map.items():
-                    comps = [u"{0}.vtx[{1}]".format(shape, vi)
-                             for vi in vidxs]
-                    cmds.xform(comps, ws=True, r=True,
-                               t=(delta[0], delta[1], delta[2]))
+                dist = max_dist
+                actual_sign = actual_sign_report
             else:
-                result = ml_compute_landing(
-                    self._mesh_a_shapes, self._mesh_b_shapes,
-                    axis, sign, offset)
-                if result is None or result[0] is None or result[0] < 1.0e-8:
-                    self.status_msg.emit(tr("ml_status_no_hit"))
-                    self._set_preview_label(tr("ml_status_no_hit"),
-                                            warn=True)
-                    self._snapshot = None
-                    return
-                dist, actual_sign = result
-                delta = [0.0, 0.0, 0.0]
-                delta[axis] = dist * actual_sign
+                # Object mode: each source shape lands independently so
+                # disconnected meshes (e.g. pCube1 far away from pCube2)
+                # each find their own collision distance with Mesh B.
+                any_hit = False
+                max_dist = 0.0
+                fail_shapes = []
                 for shape in self._mesh_a_shapes:
+                    result = ml_compute_landing(
+                        [shape], self._mesh_b_shapes,
+                        axis, sign, offset)
+                    if result is None or result[0] is None \
+                            or result[0] < 1.0e-8:
+                        fail_shapes.append(shape)
+                        continue
+                    d, actual_sign = result
+                    delta = [0.0, 0.0, 0.0]
+                    delta[axis] = d * actual_sign
                     tr_node = cmds.listRelatives(shape, parent=True,
                                                   fullPath=True)
                     if tr_node:
                         cmds.xform(tr_node[0], ws=True, r=True,
                                    t=(delta[0], delta[1], delta[2]))
+                    any_hit = True
+                    if d > max_dist:
+                        max_dist = d
+                        # Keep the sign from the last successful landing
+                        # for status reporting.
+                        actual_sign_report = actual_sign
+                if not any_hit:
+                    self.status_msg.emit(tr("ml_status_no_hit"))
+                    self._set_preview_label(tr("ml_status_no_hit"),
+                                            warn=True)
+                    self._snapshot = None
+                    return
+                dist = max_dist   # representative distance for the status
+                actual_sign = actual_sign_report
 
             self._preview_active = True
             self._last_dist = dist
