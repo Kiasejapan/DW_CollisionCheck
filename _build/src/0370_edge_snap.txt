@@ -668,6 +668,78 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
 # Edge Snap: tab-side launcher + plumbing
 # ---------------------------------------------------------------------------
 
+class _EdgeModeButton(QtWidgets.QAbstractButton):
+    """Small icon toggle button for Ring / Loop expansion mode.
+
+    Draws a mini cylinder-net schematic:
+      * "ring"  — horizontal edges highlighted across a quad-net
+      * "loop"  — vertical edges highlighted across a quad-net
+
+    Checked state is shown with an orange tint and a brighter frame
+    to match the rest of the Edge Width Alignment group (which uses
+    orange as its accent colour).
+    """
+
+    _SIZE = 36   # square px
+
+    def __init__(self, orientation="ring", tooltip=u"", parent=None):
+        super(_EdgeModeButton, self).__init__(parent)
+        self._orient = orientation   # "ring" or "loop"
+        self.setCheckable(True)
+        self.setFixedSize(self._SIZE, self._SIZE)
+        self.setCursor(QtCore.Qt.PointingHandCursor)
+        self.setToolTip(tooltip)
+
+    def sizeHint(self):
+        return QtCore.QSize(self._SIZE, self._SIZE)
+
+    def paintEvent(self, event):
+        p = QtGui.QPainter(self)
+        p.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+        checked = self.isChecked()
+        hover = self.underMouse()
+
+        # Frame / background.
+        bg = QtGui.QColor("#FF9800") if checked else QtGui.QColor("#3C3C3C")
+        if hover and not checked:
+            bg = QtGui.QColor("#4A4A4A")
+        frame = QtGui.QColor("#F57C00") if checked else QtGui.QColor("#555")
+        p.setPen(QtGui.QPen(frame, 1))
+        p.setBrush(bg)
+        p.drawRoundedRect(1, 1, self._SIZE - 2, self._SIZE - 2, 4, 4)
+
+        # Draw a 4-column x 4-row grid of "edges" with the relevant
+        # direction highlighted.
+        margin = 7
+        w = self._SIZE - margin * 2
+        h = self._SIZE - margin * 2
+        cols = 4
+        rows = 4
+        grey = QtGui.QColor("#888") if not checked else QtGui.QColor("#FFE0B2")
+        hi   = QtGui.QColor("#222") if checked else QtGui.QColor("#EEE")
+
+        # Vertical gridlines (columns of the net) — 5 lines for 4 cols.
+        for i in range(cols + 1):
+            x = margin + int(w * i / cols)
+            is_hi = (self._orient == "loop")
+            pen = QtGui.QPen(hi if is_hi else grey,
+                              2 if is_hi else 1)
+            p.setPen(pen)
+            p.drawLine(x, margin, x, margin + h)
+
+        # Horizontal gridlines — 5 for 4 rows.
+        for j in range(rows + 1):
+            y = margin + int(h * j / rows)
+            is_hi = (self._orient == "ring")
+            pen = QtGui.QPen(hi if is_hi else grey,
+                              2 if is_hi else 1)
+            p.setPen(pen)
+            p.drawLine(margin, y, margin + w, y)
+
+        p.end()
+
+
 def _build_edge_snap_group(tool_window, parent_layout):
     """Build the Edge Snap group for the Snap tab."""
     grp = QtWidgets.QGroupBox()
@@ -711,15 +783,24 @@ def _build_edge_snap_group(tool_window, parent_layout):
     tool_window._es_mode_lbl.setStyleSheet(
         "color:#AAA;font-size:10px")
     mode_row.addWidget(tool_window._es_mode_lbl)
-    rb_ss = ("QRadioButton{color:#DDD;font-size:10px}"
-             "QRadioButton::indicator{width:11px;height:11px}")
-    tool_window._es_rb_ring = QtWidgets.QRadioButton(tr("es_mode_ring"))
-    tool_window._es_rb_ring.setStyleSheet(rb_ss)
-    tool_window._es_rb_ring.setChecked(True)
-    mode_row.addWidget(tool_window._es_rb_ring)
-    tool_window._es_rb_loop = QtWidgets.QRadioButton(tr("es_mode_loop"))
-    tool_window._es_rb_loop.setStyleSheet(rb_ss)
-    mode_row.addWidget(tool_window._es_rb_loop)
+
+    # Icon-driven toggle buttons. Ring = horizontal lines (belt);
+    # Loop = vertical lines (perpendicular). Paint directly so we
+    # get crisp icons at any DPI without shipping image files.
+    tool_window._es_btn_ring = _EdgeModeButton(
+        orientation="ring", tooltip=tr("es_mode_ring"))
+    tool_window._es_btn_ring.setChecked(True)
+    mode_row.addWidget(tool_window._es_btn_ring)
+    tool_window._es_btn_loop = _EdgeModeButton(
+        orientation="loop", tooltip=tr("es_mode_loop"))
+    mode_row.addWidget(tool_window._es_btn_loop)
+
+    # Mutex group — exactly one selected at a time.
+    tool_window._es_mode_group = QtWidgets.QButtonGroup(tool_window)
+    tool_window._es_mode_group.setExclusive(True)
+    tool_window._es_mode_group.addButton(tool_window._es_btn_ring, 0)
+    tool_window._es_mode_group.addButton(tool_window._es_btn_loop, 1)
+
     mode_row.addStretch()
     lo.addLayout(mode_row)
 
@@ -730,10 +811,10 @@ def _build_edge_snap_group(tool_window, parent_layout):
 
 def _es_launch(tool_window):
     """Collect selected edges, open/refresh the result window."""
-    # Pick the expand mode from the radio buttons.
+    # Pick the expand mode from the icon buttons.
     mode = "ring"
-    if getattr(tool_window, "_es_rb_loop", None) is not None \
-            and tool_window._es_rb_loop.isChecked():
+    if getattr(tool_window, "_es_btn_loop", None) is not None \
+            and tool_window._es_btn_loop.isChecked():
         mode = "loop"
     edges = _es_get_selected_edges(expand_mode=mode)
     if not edges:
@@ -764,10 +845,10 @@ def _es_refresh_labels(tool_window):
         tool_window._es_desc_lbl.setText(tr("es_grp_desc"))
     if hasattr(tool_window, "_es_mode_lbl"):
         tool_window._es_mode_lbl.setText(tr("es_lbl_expand_mode"))
-    if hasattr(tool_window, "_es_rb_ring"):
-        tool_window._es_rb_ring.setText(tr("es_mode_ring"))
-    if hasattr(tool_window, "_es_rb_loop"):
-        tool_window._es_rb_loop.setText(tr("es_mode_loop"))
+    if hasattr(tool_window, "_es_btn_ring"):
+        tool_window._es_btn_ring.setToolTip(tr("es_mode_ring"))
+    if hasattr(tool_window, "_es_btn_loop"):
+        tool_window._es_btn_loop.setToolTip(tr("es_mode_loop"))
     w = getattr(tool_window, "_es_result_window", None)
     if w is not None:
         w.refresh_labels()
