@@ -113,29 +113,20 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         self._lang_btn.clicked.connect(self._toggle_lang)
         header.addWidget(self._lang_btn)
 
-        # Static Results button
+        # Static Results button — functionality retained internally
+        # but hidden from the UI (users go through the tabs instead).
         self._btn_static_results = QtWidgets.QPushButton(tr("btn_static_results"))
         self._btn_static_results.setFixedHeight(24)
         self._btn_static_results.setEnabled(False)
-        self._btn_static_results.setStyleSheet(
-            "QPushButton{background-color:#2196F3;color:white;border:none;"
-            "border-radius:4px;font-size:10px;font-weight:bold;padding:0 8px}"
-            "QPushButton:hover{background-color:#1976D2}"
-            "QPushButton:disabled{background-color:#444;color:#666}")
+        self._btn_static_results.setVisible(False)
         self._btn_static_results.clicked.connect(self._show_static_results)
-        header.addWidget(self._btn_static_results)
 
-        # Anim Results button
+        # Anim Results button — likewise hidden.
         self._btn_anim_results = QtWidgets.QPushButton(tr("btn_anim_results"))
         self._btn_anim_results.setFixedHeight(24)
         self._btn_anim_results.setEnabled(False)
-        self._btn_anim_results.setStyleSheet(
-            "QPushButton{background-color:#FF9800;color:white;border:none;"
-            "border-radius:4px;font-size:10px;font-weight:bold;padding:0 8px}"
-            "QPushButton:hover{background-color:#F57C00}"
-            "QPushButton:disabled{background-color:#444;color:#666}")
+        self._btn_anim_results.setVisible(False)
         self._btn_anim_results.clicked.connect(self._show_anim_results)
-        header.addWidget(self._btn_anim_results)
 
         main_lo.addLayout(header)
 
@@ -735,6 +726,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         lo.setSpacing(6)
         tabs = QtWidgets.QTabWidget()
         for tab_key, body_key in [
+                ("tab_intro", "help_body_intro"),
                 ("tab_check", "help_body_check"),
                 ("tab_snap",  "help_body_snap")]:
             tb = QtWidgets.QTextBrowser()

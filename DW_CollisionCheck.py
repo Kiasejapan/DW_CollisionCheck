@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.22.1935"
+VERSION = "2026.04.22.1952"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -167,6 +167,7 @@ _STRINGS = {
 
     # ---- Tabs --------------------------------------------------------
     "tab_check":            {"en": "Check",                         "jp": u"\u30c1\u30a7\u30c3\u30af"},
+    "tab_intro":            {"en": "Getting started",                "jp": u"\u306f\u3058\u3081\u306b"},
 
     "anim_scanning":        {"en": "Scanning frame {frame}/{total}...",
                              "jp": u"\u30d5\u30ec\u30fc\u30e0 {frame}/{total} \u3092\u30b9\u30ad\u30e3\u30f3\u4e2d..."},
@@ -181,6 +182,44 @@ _STRINGS = {
     # ---- Help (per-tab) ----------------------------------------------
     "help_title":           {"en": "Help \u2014 DW Collision Check",
                              "jp": u"\u30d8\u30eb\u30d7 \u2014 DW \u5e72\u6e09\u30c1\u30a7\u30c3\u30af"},
+    "help_body_intro": {
+        "en": "<h2>Getting started</h2>"
+              "<p>This tool set is <b>not</b> designed to automatically eliminate "
+              "problem areas.</p>"
+              "<p>Rather, it provides a variety of ways to help you <b>surface</b> "
+              "potential issues, verify them, and reduce the tedium of inspection "
+              "and manual fix-up work.</p>"
+              "<p>If a reported issue is intentional for your shot or rig \u2014 "
+              "for example, a deliberate interpenetration hidden by clothing, or "
+              "a contact the rig needs \u2014 <b>it is perfectly fine to leave it "
+              "flagged</b>. The goal is awareness, not a clean slate.</p>"
+              "<h3>Typical workflow</h3>"
+              "<ol>"
+              "<li>Use the <b>Check</b> tab to find intersections and overlaps "
+              "at the current frame, or sweep an animation range to find "
+              "problem frames.</li>"
+              "<li>Click through the results to jump to the offending faces / "
+              "frames and decide whether each one matters.</li>"
+              "<li>Use the <b>Alignment</b> tab to batch-adjust vertices, edges "
+              "or faces when you choose to fix something.</li>"
+              "</ol>"
+              "<p>In short: these are <i>inspection and assistance</i> tools. "
+              "Decide what to fix, then use them to fix it faster.</p>",
+        "jp": u"<h2>\u306f\u3058\u3081\u306b</h2>"
+              u"<p>\u3053\u306e\u30c1\u30a7\u30c3\u30af\u30c4\u30fc\u30eb\u7fa4\u306f\u3001\u554f\u984c\u7b87\u6240\u3092\u81ea\u52d5\u3067\u7121\u304f\u3059\u305f\u3081\u306e\u30c4\u30fc\u30eb\u3067\u306f\u3042\u308a\u307e\u305b\u3093\u3002</p>"
+              u"<p>\u8272\u3005\u306a\u65b9\u6cd5\u3067\u3001\u554f\u984c\u7b87\u6240\u3092<b>\u6d17\u3044\u51fa\u3057\u305f\u308a\u3001\u78ba\u8a8d\u3057\u305f\u308a\u3001\u64cd\u4f5c\u306e\u624b\u9593\u3092\u7701\u304f</b>\u305f\u3081\u306e\u30c4\u30fc\u30eb\u3067\u3059\u3002</p>"
+              u"<p>\u306a\u306e\u3067\u3001\u30a8\u30e9\u30fc\u304c\u6b8b\u3063\u3066\u3044\u3066\u3082\u305d\u306e\u72b6\u614b\u304c\u6b63\u3057\u3044\u306e\u3067\u3042\u308c\u3070\u3001\u305d\u306e\u307e\u307e\u3067\u826f\u3044\u3067\u3059\u3002"
+              u"\u4f8b\u3048\u3070\u3001\u670d\u306b\u96a0\u308c\u305f\u610f\u56f3\u7684\u306a\u4ea4\u5dee\u3001\u30ea\u30b0\u306b\u5fc5\u8981\u306a\u63a5\u89e6\u306a\u3069\u306f\u3001\u691c\u51fa\u3055\u308c\u3066\u3082<b>\u7121\u8996\u3057\u3066\u69cb\u3044\u307e\u305b\u3093</b>\u3002"
+              u"\u76ee\u7684\u306f\u300c\u3059\u3079\u3066\u3092\u30af\u30ea\u30fc\u30f3\u306b\u3059\u308b\u300d\u3053\u3068\u3067\u306f\u306a\u304f\u3001\u300c\u898b\u843d\u3068\u3057\u3092\u9632\u3050\u300d\u3053\u3068\u3067\u3059\u3002</p>"
+              u"<h3>\u5178\u578b\u7684\u306a\u30ef\u30fc\u30af\u30d5\u30ed\u30fc</h3>"
+              u"<ol>"
+              u"<li><b>\u30c1\u30a7\u30c3\u30af</b>\u30bf\u30d6\u3067\u3001\u73fe\u5728\u30d5\u30ec\u30fc\u30e0\u306e\u4ea4\u5dee\u30fb\u91cd\u306a\u308a\u3092\u691c\u51fa\u3001\u307e\u305f\u306f\u30a2\u30cb\u30e1\u30fc\u30b7\u30e7\u30f3\u7bc4\u56f2\u3092\u8d70\u67fb\u3057\u3066\u554f\u984c\u30d5\u30ec\u30fc\u30e0\u3092\u6d17\u3044\u51fa\u3057\u307e\u3059\u3002</li>"
+              u"<li>\u7d50\u679c\u884c\u3092\u30af\u30ea\u30c3\u30af\u3057\u3066\u8a72\u5f53\u30d5\u30a7\u30fc\u30b9\u30fb\u30d5\u30ec\u30fc\u30e0\u306b\u98db\u3073\u3001<b>\u305d\u308c\u305e\u308c\u304c\u672c\u5f53\u306b\u4fee\u6b63\u3059\u3079\u304d\u554f\u984c\u304b</b>\u3092\u5224\u5b9a\u3057\u307e\u3059\u3002</li>"
+              u"<li>\u4fee\u6b63\u3059\u308b\u3068\u6c7a\u3081\u305f\u3082\u306e\u306f\u3001<b>\u6574\u5217</b>\u30bf\u30d6\u306e\u30c4\u30fc\u30eb\u3067\u9802\u70b9\u30fb\u30a8\u30c3\u30b8\u30fb\u30d5\u30a7\u30fc\u30b9\u3092\u4e00\u62ec\u8abf\u6574\u3057\u307e\u3059\u3002</li>"
+              u"</ol>"
+              u"<p>\u8981\u3059\u308b\u306b\u3001\u3053\u308c\u3089\u306f<i>\u300c\u691c\u67fb\u30fb\u88dc\u52a9\u300d</i>\u30c4\u30fc\u30eb\u3067\u3059\u3002"
+              u"\u4f55\u3092\u76f4\u3059\u304b\u306f\u4eba\u304c\u6c7a\u3081\u3001\u305d\u306e\u4f5c\u696d\u3092\u6700\u5c0f\u306e\u624b\u9593\u3067\u884c\u3046\u305f\u3081\u306b\u30c4\u30fc\u30eb\u3092\u4f7f\u3046\u2014\u2014\u3068\u3044\u3046\u4f4d\u7f6e\u3065\u3051\u3067\u3059\u3002</p>",
+    },
     "help_body_check": {
         "en": "<h2>Check Tab</h2>"
               "<p>Detects polygon intersections and overlaps at the current frame "
@@ -426,9 +465,9 @@ _STRINGS = {
                              "jp": u"\u5168\u3066\u306eSnap\u3092\u5143\u306b\u623b\u3057\u307e\u3057\u305f\u3002"},
 
     # ---- Edge Width Alignment (Snap tab) -----------------------------
-    "es_grp_title":         {"en": "Edge Width Alignment",           "jp": u"\u30a8\u30c3\u30b8\u5e45\u306e\u6574\u5217"},
-    "es_grp_desc":          {"en": "Equalise the widths of a ring of edges. Pick one edge (auto-expands along Ring or Loop) or several edges and launch.",
-                             "jp": u"\u30a8\u30c3\u30b8\u306e\u5e45\u3092\u63c3\u3048\u307e\u3059\u30021\u672c\u9078\u629e\u3067\u30ea\u30f3\u30b0 or \u30eb\u30fc\u30d7\u81ea\u52d5\u62e1\u5f35\u3001\u8907\u6570\u9078\u629e\u306b\u3082\u5bfe\u5fdc\u3002"},
+    "es_grp_title":         {"en": u"Edge Width Alignment  \u26A0 WIP",  "jp": u"\u30a8\u30c3\u30b8\u5e45\u306e\u6574\u5217  \u26A0 \u958b\u767a\u4e2d"},
+    "es_grp_desc":          {"en": u"\u26A0 Under development \u2014 use with caution. Equalise the widths of a ring of edges. Pick one edge (auto-expands along Ring or Loop) or several edges and launch.",
+                             "jp": u"\u26A0 \u958b\u767a\u4e2d \u2014 \u4f7f\u7528\u306f\u81ea\u5df1\u8cac\u4efb\u3067\u3002\u30a8\u30c3\u30b8\u306e\u5e45\u3092\u63c3\u3048\u307e\u3059\u30021\u672c\u9078\u629e\u3067\u30ea\u30f3\u30b0 or \u30eb\u30fc\u30d7\u81ea\u52d5\u62e1\u5f35\u3001\u8907\u6570\u9078\u629e\u306b\u3082\u5bfe\u5fdc\u3002"},
     "es_btn_launch":        {"en": u"\u25B6 Launch",                  "jp": u"\u25B6 \u8d77\u52d5"},
     "es_result_title":      {"en": "Edge Width Alignment",            "jp": u"\u30a8\u30c3\u30b8\u5e45\u306e\u6574\u5217"},
     "es_scope":             {"en": "{count} edge(s) selected.",
@@ -498,9 +537,9 @@ _STRINGS = {
                                    "jp": u"\u533a\u9593 #{cid} \u3092\u9078\u629e\uff1a{count} \u672c\u3001\u5e73\u5747 {avg}"},
 
     # ---- Vertex Align (Alignment tab) --------------------------------
-    "va_grp_title":         {"en": "Vertex Align",                    "jp": u"\u9802\u70b9\u6574\u5217"},
-    "va_grp_desc":          {"en": "Project selected vertices onto a line or plane.",
-                             "jp": u"\u9078\u629e\u3057\u305f\u9802\u70b9\u3092\u76f4\u7dda\u3084\u5e73\u9762\u306b\u6574\u5217\u3055\u305b\u307e\u3059\u3002"},
+    "va_grp_title":         {"en": u"Vertex Align  \u26A0 WIP",         "jp": u"\u9802\u70b9\u6574\u5217  \u26A0 \u958b\u767a\u4e2d"},
+    "va_grp_desc":          {"en": u"\u26A0 Under development \u2014 use with caution. Project selected vertices onto a line or plane.",
+                             "jp": u"\u26A0 \u958b\u767a\u4e2d \u2014 \u4f7f\u7528\u306f\u81ea\u5df1\u8cac\u4efb\u3067\u3002\u9078\u629e\u3057\u305f\u9802\u70b9\u3092\u76f4\u7dda\u3084\u5e73\u9762\u306b\u6574\u5217\u3055\u305b\u307e\u3059\u3002"},
     "va_btn_launch":        {"en": u"\u25B6 Launch",                   "jp": u"\u25B6 \u8d77\u52d5"},
     "va_dlg_title":         {"en": "Vertex Align",                    "jp": u"\u9802\u70b9\u6574\u5217"},
     "va_tab_linear3d":      {"en": "Linear 3D",                       "jp": u"\u76f4\u7dda\u5316 3D"},
@@ -6269,32 +6308,291 @@ def _es_snap_edge_to_length(e, target_length, anchor):
 # that the selected rungs connect, and snap endpoints *along* them.
 # ---------------------------------------------------------------------------
 
+def _es_face_edges_ordered(shape, face_idx):
+    """Return the ordered list of edge indices around a face.
+
+    `polyInfo -fe` gives the edges; `polyInfo -fv` gives the verts
+    in order. We pair them up by walking vertex pairs and matching
+    to the edge's two verts.
+    """
+    if not MAYA_AVAILABLE:
+        return []
+    face = u"{0}.f[{1}]".format(shape, face_idx)
+    try:
+        # All verts of this face in CCW order.
+        vs = cmds.polyInfo(face, faceToVertex=True)
+        if not vs:
+            return []
+        # Format: "FACE nnn: VV1 VV2 VV3 ..."
+        tail = vs[0].split(u":")[-1].strip()
+        vids = []
+        for tok in tail.split():
+            try:
+                vids.append(int(tok))
+            except Exception:
+                pass
+        if len(vids) < 3:
+            return []
+        # Build edge index lookup: {(v0, v1) -> edge_idx} where
+        # (v0, v1) is sorted.
+        es = cmds.polyInfo(face, faceToEdge=True) or []
+        eids = []
+        tail = es[0].split(u":")[-1].strip()
+        for tok in tail.split():
+            try:
+                eids.append(int(tok))
+            except Exception:
+                pass
+        # For each edge index, look up its two verts.
+        edge_to_verts = {}
+        for ei in eids:
+            ev = cmds.polyInfo(
+                u"{0}.e[{1}]".format(shape, ei),
+                edgeToVertex=True) or []
+            if not ev:
+                continue
+            # Format: "EDGE n: v1 v2 ..."
+            tail2 = ev[0].split(u":")[-1].strip().split()
+            try:
+                v0 = int(tail2[0]); v1 = int(tail2[1])
+                edge_to_verts[ei] = (min(v0, v1), max(v0, v1))
+            except Exception:
+                pass
+        # Walk vertex pairs in order; for each pair, find the edge.
+        ordered = []
+        n = len(vids)
+        for i in range(n):
+            v0 = vids[i]
+            v1 = vids[(i + 1) % n]
+            key = (min(v0, v1), max(v0, v1))
+            matching = None
+            for ei, pair in edge_to_verts.items():
+                if pair == key:
+                    matching = ei
+                    break
+            if matching is not None:
+                ordered.append(matching)
+        return ordered
+    except Exception:
+        return []
+
+
+def _es_edge_verts(shape, edge_idx):
+    """Return (v0_idx, v1_idx) for an edge."""
+    if not MAYA_AVAILABLE:
+        return None
+    try:
+        ev = cmds.polyInfo(
+            u"{0}.e[{1}]".format(shape, edge_idx),
+            edgeToVertex=True) or []
+        if not ev:
+            return None
+        tail = ev[0].split(u":")[-1].strip().split()
+        return (int(tail[0]), int(tail[1]))
+    except Exception:
+        return None
+
+
+def _es_edge_faces(shape, edge_idx):
+    """Return list of face indices the edge belongs to."""
+    if not MAYA_AVAILABLE:
+        return []
+    try:
+        ef = cmds.polyInfo(
+            u"{0}.e[{1}]".format(shape, edge_idx),
+            edgeToFace=True) or []
+        if not ef:
+            return []
+        tail = ef[0].split(u":")[-1].strip().split()
+        return [int(t) for t in tail]
+    except Exception:
+        return []
+
+
+def _es_vtx_pos(shape, vi):
+    try:
+        p = cmds.pointPosition(
+            u"{0}.vtx[{1}]".format(shape, vi), w=True)
+        return (p[0], p[1], p[2])
+    except Exception:
+        return None
+
+
+def _es_opposite_edge_in_quad(shape, face_idx, ref_edge_idx):
+    """For a quad face, return the edge that is *opposite* to
+    `ref_edge_idx` (i.e. the edge sharing no vertex with it).
+
+    For non-quad faces, returns None.
+    """
+    ordered = _es_face_edges_ordered(shape, face_idx)
+    if len(ordered) != 4:
+        return None
+    ref_verts = _es_edge_verts(shape, ref_edge_idx)
+    if ref_verts is None:
+        return None
+    rs = set(ref_verts)
+    for ei in ordered:
+        if ei == ref_edge_idx:
+            continue
+        ev = _es_edge_verts(shape, ei)
+        if ev is None:
+            continue
+        if rs & set(ev):
+            continue  # shares a vertex → adjacent, not opposite
+        return ei
+    return None
+
+
 def _es_expand_brim_from_vertex(shape, vert_idx, forbidden_edge_set,
                                   rung_verts_set):
-    """Given a shape and a seed vertex index, find the edge loop that
-    runs along the belt's brim on this side — i.e. the chain of
-    edges that:
-      * starts at `vert_idx`,
-      * uses edges that are NOT in `forbidden_edge_set` (rung edges),
-      * stays on the "brim" by preferring edges whose far endpoint is
-        another rung endpoint on the same side (i.e. in rung_verts_set).
+    """Trace the belt brim on one side (A or B) passing through
+    `vert_idx`.
 
-    Returns a list of world-space positions along the brim in order,
-    or [] if no suitable brim could be traced.
+    Strategy: walk face-by-face adjacent to the rungs. From the
+    rung whose endpoint is vert_idx, pick one of its two adjacent
+    faces, find the brim-edge (the edge of that face that touches
+    vert_idx but isn't the rung itself), then hop across the face
+    to find the neighbouring rung, and continue.
 
-    This avoids messing with Maya's selection (the previous
-    `polySelect -edgeLoop`-based approach disturbed the current
-    selection and sometimes returned the rungs themselves).
+    Returns a list of world-space positions (the brim polyline).
+    If the walk can't proceed (non-quad face / branching topology)
+    we fall back to the simple graph-walk used previously.
     """
     if not MAYA_AVAILABLE:
         return []
 
-    # Build a small helper that walks vertex-by-vertex, picking at each
-    # step a neighbour that (a) is reached by a non-rung edge, (b) is
-    # preferably a rung endpoint on this side, (c) hasn't been visited.
+    # Look up the rung whose endpoint = vert_idx in forbidden_edge_set.
+    # We need to find "the rung that touches this vertex".
+    rung_at_seed = None
+    seed_vtx = u"{0}.vtx[{1}]".format(shape, vert_idx)
+    try:
+        incident = cmds.polyListComponentConversion(
+            seed_vtx, fromVertex=True, toEdge=True) or []
+        incident = cmds.ls(incident, fl=True, long=True) or []
+        for e in incident:
+            if e in forbidden_edge_set:
+                rung_at_seed = e
+                break
+    except Exception:
+        pass
+    if rung_at_seed is None:
+        # Fall back to plain graph walk.
+        return _es_brim_graph_walk(
+            shape, vert_idx, forbidden_edge_set, rung_verts_set)
+    try:
+        rung_seed_idx = int(rung_at_seed.split(u"[")[-1].rstrip(u"]"))
+    except Exception:
+        return _es_brim_graph_walk(
+            shape, vert_idx, forbidden_edge_set, rung_verts_set)
+
+    # The walk goes in two directions. For each direction we pick one
+    # of the two adjacent faces of the starting rung and hop.
+    def _walk_one_dir(start_rung_idx, start_vtx, picked_face):
+        """Returns list of vertex indices visited on this side."""
+        seq = [start_vtx]
+        cur_rung = start_rung_idx
+        cur_vtx = start_vtx
+        cur_face = picked_face
+        visited_rungs = {start_rung_idx}
+        steps = 0
+        while steps < 10000:
+            steps += 1
+            # Opposite edge of cur_face to cur_rung. That's the
+            # "rung-side" piece of the brim, no — actually, in a
+            # rung-ring topology, the face has 4 edges: the two
+            # selected rungs (left and right) and the two brim
+            # pieces (top and bottom). The opposite of cur_rung in
+            # the quad is the OTHER RUNG on the far side of this face.
+            opp = _es_opposite_edge_in_quad(shape, cur_face, cur_rung)
+            if opp is None:
+                break
+            # That opposite edge must be another rung — if it isn't,
+            # we've drifted off the belt and stop.
+            opp_str = u"{0}.e[{1}]".format(shape, opp)
+            # Long form — we need to match against forbidden_edge_set
+            # which holds long paths. Query Maya for the long path.
+            try:
+                opp_long = cmds.ls(opp_str, long=True) or []
+                opp_long = opp_long[0] if opp_long else opp_str
+            except Exception:
+                opp_long = opp_str
+            if opp_long not in forbidden_edge_set:
+                break
+            if opp in visited_rungs:
+                break
+            visited_rungs.add(opp)
+            # Find the brim edge in cur_face: the edge of cur_face
+            # that touches cur_vtx but is neither cur_rung nor opp.
+            face_edges = _es_face_edges_ordered(shape, cur_face)
+            brim_piece = None
+            for ei in face_edges:
+                if ei == cur_rung or ei == opp:
+                    continue
+                ev = _es_edge_verts(shape, ei)
+                if ev is None:
+                    continue
+                if cur_vtx in ev:
+                    brim_piece = ei
+                    break
+            if brim_piece is None:
+                break
+            bv = _es_edge_verts(shape, brim_piece)
+            next_vtx = bv[0] if bv[1] == cur_vtx else bv[1]
+            seq.append(next_vtx)
+
+            # Advance: the next rung is `opp`; pick its NEXT face
+            # (not cur_face). The next_vtx is an endpoint of opp.
+            opp_faces = _es_edge_faces(shape, opp)
+            nxt_face = None
+            for fi in opp_faces:
+                if fi != cur_face:
+                    nxt_face = fi
+                    break
+            if nxt_face is None:
+                break
+            cur_rung = opp
+            cur_vtx = next_vtx
+            cur_face = nxt_face
+        return seq
+
+    faces_of_seed = _es_edge_faces(shape, rung_seed_idx)
+    if len(faces_of_seed) < 1:
+        return _es_brim_graph_walk(
+            shape, vert_idx, forbidden_edge_set, rung_verts_set)
+    forward_seq = _walk_one_dir(rung_seed_idx, vert_idx, faces_of_seed[0])
+    backward_seq = []
+    if len(faces_of_seed) >= 2:
+        backward_seq = _walk_one_dir(
+            rung_seed_idx, vert_idx, faces_of_seed[1])
+
+    # Combine: backward reversed (minus duplicated seed) + forward.
+    combined = list(reversed(backward_seq[1:])) + forward_seq
+    # Convert to world positions.
+    positions = []
+    for vi in combined:
+        p = _es_vtx_pos(shape, vi)
+        if p is not None:
+            positions.append(p)
+    if len(positions) < 2:
+        # Fallback to graph walk.
+        return _es_brim_graph_walk(
+            shape, vert_idx, forbidden_edge_set, rung_verts_set)
+    return positions
+
+
+def _es_brim_graph_walk(shape, vert_idx, forbidden_edge_set,
+                          rung_verts_set):
+    """Fallback brim detection when face-based walking can't proceed
+    (e.g. the selection includes triangles or branching topology).
+
+    Same graph-walk logic as the old implementation: from vert_idx,
+    pick non-rung edges, prefer neighbours that are rung endpoints
+    on the same side.
+    """
+    if not MAYA_AVAILABLE:
+        return []
+
     def _neighbours(v_idx):
-        """Return list of (neighbour_v_idx, edge_str, edge_idx) tuples
-        for the given vertex, excluding forbidden (rung) edges."""
         vtx = u"{0}.vtx[{1}]".format(shape, v_idx)
         try:
             inc = cmds.polyListComponentConversion(
@@ -6308,53 +6606,30 @@ def _es_expand_brim_from_vertex(shape, vert_idx, forbidden_edge_set,
                 continue
             try:
                 ei = int(e.split(u"[")[-1].rstrip(u"]"))
-                verts = cmds.polyListComponentConversion(
-                    e, fromEdge=True, toVertex=True) or []
-                verts = cmds.ls(verts, fl=True, long=True) or []
-                vids = []
-                for x in verts:
-                    try:
-                        vids.append(int(x.split(u"[")[-1].rstrip(u"]")))
-                    except Exception:
-                        pass
-                if len(vids) != 2:
+                ev = _es_edge_verts(shape, ei)
+                if ev is None:
                     continue
-                other = vids[0] if vids[1] == v_idx else vids[1]
-                out.append((other, e, ei))
+                other = ev[0] if ev[1] == v_idx else ev[1]
+                out.append(other)
             except Exception:
                 continue
         return out
 
-    def _get_pos(vi):
-        try:
-            p = cmds.pointPosition(
-                u"{0}.vtx[{1}]".format(shape, vi), w=True)
-            return (p[0], p[1], p[2])
-        except Exception:
-            return None
-
-    # Walk in two directions from the seed vertex, preferring rung-
-    # endpoint neighbours (brim connects rung-endpoints to each other).
     def _walk(start):
         visited = {start}
         seq = [start]
         cur = start
-        # Iterate forward as far as possible.
         while True:
             nbrs = _neighbours(cur)
-            # Prefer neighbours that are themselves rung endpoints (on
-            # this side), not yet visited.
             best = None
-            for other, _estr, _ei in nbrs:
+            for other in nbrs:
                 if other in visited:
                     continue
                 if other in rung_verts_set:
                     best = other
                     break
             if best is None:
-                # No rung-endpoint neighbour — fall back to any unvisited
-                # neighbour so we still trace *some* polyline.
-                for other, _estr, _ei in nbrs:
+                for other in nbrs:
                     if other not in visited:
                         best = other
                         break
@@ -6368,21 +6643,20 @@ def _es_expand_brim_from_vertex(shape, vert_idx, forbidden_edge_set,
         return seq
 
     forward = _walk(vert_idx)
-    # Now walk backward from the seed vertex.
     visited_fwd = set(forward)
     back = [vert_idx]
     cur = vert_idx
     while True:
         nbrs = _neighbours(cur)
         best = None
-        for other, _estr, _ei in nbrs:
+        for other in nbrs:
             if other in visited_fwd or other in back:
                 continue
             if other in rung_verts_set:
                 best = other
                 break
         if best is None:
-            for other, _estr, _ei in nbrs:
+            for other in nbrs:
                 if other in visited_fwd or other in back:
                     continue
                 best = other
@@ -6394,11 +6668,10 @@ def _es_expand_brim_from_vertex(shape, vert_idx, forbidden_edge_set,
         if len(back) > 10000:
             break
 
-    # Combine back (reversed, minus duplicated seed) + forward.
-    ordered_verts = list(reversed(back[1:])) + forward
+    combined = list(reversed(back[1:])) + forward
     positions = []
-    for vi in ordered_verts:
-        p = _get_pos(vi)
+    for vi in combined:
+        p = _es_vtx_pos(shape, vi)
         if p is not None:
             positions.append(p)
     return positions
@@ -6560,8 +6833,152 @@ def _es_slide_along_polyline(start_point, polyline, target_distance,
     return _walk(forward)
 
 
-def _es_belt_width_from_rung(rung_pos_a, rung_pos_b,
-                              brim_a_poly, brim_b_poly):
+def _es_point_at_arc_length(start_point, polyline, arc_length, forward):
+    """Given a start point on a polyline and an arc-length + direction,
+    return the point on the polyline that is `arc_length` units
+    along the polyline from the start point, following `forward`
+    direction (True = toward polyline[last], False = toward polyline[0]).
+
+    `arc_length` may be negative, in which case the walk direction is
+    flipped.
+
+    Returns the world-space point (or the polyline endpoint if the
+    requested arc-length exceeds the polyline's remaining length on
+    the chosen side).
+    """
+    if arc_length < 0:
+        arc_length = -arc_length
+        forward = not forward
+    proj = _es_project_point_onto_polyline(start_point, polyline)
+    if proj is None:
+        return start_point
+    (on_pt, seg_idx, _t) = proj
+    pos = on_pt
+    idx = seg_idx
+    remaining = arc_length
+    while remaining > 1.0e-12:
+        if forward:
+            if idx + 1 >= len(polyline):
+                return pos
+            nxt = polyline[idx + 1]
+            dx = nxt[0] - pos[0]
+            dy = nxt[1] - pos[1]
+            dz = nxt[2] - pos[2]
+            seg_remaining = (dx * dx + dy * dy + dz * dz) ** 0.5
+            if seg_remaining >= remaining:
+                frac = remaining / seg_remaining if seg_remaining > 0 else 0
+                return (pos[0] + dx * frac,
+                        pos[1] + dy * frac,
+                        pos[2] + dz * frac)
+            remaining -= seg_remaining
+            pos = nxt
+            idx += 1
+        else:
+            if idx < 0:
+                return pos
+            prv = polyline[idx]
+            dx = prv[0] - pos[0]
+            dy = prv[1] - pos[1]
+            dz = prv[2] - pos[2]
+            seg_remaining = (dx * dx + dy * dy + dz * dz) ** 0.5
+            if seg_remaining >= remaining:
+                frac = remaining / seg_remaining if seg_remaining > 0 else 0
+                return (pos[0] + dx * frac,
+                        pos[1] + dy * frac,
+                        pos[2] + dz * frac)
+            remaining -= seg_remaining
+            pos = prv
+            idx -= 1
+    return pos
+
+
+def _es_find_point_at_chord_distance(anchor_pt, polyline, start_point,
+                                       target_chord, forward):
+    """Search for a point P on `polyline` such that the straight
+    Euclidean distance |anchor_pt - P| equals `target_chord`, walking
+    along the polyline from `start_point` in the given direction.
+
+    Uses expanding-arc-length search + binary refinement so the math
+    stays correct even when the polyline bends sharply.
+
+    Returns (x, y, z) — the best-found point, or the polyline end if
+    no solution exists in that direction.
+    """
+    # Sample arc-lengths along the polyline in the chosen direction
+    # until the chord distance crosses target_chord, then binary
+    # search to refine.
+    def _chord_at(arc_len):
+        p = _es_point_at_arc_length(
+            start_point, polyline, arc_len, forward)
+        dx = p[0] - anchor_pt[0]
+        dy = p[1] - anchor_pt[1]
+        dz = p[2] - anchor_pt[2]
+        return (dx * dx + dy * dy + dz * dz) ** 0.5, p
+
+    # First chord at arc=0.
+    chord0, p0 = _chord_at(0.0)
+    # If already at or beyond target, we return what we have (foot
+    # case should have been handled by caller but we still clamp).
+    # Else we scan outward until we exceed target.
+    max_arc = 0.0
+    for sample in polyline:
+        dx = sample[0] - start_point[0]
+        dy = sample[1] - start_point[1]
+        dz = sample[2] - start_point[2]
+        d = (dx * dx + dy * dy + dz * dz) ** 0.5
+        if d > max_arc:
+            max_arc = d
+    max_arc = max(max_arc, target_chord) * 2.0 + 1.0
+
+    lo_arc = 0.0
+    lo_chord = chord0
+    hi_arc = None
+    hi_chord = None
+    # Exponential expansion to find a bracket.
+    arc = 0.0
+    step = max(target_chord * 0.5, 1.0e-3)
+    max_iter = 100
+    best_point = p0
+    best_err = abs(chord0 - target_chord)
+    for _ in range(max_iter):
+        arc += step
+        ch, pt = _chord_at(arc)
+        err = abs(ch - target_chord)
+        if err < best_err:
+            best_err = err
+            best_point = pt
+        if ch >= target_chord:
+            hi_arc = arc
+            hi_chord = ch
+            break
+        if arc > max_arc:
+            break
+        lo_arc = arc
+        lo_chord = ch
+        step *= 1.5
+
+    if hi_arc is None:
+        # Never reached target — return the furthest sampled point.
+        return best_point
+
+    # Binary refinement.
+    for _ in range(40):
+        mid = (lo_arc + hi_arc) * 0.5
+        ch, pt = _chord_at(mid)
+        err = abs(ch - target_chord)
+        if err < best_err:
+            best_err = err
+            best_point = pt
+        if ch < target_chord:
+            lo_arc = mid
+        else:
+            hi_arc = mid
+        if hi_arc - lo_arc < 1.0e-6:
+            break
+    return best_point
+
+
+
     """Measure the current "belt width" at a specific rung.
 
     Returns the straight distance between A's projection onto brim A
@@ -6585,12 +7002,13 @@ def _es_snap_belt_rung_to_width(e, target_width, anchor,
 
     anchor:
         0 = keep A; slide B along brim B so |A-B| == target_width.
-            The new B is found by walking along brim B from the
-            current closest-point projection toward the direction
-            closest to (current B minus A).
         1 = keep B; slide A along brim A.
         2 = keep midpoint; slide both endpoints symmetrically outward
             along their brims.
+
+    Walks the polyline with iterative arc-length search + binary
+    refinement, so the result is accurate even when the brim bends
+    sharply (V-corners etc).
 
     If brim polylines are empty, falls back to the simple length-
     based snap (so the user still gets *some* effect).
@@ -6602,80 +7020,113 @@ def _es_snap_belt_rung_to_width(e, target_width, anchor,
     ax, ay, az = e["a_pos"]
     bx, by, bz = e["b_pos"]
     shape = e["shape"]
+
+    def _solve_endpoint_on_brim(anchor_pt, moving_pt, moving_brim):
+        """Return a new world-space position for `moving_pt` on
+        `moving_brim` such that |anchor_pt - new_pt| == target_width,
+        preferring to stay on the same side of `moving_brim` as the
+        original `moving_pt`.
+        """
+        proj_moving = _es_project_point_onto_polyline(
+            moving_pt, moving_brim)
+        if proj_moving is None:
+            return None
+        (start_pt, seg_idx, _t) = proj_moving
+
+        # Pick a direction along the brim (forward/backward) based on
+        # which side of the closest-point projection the current
+        # moving_pt projection is pointing.
+        # Use the tangent at start_pt and see if the "away from anchor"
+        # direction aligns with +tangent or -tangent.
+        if seg_idx + 1 < len(moving_brim):
+            tx = moving_brim[seg_idx + 1][0] - moving_brim[seg_idx][0]
+            ty = moving_brim[seg_idx + 1][1] - moving_brim[seg_idx][1]
+            tz = moving_brim[seg_idx + 1][2] - moving_brim[seg_idx][2]
+        else:
+            tx = moving_brim[seg_idx][0] - moving_brim[seg_idx - 1][0]
+            ty = moving_brim[seg_idx][1] - moving_brim[seg_idx - 1][1]
+            tz = moving_brim[seg_idx][2] - moving_brim[seg_idx - 1][2]
+
+        # Find chord distance at start point.
+        sdx = start_pt[0] - anchor_pt[0]
+        sdy = start_pt[1] - anchor_pt[1]
+        sdz = start_pt[2] - anchor_pt[2]
+        chord_start = (sdx * sdx + sdy * sdy + sdz * sdz) ** 0.5
+
+        # Try both directions; pick the one that produces chord ≈
+        # target_width AND stays geometrically closer to the original
+        # moving position (to avoid teleporting B across the belt).
+        candidate_fwd = _es_find_point_at_chord_distance(
+            anchor_pt, moving_brim, start_pt, target_width, forward=True)
+        candidate_bwd = _es_find_point_at_chord_distance(
+            anchor_pt, moving_brim, start_pt, target_width, forward=False)
+
+        def _err(pt):
+            dx = pt[0] - anchor_pt[0]
+            dy = pt[1] - anchor_pt[1]
+            dz = pt[2] - anchor_pt[2]
+            chord = (dx * dx + dy * dy + dz * dz) ** 0.5
+            return abs(chord - target_width)
+
+        def _dist(pt, ref):
+            dx = pt[0] - ref[0]
+            dy = pt[1] - ref[1]
+            dz = pt[2] - ref[2]
+            return (dx * dx + dy * dy + dz * dz) ** 0.5
+
+        err_f = _err(candidate_fwd)
+        err_b = _err(candidate_bwd)
+
+        # If only one direction gets a valid chord, take it.
+        tol = max(target_width * 0.01, 1.0e-4)
+        if err_f < tol and err_b >= tol:
+            return candidate_fwd
+        if err_b < tol and err_f >= tol:
+            return candidate_bwd
+        # Both or neither reached target — pick the candidate that
+        # stays closer to the original moving_pt (so B doesn't flip
+        # across the belt).
+        if _dist(candidate_fwd, moving_pt) <= _dist(candidate_bwd, moving_pt):
+            return candidate_fwd
+        return candidate_bwd
+
     if anchor == 0:
-        # Slide B along brim B. Direction hint = current B minus A
-        # projected into brim-B's tangent direction; we use this to
-        # pick "forward" vs "back" along the brim.
-        # Step 1: project A to brim A (its anchor point).
+        # Keep A; slide B along brim B.
+        # Project A onto brim A to get the actual anchor (the rung's
+        # A-end might be slightly off brim A due to rounding).
         proj_a = _es_project_point_onto_polyline((ax, ay, az), brim_a_poly)
-        proj_b = _es_project_point_onto_polyline((bx, by, bz), brim_b_poly)
-        if proj_a is None or proj_b is None:
+        if proj_a is None:
             _es_snap_edge_to_length(e, target_width, anchor)
             return
         (apx, apy, apz), _, _ = proj_a
-        (bpx, bpy, bpz), seg_b, t_b = proj_b
-        # Target: find point on brim B such that its distance from
-        # (apx, apy, apz) equals target_width. We do this iteratively
-        # by finding the closest-approach parametric, then adjusting.
-        # For simplicity and robustness, we use a 1-D search along
-        # the polyline's arc-length from proj_b, using the same
-        # _walk helper via _es_slide_along_polyline with the current
-        # pb as start and the desired delta as distance. But first we
-        # need the current ||A_brim - B_brim|| and how much we need
-        # to shift B along the brim to make the chord length equal
-        # target_width.
-        # Short-cut: project A onto brim B too — the foot of A on
-        # brim B is the point on brim B closest to A. Then we need
-        # the point on brim B that is target_width away from A. We
-        # compute it by sampling arc-length along brim B around the
-        # foot until |A - sampled| ≈ target_width.
-        foot_of_a = _es_project_point_onto_polyline(
-            (apx, apy, apz), brim_b_poly)
-        if foot_of_a is None:
+        anchor_pt = (apx, apy, apz)
+        new_b = _solve_endpoint_on_brim(anchor_pt, (bx, by, bz),
+                                          brim_b_poly)
+        if new_b is None:
             _es_snap_edge_to_length(e, target_width, anchor)
             return
-        (foax, foay, foaz), foot_seg, foot_t = foot_of_a
-        dfa = (foax - apx, foay - apy, foaz - apz)
-        foot_dist = (dfa[0] ** 2 + dfa[1] ** 2 + dfa[2] ** 2) ** 0.5
-        if target_width <= foot_dist + 1.0e-9:
-            # Can't reach a chord shorter than the perpendicular
-            # distance. Clamp to the foot.
-            new_b = (foax, foay, foaz)
-        else:
-            # We need to walk from the foot along brim B in the
-            # direction closest to the current B (so we keep the
-            # rung on the same side as it was) by a distance that
-            # makes the chord (A→new_b) == target_width. That's a
-            # right-triangle: chord² = foot² + walk².
-            walk_d = (target_width * target_width
-                      - foot_dist * foot_dist) ** 0.5
-            # Direction hint = from foot toward current B projection.
-            hint = (bpx - foax, bpy - foay, bpz - foaz)
-            hl = (hint[0] ** 2 + hint[1] ** 2 + hint[2] ** 2) ** 0.5
-            if hl < 1.0e-9:
-                # Degenerate — current B is already at foot. Use
-                # brim-B tangent as a fallback direction.
-                if foot_seg + 1 < len(brim_b_poly):
-                    hint = (brim_b_poly[foot_seg + 1][0] - foax,
-                            brim_b_poly[foot_seg + 1][1] - foay,
-                            brim_b_poly[foot_seg + 1][2] - foaz)
-                else:
-                    hint = (brim_b_poly[foot_seg][0]
-                            - brim_b_poly[foot_seg - 1][0],
-                            brim_b_poly[foot_seg][1]
-                            - brim_b_poly[foot_seg - 1][1],
-                            brim_b_poly[foot_seg][2]
-                            - brim_b_poly[foot_seg - 1][2])
-                hl = (hint[0] ** 2 + hint[1] ** 2 + hint[2] ** 2) ** 0.5
-                if hl < 1.0e-9:
-                    _es_snap_edge_to_length(e, target_width, anchor)
-                    return
-            hint = (hint[0] / hl, hint[1] / hl, hint[2] / hl)
-            new_b = _es_slide_along_polyline(
-                (foax, foay, foaz), brim_b_poly, walk_d, hint)
         _es_set_vtx_pos(shape, e["b_idx"], new_b)
     elif anchor == 1:
-        # Mirror: keep B, slide A on brim A.
+        # Keep B; slide A along brim A.
+        proj_b = _es_project_point_onto_polyline((bx, by, bz), brim_b_poly)
+        if proj_b is None:
+            _es_snap_edge_to_length(e, target_width, anchor)
+            return
+        (bpx, bpy, bpz), _, _ = proj_b
+        anchor_pt = (bpx, bpy, bpz)
+        new_a = _solve_endpoint_on_brim(anchor_pt, (ax, ay, az),
+                                          brim_a_poly)
+        if new_a is None:
+            _es_snap_edge_to_length(e, target_width, anchor)
+            return
+        _es_set_vtx_pos(shape, e["a_idx"], new_a)
+    else:
+        # Centre-anchored belt width: slide BOTH endpoints along their
+        # brims so the chord crossing the midpoint equals target_width.
+        # Approach: first project midpoint onto both brims to get a
+        # "baseline" pair, then adjust each end symmetrically using the
+        # same per-side solver, with the *other* endpoint serving as
+        # the anchor for that side.
         proj_a = _es_project_point_onto_polyline((ax, ay, az), brim_a_poly)
         proj_b = _es_project_point_onto_polyline((bx, by, bz), brim_b_poly)
         if proj_a is None or proj_b is None:
@@ -6683,49 +7134,18 @@ def _es_snap_belt_rung_to_width(e, target_width, anchor,
             return
         (apx, apy, apz), _, _ = proj_a
         (bpx, bpy, bpz), _, _ = proj_b
-        foot_of_b = _es_project_point_onto_polyline(
-            (bpx, bpy, bpz), brim_a_poly)
-        if foot_of_b is None:
-            _es_snap_edge_to_length(e, target_width, anchor)
-            return
-        (fbax, fbay, fbaz), foot_seg, _ = foot_of_b
-        dfb = (fbax - bpx, fbay - bpy, fbaz - bpz)
-        foot_dist = (dfb[0] ** 2 + dfb[1] ** 2 + dfb[2] ** 2) ** 0.5
-        if target_width <= foot_dist + 1.0e-9:
-            new_a = (fbax, fbay, fbaz)
-        else:
-            walk_d = (target_width * target_width
-                      - foot_dist * foot_dist) ** 0.5
-            hint = (apx - fbax, apy - fbay, apz - fbaz)
-            hl = (hint[0] ** 2 + hint[1] ** 2 + hint[2] ** 2) ** 0.5
-            if hl < 1.0e-9:
-                if foot_seg + 1 < len(brim_a_poly):
-                    hint = (brim_a_poly[foot_seg + 1][0] - fbax,
-                            brim_a_poly[foot_seg + 1][1] - fbay,
-                            brim_a_poly[foot_seg + 1][2] - fbaz)
-                else:
-                    hint = (brim_a_poly[foot_seg][0]
-                            - brim_a_poly[foot_seg - 1][0],
-                            brim_a_poly[foot_seg][1]
-                            - brim_a_poly[foot_seg - 1][1],
-                            brim_a_poly[foot_seg][2]
-                            - brim_a_poly[foot_seg - 1][2])
-                hl = (hint[0] ** 2 + hint[1] ** 2 + hint[2] ** 2) ** 0.5
-                if hl < 1.0e-9:
-                    _es_snap_edge_to_length(e, target_width, anchor)
-                    return
-            hint = (hint[0] / hl, hint[1] / hl, hint[2] / hl)
-            new_a = _es_slide_along_polyline(
-                (fbax, fbay, fbaz), brim_a_poly, walk_d, hint)
-        _es_set_vtx_pos(shape, e["a_idx"], new_a)
-    else:
-        # Centre-anchored belt width: pull both endpoints symmetrically
-        # toward the midpoint until the chord equals target_width.
-        # Implementation: find foot of midpoint on each brim, then
-        # walk half-distance outward on each brim. Simpler for now:
-        # fallback to length-based centre snap along the current rung
-        # direction.
-        _es_snap_edge_to_length(e, target_width, anchor)
+        # Iterate a couple of times for symmetric convergence.
+        cur_a = (apx, apy, apz)
+        cur_b = (bpx, bpy, bpz)
+        for _ in range(4):
+            new_b = _solve_endpoint_on_brim(cur_a, cur_b, brim_b_poly)
+            if new_b is not None:
+                cur_b = new_b
+            new_a = _solve_endpoint_on_brim(cur_b, cur_a, brim_a_poly)
+            if new_a is not None:
+                cur_a = new_a
+        _es_set_vtx_pos(shape, e["a_idx"], cur_a)
+        _es_set_vtx_pos(shape, e["b_idx"], cur_b)
 
 
 # ---------------------------------------------------------------------------
@@ -6957,7 +7377,7 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         # user switches to belt-width mode, to avoid the cost when
         # they only need simple length alignment).
         self._brim_data = None
-        self._belt_mode = False
+        self._belt_mode = True      # Default to belt-width mode.
         self._snap_log = {}       # edge_str -> direction name
         self._undo_open = False
         self._build()
@@ -6983,11 +7403,11 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
                  "QRadioButton::indicator{width:11px;height:11px}")
         self._rb_mode_length = QtWidgets.QRadioButton(tr("es_mode_length"))
         self._rb_mode_length.setStyleSheet(rb_ss)
-        self._rb_mode_length.setChecked(True)
         self._rb_mode_length.toggled.connect(self._on_mode_changed)
         mode_row.addWidget(self._rb_mode_length)
         self._rb_mode_belt = QtWidgets.QRadioButton(tr("es_mode_belt"))
         self._rb_mode_belt.setStyleSheet(rb_ss)
+        self._rb_mode_belt.setChecked(True)
         self._rb_mode_belt.toggled.connect(self._on_mode_changed)
         mode_row.addWidget(self._rb_mode_belt)
         self._lbl_mode_hint = QtWidgets.QLabel(tr("es_lbl_mode_hint"))
@@ -9191,29 +9611,20 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         self._lang_btn.clicked.connect(self._toggle_lang)
         header.addWidget(self._lang_btn)
 
-        # Static Results button
+        # Static Results button — functionality retained internally
+        # but hidden from the UI (users go through the tabs instead).
         self._btn_static_results = QtWidgets.QPushButton(tr("btn_static_results"))
         self._btn_static_results.setFixedHeight(24)
         self._btn_static_results.setEnabled(False)
-        self._btn_static_results.setStyleSheet(
-            "QPushButton{background-color:#2196F3;color:white;border:none;"
-            "border-radius:4px;font-size:10px;font-weight:bold;padding:0 8px}"
-            "QPushButton:hover{background-color:#1976D2}"
-            "QPushButton:disabled{background-color:#444;color:#666}")
+        self._btn_static_results.setVisible(False)
         self._btn_static_results.clicked.connect(self._show_static_results)
-        header.addWidget(self._btn_static_results)
 
-        # Anim Results button
+        # Anim Results button — likewise hidden.
         self._btn_anim_results = QtWidgets.QPushButton(tr("btn_anim_results"))
         self._btn_anim_results.setFixedHeight(24)
         self._btn_anim_results.setEnabled(False)
-        self._btn_anim_results.setStyleSheet(
-            "QPushButton{background-color:#FF9800;color:white;border:none;"
-            "border-radius:4px;font-size:10px;font-weight:bold;padding:0 8px}"
-            "QPushButton:hover{background-color:#F57C00}"
-            "QPushButton:disabled{background-color:#444;color:#666}")
+        self._btn_anim_results.setVisible(False)
         self._btn_anim_results.clicked.connect(self._show_anim_results)
-        header.addWidget(self._btn_anim_results)
 
         main_lo.addLayout(header)
 
@@ -9813,6 +10224,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         lo.setSpacing(6)
         tabs = QtWidgets.QTabWidget()
         for tab_key, body_key in [
+                ("tab_intro", "help_body_intro"),
                 ("tab_check", "help_body_check"),
                 ("tab_snap",  "help_body_snap")]:
             tb = QtWidgets.QTextBrowser()
