@@ -430,6 +430,17 @@ _STRINGS = {
                              "jp": u"\u5168\u3066\u306e\u30a8\u30c3\u30b8\u63c3\u3048\u3092\u5143\u306b\u623b\u3057\u307e\u3057\u305f\u3002"},
     "es_status_bad_length": {"en": "Target width must be greater than 0.",
                              "jp": u"\u76ee\u6a19\u5e45\u306f 0 \u3088\u308a\u5927\u304d\u3044\u5fc5\u8981\u304c\u3042\u308a\u307e\u3059\u3002"},
+
+    # Belt-width vs edge-length mode.
+    "es_lbl_mode":          {"en": "Mode:",                           "jp": u"\u30e2\u30fc\u30c9\uff1a"},
+    "es_mode_length":       {"en": "Edge length",                     "jp": u"\u30a8\u30c3\u30b8\u9577\u3055"},
+    "es_mode_belt":         {"en": "Belt width (along brims)",        "jp": u"\u30d9\u30eb\u30c8\u5e45\uff08\u30d5\u30c1\u6cbf\u3044\uff09"},
+    "es_lbl_mode_hint":     {"en": "Belt width slides endpoints along their detected edge loops.",
+                             "jp": u"\u30d9\u30eb\u30c8\u5e45\u30e2\u30fc\u30c9\u306f\u81ea\u52d5\u691c\u51fa\u3057\u305f\u30a8\u30c3\u30b8\u30eb\u30fc\u30d7\u306b\u6cbf\u3063\u3066\u7aef\u70b9\u3092\u30b9\u30e9\u30a4\u30c9\u3055\u305b\u307e\u3059\u3002"},
+    "es_status_mode_length": {"en": "Mode: edge length (fastest, may distort at corners).",
+                               "jp": u"\u30e2\u30fc\u30c9\uff1a\u30a8\u30c3\u30b8\u9577\u3055\uff08\u9ad8\u901f\u3001\u30b3\u30fc\u30ca\u30fc\u3067\u6b6a\u3080\u5834\u5408\u3042\u308a\uff09"},
+    "es_status_mode_belt":  {"en": "Mode: belt width (endpoints slide along detected edge loops).",
+                             "jp": u"\u30e2\u30fc\u30c9\uff1a\u30d9\u30eb\u30c8\u5e45\uff08\u7aef\u70b9\u306f\u691c\u51fa\u3055\u308c\u305f\u30a8\u30c3\u30b8\u30eb\u30fc\u30d7\u3092\u30b9\u30e9\u30a4\u30c9\uff09"},
     "es_chip_header":       {"en": "Region:",                          "jp": u"\u533a\u9593\uff1a"},
     "es_chip_label":        {"en": u"#{cid}  ({n} / {avg})",
                              "jp": u"#{cid}\u3000({n} / {avg})"},

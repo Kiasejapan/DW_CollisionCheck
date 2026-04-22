@@ -434,6 +434,472 @@ def _es_snap_edge_to_length(e, target_length, anchor):
 
 
 # ---------------------------------------------------------------------------
+# Belt width mode: detect the two parallel edge loops (the two "brims")
+# that the selected rungs connect, and snap endpoints *along* them.
+# ---------------------------------------------------------------------------
+
+def _es_expand_brim_from_vertex(shape, vert_idx, forbidden_edge_set):
+    """Given a shape and a seed vertex index, find the edge loop that
+    contains an edge incident to this vertex AND is NOT one of the
+    selected rungs.
+
+    Strategy: pick one incident edge that isn't in the forbidden set,
+    then use `polySelect -edgeLoop` to grow that edge's loop.
+
+    Returns a list of (edge_index, v0_idx, v1_idx) tuples describing
+    the loop, in traversal order starting from the seed vertex, or
+    [] if no suitable edge loop could be found.
+    """
+    if not MAYA_AVAILABLE:
+        return []
+    vtx = u"{0}.vtx[{1}]".format(shape, vert_idx)
+    # Find edges incident to this vertex.
+    try:
+        incident = cmds.polyListComponentConversion(
+            vtx, fromVertex=True, toEdge=True) or []
+        incident = cmds.ls(incident, fl=True, long=True) or []
+    except Exception:
+        return []
+    # Pick a candidate edge not in the forbidden set (i.e. not a rung).
+    seed_edge = None
+    seed_idx = None
+    for e in incident:
+        if e in forbidden_edge_set:
+            continue
+        try:
+            ei = int(e.split(u"[")[-1].rstrip(u"]"))
+        except Exception:
+            continue
+        seed_edge = e
+        seed_idx = ei
+        break
+    if seed_edge is None:
+        return []
+    # Expand via polySelect -edgeLoop.
+    saved_sel = cmds.ls(sl=True, fl=True, long=True) or []
+    try:
+        cmds.select(clear=True)
+        try:
+            cmds.polySelect(shape, edgeLoop=seed_idx, asSelectString=False)
+        except Exception:
+            try:
+                cmds.select(seed_edge, r=True)
+            except Exception:
+                return []
+        loop_edges = cmds.ls(sl=True, fl=True, long=True) or []
+        loop_edges = [x for x in loop_edges if u".e[" in x]
+    finally:
+        try:
+            cmds.select(saved_sel, r=True) if saved_sel else cmds.select(clear=True)
+        except Exception:
+            pass
+    # Build ordered list: sequence of (edge_idx, v0, v1).
+    ordered = []
+    for e in loop_edges:
+        try:
+            ei = int(e.split(u"[")[-1].rstrip(u"]"))
+            verts = cmds.polyListComponentConversion(
+                e, fromEdge=True, toVertex=True) or []
+            verts = cmds.ls(verts, fl=True, long=True) or []
+            vids = []
+            for v in verts:
+                try:
+                    vids.append(int(v.split(u"[")[-1].rstrip(u"]")))
+                except Exception:
+                    pass
+            if len(vids) == 2:
+                ordered.append((ei, vids[0], vids[1]))
+        except Exception:
+            continue
+    return ordered
+
+
+def _es_detect_belt_brims(edges):
+    """For each rung edge in `edges`, detect the two brim edge loops
+    (one touching side A, one touching side B) that the rung connects.
+
+    Returns a dict:
+        {
+            "rung_to_brim_a": {rung_ei -> list of (edge_idx, v0, v1)},
+            "rung_to_brim_b": {rung_ei -> list of (edge_idx, v0, v1)},
+            "brim_a_verts":   ordered vertex positions for brim A per rung,
+            "brim_b_verts":   ordered vertex positions for brim B per rung,
+        }
+
+    If any rung fails brim detection, its entry is None. Detection is
+    per-rung because a selection may span multiple disconnected
+    belts.
+    """
+    if not MAYA_AVAILABLE:
+        return {"rung_to_brim_a": {},
+                "rung_to_brim_b": {},
+                "brim_a_verts":   {},
+                "brim_b_verts":   {}}
+    rung_edge_set = set(e["edge"] for e in edges)
+
+    def _collect_verts_in_order(shape, ordered_edges):
+        """Chain together ordered (edge, v0, v1) tuples into a sequence
+        of connected vertex positions. Returns list of (x,y,z) or []
+        on failure."""
+        if not ordered_edges:
+            return []
+        if len(ordered_edges) == 1:
+            _, v0, v1 = ordered_edges[0]
+            try:
+                p0 = cmds.pointPosition(
+                    u"{0}.vtx[{1}]".format(shape, v0), w=True)
+                p1 = cmds.pointPosition(
+                    u"{0}.vtx[{1}]".format(shape, v1), w=True)
+                return [(p0[0], p0[1], p0[2]),
+                        (p1[0], p1[1], p1[2])]
+            except Exception:
+                return []
+        # Build vertex adjacency from the edges.
+        adj = {}
+        for _, v0, v1 in ordered_edges:
+            adj.setdefault(v0, set()).add(v1)
+            adj.setdefault(v1, set()).add(v0)
+        # Find endpoints (deg 1) — open loop; else closed.
+        endpoints = [v for v, nbs in adj.items() if len(nbs) == 1]
+        if len(endpoints) == 2:
+            start = endpoints[0]
+        elif len(endpoints) == 0:
+            start = next(iter(adj))
+        else:
+            # Branching — can't linearize cleanly; bail.
+            return []
+        seq = [start]
+        prev = None
+        cur = start
+        while True:
+            nxt = None
+            for n in adj[cur]:
+                if n != prev:
+                    nxt = n
+                    break
+            if nxt is None:
+                break
+            seq.append(nxt)
+            prev = cur
+            cur = nxt
+            if cur == start:
+                break
+        positions = []
+        for vi in seq:
+            try:
+                p = cmds.pointPosition(
+                    u"{0}.vtx[{1}]".format(shape, vi), w=True)
+                positions.append((p[0], p[1], p[2]))
+            except Exception:
+                return []
+        return positions
+
+    rung_to_brim_a = {}
+    rung_to_brim_b = {}
+    brim_a_verts = {}
+    brim_b_verts = {}
+    for ei, e in enumerate(edges):
+        shape = e["shape"]
+        brim_a_raw = _es_expand_brim_from_vertex(
+            shape, e["a_idx"], rung_edge_set)
+        brim_b_raw = _es_expand_brim_from_vertex(
+            shape, e["b_idx"], rung_edge_set)
+        rung_to_brim_a[ei] = brim_a_raw
+        rung_to_brim_b[ei] = brim_b_raw
+        brim_a_verts[ei] = _collect_verts_in_order(shape, brim_a_raw)
+        brim_b_verts[ei] = _collect_verts_in_order(shape, brim_b_raw)
+    return {"rung_to_brim_a": rung_to_brim_a,
+            "rung_to_brim_b": rung_to_brim_b,
+            "brim_a_verts":   brim_a_verts,
+            "brim_b_verts":   brim_b_verts}
+
+
+def _es_project_point_onto_polyline(point, polyline):
+    """Given a world-space point and a polyline (list of (x,y,z)),
+    return the closest point that lies ON any segment of the polyline.
+
+    Returns (closest_point, seg_idx, t_along_seg) — or None if polyline
+    has < 2 vertices.
+    """
+    if len(polyline) < 2:
+        return None
+    px, py, pz = point
+    best = None
+    best_d2 = None
+    best_info = None
+    for i in range(len(polyline) - 1):
+        ax, ay, az = polyline[i]
+        bx, by, bz = polyline[i + 1]
+        dx = bx - ax; dy = by - ay; dz = bz - az
+        seg_len2 = dx * dx + dy * dy + dz * dz
+        if seg_len2 < 1.0e-18:
+            continue
+        t = ((px - ax) * dx + (py - ay) * dy + (pz - az) * dz) / seg_len2
+        t_clamped = max(0.0, min(1.0, t))
+        cx = ax + dx * t_clamped
+        cy = ay + dy * t_clamped
+        cz = az + dz * t_clamped
+        ex = px - cx; ey = py - cy; ez = pz - cz
+        d2 = ex * ex + ey * ey + ez * ez
+        if best_d2 is None or d2 < best_d2:
+            best_d2 = d2
+            best = (cx, cy, cz)
+            best_info = (i, t_clamped)
+    if best is None:
+        return None
+    return (best, best_info[0], best_info[1])
+
+
+def _es_slide_along_polyline(start_point, polyline, target_distance,
+                              direction_hint):
+    """Starting from `start_point` (which must already lie on or near
+    the polyline), walk `target_distance` units ALONG the polyline in
+    the direction suggested by `direction_hint` (a unit-ish vector).
+
+    Returns the new world-space point. If the polyline is too short
+    to absorb the distance, clamps at the polyline's endpoint.
+
+    Implementation: first find the segment `start_point` lies on
+    (closest-point projection), then step through segments until the
+    accumulated along-polyline distance matches `target_distance`.
+    """
+    proj = _es_project_point_onto_polyline(start_point, polyline)
+    if proj is None:
+        return start_point
+    (on_pt, seg_idx, t) = proj
+    # Determine which direction to walk along the polyline, using
+    # direction_hint dotted against the local tangent.
+    # Try forward first.
+    def _walk(forward):
+        remaining = target_distance
+        pos = on_pt
+        idx = seg_idx
+        local_t = t
+        while remaining > 1.0e-12:
+            if forward:
+                # Walk from `pos` toward polyline[idx+1].
+                if idx + 1 >= len(polyline):
+                    return pos
+                nxt = polyline[idx + 1]
+                dx = nxt[0] - pos[0]
+                dy = nxt[1] - pos[1]
+                dz = nxt[2] - pos[2]
+                seg_remaining = (dx * dx + dy * dy + dz * dz) ** 0.5
+                if seg_remaining >= remaining:
+                    frac = remaining / seg_remaining
+                    return (pos[0] + dx * frac,
+                            pos[1] + dy * frac,
+                            pos[2] + dz * frac)
+                remaining -= seg_remaining
+                pos = nxt
+                idx += 1
+            else:
+                # Walk from `pos` toward polyline[idx].
+                if idx < 0:
+                    return pos
+                prv = polyline[idx]
+                dx = prv[0] - pos[0]
+                dy = prv[1] - pos[1]
+                dz = prv[2] - pos[2]
+                seg_remaining = (dx * dx + dy * dy + dz * dz) ** 0.5
+                if seg_remaining >= remaining:
+                    frac = remaining / seg_remaining
+                    return (pos[0] + dx * frac,
+                            pos[1] + dy * frac,
+                            pos[2] + dz * frac)
+                remaining -= seg_remaining
+                pos = prv
+                idx -= 1
+        return pos
+
+    # Local tangent at on_pt: polyline[seg_idx+1] - polyline[seg_idx].
+    if seg_idx + 1 < len(polyline):
+        tdx = polyline[seg_idx + 1][0] - polyline[seg_idx][0]
+        tdy = polyline[seg_idx + 1][1] - polyline[seg_idx][1]
+        tdz = polyline[seg_idx + 1][2] - polyline[seg_idx][2]
+    else:
+        tdx = polyline[seg_idx][0] - polyline[seg_idx - 1][0]
+        tdy = polyline[seg_idx][1] - polyline[seg_idx - 1][1]
+        tdz = polyline[seg_idx][2] - polyline[seg_idx - 1][2]
+    tl = (tdx * tdx + tdy * tdy + tdz * tdz) ** 0.5
+    if tl > 1.0e-12:
+        tdx /= tl; tdy /= tl; tdz /= tl
+    dot = (direction_hint[0] * tdx
+           + direction_hint[1] * tdy
+           + direction_hint[2] * tdz)
+    forward = (dot >= 0.0)
+    return _walk(forward)
+
+
+def _es_belt_width_from_rung(rung_pos_a, rung_pos_b,
+                              brim_a_poly, brim_b_poly):
+    """Measure the current "belt width" at a specific rung.
+
+    Returns the straight distance between A's projection onto brim A
+    and B's projection onto brim B. This is the straight chord; for
+    an ideal, perpendicular rung it equals the rung length.
+    """
+    pa = _es_project_point_onto_polyline(rung_pos_a, brim_a_poly)
+    pb = _es_project_point_onto_polyline(rung_pos_b, brim_b_poly)
+    if pa is None or pb is None:
+        return None
+    (ax, ay, az), _, _ = pa
+    (bx, by, bz), _, _ = pb
+    dx = bx - ax; dy = by - ay; dz = bz - az
+    return (dx * dx + dy * dy + dz * dz) ** 0.5
+
+
+def _es_snap_belt_rung_to_width(e, target_width, anchor,
+                                  brim_a_poly, brim_b_poly):
+    """Adjust one rung so its A→B *straight* distance becomes
+    target_width by sliding the moving endpoint ALONG its brim.
+
+    anchor:
+        0 = keep A; slide B along brim B so |A-B| == target_width.
+            The new B is found by walking along brim B from the
+            current closest-point projection toward the direction
+            closest to (current B minus A).
+        1 = keep B; slide A along brim A.
+        2 = keep midpoint; slide both endpoints symmetrically outward
+            along their brims.
+
+    If brim polylines are empty, falls back to the simple length-
+    based snap (so the user still gets *some* effect).
+    """
+    if (not brim_a_poly or len(brim_a_poly) < 2
+            or not brim_b_poly or len(brim_b_poly) < 2):
+        _es_snap_edge_to_length(e, target_width, anchor)
+        return
+    ax, ay, az = e["a_pos"]
+    bx, by, bz = e["b_pos"]
+    shape = e["shape"]
+    if anchor == 0:
+        # Slide B along brim B. Direction hint = current B minus A
+        # projected into brim-B's tangent direction; we use this to
+        # pick "forward" vs "back" along the brim.
+        # Step 1: project A to brim A (its anchor point).
+        proj_a = _es_project_point_onto_polyline((ax, ay, az), brim_a_poly)
+        proj_b = _es_project_point_onto_polyline((bx, by, bz), brim_b_poly)
+        if proj_a is None or proj_b is None:
+            _es_snap_edge_to_length(e, target_width, anchor)
+            return
+        (apx, apy, apz), _, _ = proj_a
+        (bpx, bpy, bpz), seg_b, t_b = proj_b
+        # Target: find point on brim B such that its distance from
+        # (apx, apy, apz) equals target_width. We do this iteratively
+        # by finding the closest-approach parametric, then adjusting.
+        # For simplicity and robustness, we use a 1-D search along
+        # the polyline's arc-length from proj_b, using the same
+        # _walk helper via _es_slide_along_polyline with the current
+        # pb as start and the desired delta as distance. But first we
+        # need the current ||A_brim - B_brim|| and how much we need
+        # to shift B along the brim to make the chord length equal
+        # target_width.
+        # Short-cut: project A onto brim B too — the foot of A on
+        # brim B is the point on brim B closest to A. Then we need
+        # the point on brim B that is target_width away from A. We
+        # compute it by sampling arc-length along brim B around the
+        # foot until |A - sampled| ≈ target_width.
+        foot_of_a = _es_project_point_onto_polyline(
+            (apx, apy, apz), brim_b_poly)
+        if foot_of_a is None:
+            _es_snap_edge_to_length(e, target_width, anchor)
+            return
+        (foax, foay, foaz), foot_seg, foot_t = foot_of_a
+        dfa = (foax - apx, foay - apy, foaz - apz)
+        foot_dist = (dfa[0] ** 2 + dfa[1] ** 2 + dfa[2] ** 2) ** 0.5
+        if target_width <= foot_dist + 1.0e-9:
+            # Can't reach a chord shorter than the perpendicular
+            # distance. Clamp to the foot.
+            new_b = (foax, foay, foaz)
+        else:
+            # We need to walk from the foot along brim B in the
+            # direction closest to the current B (so we keep the
+            # rung on the same side as it was) by a distance that
+            # makes the chord (A→new_b) == target_width. That's a
+            # right-triangle: chord² = foot² + walk².
+            walk_d = (target_width * target_width
+                      - foot_dist * foot_dist) ** 0.5
+            # Direction hint = from foot toward current B projection.
+            hint = (bpx - foax, bpy - foay, bpz - foaz)
+            hl = (hint[0] ** 2 + hint[1] ** 2 + hint[2] ** 2) ** 0.5
+            if hl < 1.0e-9:
+                # Degenerate — current B is already at foot. Use
+                # brim-B tangent as a fallback direction.
+                if foot_seg + 1 < len(brim_b_poly):
+                    hint = (brim_b_poly[foot_seg + 1][0] - foax,
+                            brim_b_poly[foot_seg + 1][1] - foay,
+                            brim_b_poly[foot_seg + 1][2] - foaz)
+                else:
+                    hint = (brim_b_poly[foot_seg][0]
+                            - brim_b_poly[foot_seg - 1][0],
+                            brim_b_poly[foot_seg][1]
+                            - brim_b_poly[foot_seg - 1][1],
+                            brim_b_poly[foot_seg][2]
+                            - brim_b_poly[foot_seg - 1][2])
+                hl = (hint[0] ** 2 + hint[1] ** 2 + hint[2] ** 2) ** 0.5
+                if hl < 1.0e-9:
+                    _es_snap_edge_to_length(e, target_width, anchor)
+                    return
+            hint = (hint[0] / hl, hint[1] / hl, hint[2] / hl)
+            new_b = _es_slide_along_polyline(
+                (foax, foay, foaz), brim_b_poly, walk_d, hint)
+        _es_set_vtx_pos(shape, e["b_idx"], new_b)
+    elif anchor == 1:
+        # Mirror: keep B, slide A on brim A.
+        proj_a = _es_project_point_onto_polyline((ax, ay, az), brim_a_poly)
+        proj_b = _es_project_point_onto_polyline((bx, by, bz), brim_b_poly)
+        if proj_a is None or proj_b is None:
+            _es_snap_edge_to_length(e, target_width, anchor)
+            return
+        (apx, apy, apz), _, _ = proj_a
+        (bpx, bpy, bpz), _, _ = proj_b
+        foot_of_b = _es_project_point_onto_polyline(
+            (bpx, bpy, bpz), brim_a_poly)
+        if foot_of_b is None:
+            _es_snap_edge_to_length(e, target_width, anchor)
+            return
+        (fbax, fbay, fbaz), foot_seg, _ = foot_of_b
+        dfb = (fbax - bpx, fbay - bpy, fbaz - bpz)
+        foot_dist = (dfb[0] ** 2 + dfb[1] ** 2 + dfb[2] ** 2) ** 0.5
+        if target_width <= foot_dist + 1.0e-9:
+            new_a = (fbax, fbay, fbaz)
+        else:
+            walk_d = (target_width * target_width
+                      - foot_dist * foot_dist) ** 0.5
+            hint = (apx - fbax, apy - fbay, apz - fbaz)
+            hl = (hint[0] ** 2 + hint[1] ** 2 + hint[2] ** 2) ** 0.5
+            if hl < 1.0e-9:
+                if foot_seg + 1 < len(brim_a_poly):
+                    hint = (brim_a_poly[foot_seg + 1][0] - fbax,
+                            brim_a_poly[foot_seg + 1][1] - fbay,
+                            brim_a_poly[foot_seg + 1][2] - fbaz)
+                else:
+                    hint = (brim_a_poly[foot_seg][0]
+                            - brim_a_poly[foot_seg - 1][0],
+                            brim_a_poly[foot_seg][1]
+                            - brim_a_poly[foot_seg - 1][1],
+                            brim_a_poly[foot_seg][2]
+                            - brim_a_poly[foot_seg - 1][2])
+                hl = (hint[0] ** 2 + hint[1] ** 2 + hint[2] ** 2) ** 0.5
+                if hl < 1.0e-9:
+                    _es_snap_edge_to_length(e, target_width, anchor)
+                    return
+            hint = (hint[0] / hl, hint[1] / hl, hint[2] / hl)
+            new_a = _es_slide_along_polyline(
+                (fbax, fbay, fbaz), brim_a_poly, walk_d, hint)
+        _es_set_vtx_pos(shape, e["a_idx"], new_a)
+    else:
+        # Centre-anchored belt width: pull both endpoints symmetrically
+        # toward the midpoint until the chord equals target_width.
+        # Implementation: find foot of midpoint on each brim, then
+        # walk half-distance outward on each brim. Simpler for now:
+        # fallback to length-based centre snap along the current rung
+        # direction.
+        _es_snap_edge_to_length(e, target_width, anchor)
+
+
+# ---------------------------------------------------------------------------
 # Edge Snap: stylesheet scraps
 # ---------------------------------------------------------------------------
 
@@ -487,6 +953,11 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         self._status = []         # per-edge bipartite status ("ok"/"fallback")
         self._components = []     # per-edge ring-component id
         self._corner_angle = 60.0 # deg — see set_data / slider
+        # Belt-width mode data — populated on demand (only when the
+        # user switches to belt-width mode, to avoid the cost when
+        # they only need simple length alignment).
+        self._brim_data = None
+        self._belt_mode = False
         self._snap_log = {}       # edge_str -> direction name
         self._undo_open = False
         self._build()
@@ -496,6 +967,35 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         lo = QtWidgets.QVBoxLayout(self)
         lo.setContentsMargins(8, 8, 8, 8)
         lo.setSpacing(6)
+
+        # Mode selector: simple edge length vs. belt-width-along-brims.
+        # Belt-width mode detects the two parallel edge loops that the
+        # selected rungs connect, measures the perpendicular distance
+        # between them, and slides the moving endpoint ALONG its brim
+        # rather than along the current rung direction.
+        mode_row = QtWidgets.QHBoxLayout()
+        mode_row.setSpacing(8)
+        mode_row.setContentsMargins(0, 0, 0, 0)
+        self._lbl_mode = QtWidgets.QLabel(tr("es_lbl_mode"))
+        self._lbl_mode.setStyleSheet("color:#AAA;font-size:10px")
+        mode_row.addWidget(self._lbl_mode)
+        rb_ss = ("QRadioButton{color:#DDD;font-size:10px}"
+                 "QRadioButton::indicator{width:11px;height:11px}")
+        self._rb_mode_length = QtWidgets.QRadioButton(tr("es_mode_length"))
+        self._rb_mode_length.setStyleSheet(rb_ss)
+        self._rb_mode_length.setChecked(True)
+        self._rb_mode_length.toggled.connect(self._on_mode_changed)
+        mode_row.addWidget(self._rb_mode_length)
+        self._rb_mode_belt = QtWidgets.QRadioButton(tr("es_mode_belt"))
+        self._rb_mode_belt.setStyleSheet(rb_ss)
+        self._rb_mode_belt.toggled.connect(self._on_mode_changed)
+        mode_row.addWidget(self._rb_mode_belt)
+        self._lbl_mode_hint = QtWidgets.QLabel(tr("es_lbl_mode_hint"))
+        self._lbl_mode_hint.setStyleSheet(
+            "color:#777;font-size:9px;padding:0 4px")
+        self._lbl_mode_hint.setWordWrap(True)
+        mode_row.addWidget(self._lbl_mode_hint, 1)
+        lo.addLayout(mode_row)
 
         # Scope / status line at top.
         self._scope_lbl = QtWidgets.QLabel(u"")
@@ -678,11 +1178,43 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         self._status = _es_bipartite_assign(self._edges)
         self._components = _es_compute_ring_components(
             self._edges, self._corner_angle)
+        self._brim_data = None     # recomputed lazily when belt mode enabled
         self._snap_log = {}
         self._close_undo()
+        # If belt mode is currently enabled, re-detect brims for the
+        # new selection right away so the user sees correct values.
+        if self._belt_mode:
+            self._ensure_brim_data()
         self._refresh_scope_and_average()
         self._populate()
         self._update_confirm_state()
+
+    def _ensure_brim_data(self):
+        """Compute brim polylines for the current selection if we
+        haven't already for this edge-set."""
+        if self._brim_data is not None:
+            return
+        if not self._edges:
+            self._brim_data = {"rung_to_brim_a": {},
+                                "rung_to_brim_b": {},
+                                "brim_a_verts":   {},
+                                "brim_b_verts":   {}}
+            return
+        self._brim_data = _es_detect_belt_brims(self._edges)
+
+    def _on_mode_changed(self, _checked=False):
+        """Handle toggle between simple length and belt-width modes."""
+        new_belt = self._rb_mode_belt.isChecked()
+        if new_belt == self._belt_mode:
+            return
+        self._belt_mode = new_belt
+        if self._belt_mode:
+            self._ensure_brim_data()
+        self._refresh_scope_and_average()
+        self._populate()
+        self.status_msg.emit(
+            tr("es_status_mode_belt") if self._belt_mode
+            else tr("es_status_mode_length"))
 
     def _refresh_scope_and_average(self):
         """Recompute scope line + suggested target width + region chips.
@@ -741,10 +1273,20 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
             self._region_chip_placeholder.setText(u"")
             return
 
+        def _metric_for_chip(i, edge):
+            if self._belt_mode and self._brim_data:
+                a = self._brim_data["brim_a_verts"].get(i, [])
+                b = self._brim_data["brim_b_verts"].get(i, [])
+                w = _es_belt_width_from_rung(
+                    edge["a_pos"], edge["b_pos"], a, b)
+                if w is not None:
+                    return w
+            return _es_edge_length(edge)
+
         by_comp = {}
         for i, e in enumerate(self._edges):
             cid = self._components[i] if i < len(self._components) else 0
-            by_comp.setdefault(cid, []).append((i, _es_edge_length(e)))
+            by_comp.setdefault(cid, []).append((i, _metric_for_chip(i, e)))
         if not by_comp:
             self._region_chip_placeholder.setText(u"")
             return
@@ -810,7 +1352,17 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
             except Exception:
                 pass
         # Load that region's average width into the spin.
-        lens = [_es_edge_length(self._edges[r]) for r in rows_in_region]
+        def _chip_metric(r):
+            edge = self._edges[r]
+            if self._belt_mode and self._brim_data:
+                a = self._brim_data["brim_a_verts"].get(r, [])
+                b = self._brim_data["brim_b_verts"].get(r, [])
+                w = _es_belt_width_from_rung(
+                    edge["a_pos"], edge["b_pos"], a, b)
+                if w is not None:
+                    return w
+            return _es_edge_length(edge)
+        lens = [_chip_metric(r) for r in rows_in_region]
         if lens:
             avg = sum(lens) / float(len(lens))
             self._spin_uniform.blockSignals(True)
@@ -858,11 +1410,21 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
     def _largest_region_average(self):
         if not self._edges:
             return None
-        # Group lengths by component id.
+        # Group lengths by component id, using belt-width metric if
+        # belt mode is on (otherwise simple edge length).
+        def _metric(i, edge):
+            if self._belt_mode and self._brim_data:
+                a = self._brim_data["brim_a_verts"].get(i, [])
+                b = self._brim_data["brim_b_verts"].get(i, [])
+                w = _es_belt_width_from_rung(
+                    edge["a_pos"], edge["b_pos"], a, b)
+                if w is not None:
+                    return w
+            return _es_edge_length(edge)
         by_comp = {}
         for i, e in enumerate(self._edges):
             cid = self._components[i] if i < len(self._components) else 0
-            by_comp.setdefault(cid, []).append(_es_edge_length(e))
+            by_comp.setdefault(cid, []).append(_metric(i, e))
         if not by_comp:
             return None
         # Pick the component with the most edges (ties: highest total
@@ -905,8 +1467,15 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
                 item.setBackground(bg_brush)
                 self._table.setItem(r, 1, item)
 
-                # Col 2: current length.
-                cur_len = _es_edge_length(e)
+                # Col 2: current length (or belt-width if belt mode).
+                if self._belt_mode and self._brim_data:
+                    brim_a = self._brim_data["brim_a_verts"].get(r, [])
+                    brim_b = self._brim_data["brim_b_verts"].get(r, [])
+                    w = _es_belt_width_from_rung(
+                        e["a_pos"], e["b_pos"], brim_a, brim_b)
+                    cur_len = w if w is not None else _es_edge_length(e)
+                else:
+                    cur_len = _es_edge_length(e)
                 item = QtWidgets.QTableWidgetItem(
                     u"{0:.4f}".format(cur_len))
                 item.setTextAlignment(QtCore.Qt.AlignRight
@@ -996,6 +1565,11 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         average length of its own smooth-region (computed from the
         corner-angle slider). Otherwise the spinbox value is used as
         a single global target for every row.
+
+        When belt-width mode is active, "length" means the straight
+        chord distance between the rung's endpoint projections onto
+        the two brim edge loops, and the moving endpoint is slid
+        ALONG its brim rather than along the rung direction.
         """
         if not MAYA_AVAILABLE:
             return
@@ -1010,13 +1584,24 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         per_region = (getattr(self, "_cb_per_region", None) is not None
                       and self._cb_per_region.isChecked())
 
+        # Pick the width metric: simple edge length, or belt-width.
+        def _edge_metric(ei, edge):
+            if self._belt_mode and self._brim_data:
+                brim_a = self._brim_data["brim_a_verts"].get(ei, [])
+                brim_b = self._brim_data["brim_b_verts"].get(ei, [])
+                w = _es_belt_width_from_rung(
+                    edge["a_pos"], edge["b_pos"], brim_a, brim_b)
+                if w is not None:
+                    return w
+            return _es_edge_length(edge)
+
         # Pre-compute per-region averages (once per call).
         region_avg = {}
         if per_region and self._components:
             region_lens = {}
             for i, e in enumerate(self._edges):
                 cid = self._components[i] if i < len(self._components) else 0
-                region_lens.setdefault(cid, []).append(_es_edge_length(e))
+                region_lens.setdefault(cid, []).append(_edge_metric(i, e))
             for cid, lens in region_lens.items():
                 if lens:
                     region_avg[cid] = sum(lens) / float(len(lens))
@@ -1045,7 +1630,13 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
                 target = global_target
             if target <= 0:
                 continue
-            _es_snap_edge_to_length(e, target, anchor)
+            if self._belt_mode and self._brim_data:
+                brim_a = self._brim_data["brim_a_verts"].get(r, [])
+                brim_b = self._brim_data["brim_b_verts"].get(r, [])
+                _es_snap_belt_rung_to_width(
+                    e, target, anchor, brim_a, brim_b)
+            else:
+                _es_snap_edge_to_length(e, target, anchor)
             self._snap_log[e["edge"]] = tr(
                 "es_log_uniform_with_anchor",
                 anchor=anchor_label,
@@ -1110,6 +1701,10 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
     # -- Language refresh --
     def refresh_labels(self):
         self.setWindowTitle(tr("es_result_title"))
+        self._lbl_mode.setText(tr("es_lbl_mode"))
+        self._rb_mode_length.setText(tr("es_mode_length"))
+        self._rb_mode_belt.setText(tr("es_mode_belt"))
+        self._lbl_mode_hint.setText(tr("es_lbl_mode_hint"))
         self._lbl_uniform.setText(tr("es_lbl_uniform"))
         self._lbl_uniform_hint.setText(tr("es_lbl_uniform_hint"))
         self._cb_per_region.setText(tr("es_chk_per_region"))
