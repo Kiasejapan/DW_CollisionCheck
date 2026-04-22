@@ -226,6 +226,118 @@ def _es_bipartite_assign(edges):
     return status
 
 
+def _es_compute_ring_components(edges, corner_angle_deg):
+    """Group the selected edges into "smooth regions" of the ring,
+    splitting at corners sharper than `corner_angle_deg`.
+
+    Two edges are ring-adjacent if they share at least one face on
+    the mesh (belt-style adjacency). For each pair of ring-adjacent
+    edges we compute the angle between their direction vectors
+    (A->B). If that angle exceeds the threshold, the adjacency is
+    "cut" and the two edges end up in different components.
+
+    The result is a list parallel to `edges` giving a component-id
+    integer per edge. Edges in the same component share the same id.
+    """
+    n = len(edges)
+    # Build edge -> neighbouring edges via shared faces.
+    # Each mesh edge can be fetched via polyListComponentConversion
+    # toFace — if two selected edges share any of those faces, they
+    # are ring-adjacent.
+    edge_faces = []    # list of sets, one per edge
+    for e in edges:
+        faces = set()
+        if MAYA_AVAILABLE:
+            try:
+                fs = cmds.polyListComponentConversion(
+                    e["edge"], fromEdge=True, toFace=True) or []
+                fs = cmds.ls(fs, fl=True, long=True) or []
+                for f in fs:
+                    faces.add(f)
+            except Exception:
+                pass
+        edge_faces.append(faces)
+
+    # Index faces → edges for O(N) adjacency build.
+    face_to_edges = {}
+    for ei, faces in enumerate(edge_faces):
+        for f in faces:
+            face_to_edges.setdefault(f, []).append(ei)
+
+    # Build adjacency pairs and the angle between each pair.
+    adj = [set() for _ in range(n)]
+    # Edge direction vectors (A→B normalised).
+    dirs = []
+    for e in edges:
+        ax, ay, az = e["a_pos"]
+        bx, by, bz = e["b_pos"]
+        dx = bx - ax; dy = by - ay; dz = bz - az
+        l = (dx * dx + dy * dy + dz * dz) ** 0.5
+        if l < 1.0e-9:
+            dirs.append((1.0, 0.0, 0.0))
+        else:
+            dirs.append((dx / l, dy / l, dz / l))
+
+    # Walk unique ring-adjacent pairs.
+    import math as _m
+    cos_threshold = _m.cos(_m.radians(max(0.0, min(179.9,
+                                                    corner_angle_deg))))
+    pairs_seen = set()
+    for f, eis in face_to_edges.items():
+        if len(eis) < 2:
+            continue
+        for i in range(len(eis)):
+            for j in range(i + 1, len(eis)):
+                a, b = eis[i], eis[j]
+                key = (a, b) if a < b else (b, a)
+                if key in pairs_seen:
+                    continue
+                pairs_seen.add(key)
+                # Angle between direction vectors, taking the
+                # smaller of the two possible directions (a→b could
+                # be flipped relative to its neighbour).
+                d1 = dirs[a]
+                d2 = dirs[b]
+                dot = d1[0] * d2[0] + d1[1] * d2[1] + d1[2] * d2[2]
+                # Account for direction flip: the belt can have
+                # neighbouring rungs with swapped A/B orientation
+                # relative to each other; use absolute dot product
+                # so we only measure the "unsigned" angle between
+                # the lines.
+                dot_abs = abs(dot)
+                # dot_abs == 1 => aligned (0°); dot_abs == 0 => 90°.
+                # "Bend" angle = 180° - aligned angle. We want to cut
+                # when the bend is BIGGER than the threshold, i.e.
+                # when the aligned-angle is smaller than
+                # (180 - threshold).
+                aligned_cos_limit = _m.cos(_m.radians(
+                    180.0 - max(0.0, min(179.9, corner_angle_deg))))
+                # If dot_abs >= aligned_cos_limit, the edges are
+                # considered "smoothly continuous". Otherwise, they
+                # are separated by a corner.
+                if dot_abs >= aligned_cos_limit:
+                    adj[a].add(b)
+                    adj[b].add(a)
+                # else: corner → don't add to adjacency.
+
+    # BFS to assign component ids.
+    comp = [-1] * n
+    cid = 0
+    for i in range(n):
+        if comp[i] != -1:
+            continue
+        comp[i] = cid
+        stack = [i]
+        while stack:
+            v = stack.pop()
+            for nb in adj[v]:
+                if comp[nb] == -1:
+                    comp[nb] = cid
+                    stack.append(nb)
+        cid += 1
+    return comp
+
+
 def _es_edge_length(e):
     ax, ay, az = e["a_pos"]
     bx, by, bz = e["b_pos"]
@@ -310,6 +422,19 @@ _ES_TABLE_SS = (
     "QHeaderView::section{background-color:#3C3C3C;color:#CCC;"
     "padding:3px;border:1px solid #444;font-size:10px}")
 
+# Colours used to tint the "Region" column so different smooth
+# regions of the selection are easy to distinguish visually.
+_ES_REGION_COLOURS = [
+    "#81D4FA",   # light blue
+    "#FFD54F",   # amber
+    "#A5D6A7",   # light green
+    "#F48FB1",   # pink
+    "#CE93D8",   # light purple
+    "#FFAB91",   # peach
+    "#80CBC4",   # teal
+    "#E6EE9C",   # lime
+]
+
 
 # ---------------------------------------------------------------------------
 # Edge Snap: result window
@@ -333,6 +458,8 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
             "QLabel{color:#EEE}")
         self._edges = []          # list of edge dicts
         self._status = []         # per-edge bipartite status ("ok"/"fallback")
+        self._components = []     # per-edge ring-component id
+        self._corner_angle = 60.0 # deg — see set_data / slider
         self._snap_log = {}       # edge_str -> direction name
         self._undo_open = False
         self._build()
@@ -365,6 +492,13 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         self._spin_uniform.setFixedWidth(100)
         self._spin_uniform.setStyleSheet(_ES_SPIN_SS)
         uni.addWidget(self._spin_uniform)
+        self._cb_per_region = QtWidgets.QCheckBox(tr("es_chk_per_region"))
+        self._cb_per_region.setToolTip(tr("es_chk_per_region_tip"))
+        self._cb_per_region.setStyleSheet(
+            "QCheckBox{color:#FFD54F;font-size:10px}"
+            "QCheckBox::indicator{width:12px;height:12px}")
+        self._cb_per_region.setChecked(True)
+        uni.addWidget(self._cb_per_region)
         # Hint label so it's clear the direction buttons below use this.
         self._lbl_uniform_hint = QtWidgets.QLabel(tr("es_lbl_uniform_hint"))
         self._lbl_uniform_hint.setStyleSheet(
@@ -373,8 +507,41 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         uni.addStretch()
         lo.addLayout(uni)
 
+        # Corner-angle slider row. When consecutive ring-adjacent edges
+        # bend more than this angle, they are treated as belonging to
+        # separate "regions" so the target-width spin can be set per
+        # region instead of being polluted by short corner edges.
+        corner = QtWidgets.QHBoxLayout()
+        corner.setSpacing(6)
+        self._lbl_corner = QtWidgets.QLabel(tr("es_lbl_corner_angle"))
+        self._lbl_corner.setStyleSheet("color:#AAA;font-size:10px")
+        corner.addWidget(self._lbl_corner)
+        self._slider_corner = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self._slider_corner.setRange(10, 120)
+        self._slider_corner.setValue(60)
+        self._slider_corner.setFixedWidth(140)
+        self._slider_corner.setStyleSheet(
+            "QSlider::groove:horizontal{height:6px;background:#222;"
+            "border-radius:3px}"
+            "QSlider::handle:horizontal{background:#FF9800;"
+            "border:1px solid #F57C00;width:14px;margin:-4px 0;"
+            "border-radius:7px}")
+        self._slider_corner.valueChanged.connect(self._on_corner_angle_changed)
+        corner.addWidget(self._slider_corner)
+        self._lbl_corner_val = QtWidgets.QLabel(u"60\u00B0")
+        self._lbl_corner_val.setStyleSheet(
+            "color:#FF9800;font-size:10px;font-weight:bold;min-width:30px")
+        corner.addWidget(self._lbl_corner_val)
+        self._lbl_corner_hint = QtWidgets.QLabel(tr("es_lbl_corner_hint"))
+        self._lbl_corner_hint.setStyleSheet(
+            "color:#777;font-size:9px;padding:0 4px")
+        self._lbl_corner_hint.setWordWrap(True)
+        corner.addWidget(self._lbl_corner_hint, 1)
+        corner.addStretch()
+        lo.addLayout(corner)
+
         # Pair table.
-        self._table = QtWidgets.QTableWidget(0, 5)
+        self._table = QtWidgets.QTableWidget(0, 6)
         self._update_headers()
         h = self._table.horizontalHeader()
         self._table.setColumnWidth(0, 42)
@@ -383,6 +550,7 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         h.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
         h.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
         h.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)
+        h.setSectionResizeMode(5, QtWidgets.QHeaderView.ResizeToContents)
         self._table.setSelectionBehavior(
             QtWidgets.QAbstractItemView.SelectRows)
         self._table.setSelectionMode(
@@ -443,6 +611,7 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
             u"",
             tr("es_col_edge"),
             tr("es_col_length"),
+            tr("es_col_region"),
             tr("es_col_status"),
             tr("es_col_log"),
         ])
@@ -451,27 +620,67 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
     def set_data(self, edges):
         self._edges = list(edges)
         self._status = _es_bipartite_assign(self._edges)
+        self._components = _es_compute_ring_components(
+            self._edges, self._corner_angle)
         self._snap_log = {}
         self._close_undo()
-        # Scope line.
-        n = len(self._edges)
-        n_bad = sum(1 for s in self._status if s != "ok")
-        if n_bad > 0:
-            self._scope_lbl.setText(
-                tr("es_scope_with_warn", count=n, warn=n_bad))
-        else:
-            self._scope_lbl.setText(tr("es_scope", count=n))
-        # Populate average length into the spinbox.
-        lens = [_es_edge_length(e) for e in self._edges]
-        if lens:
-            avg = sum(lens) / float(len(lens))
-            self._spin_uniform.blockSignals(True)
-            try:
-                self._spin_uniform.setValue(avg)
-            finally:
-                self._spin_uniform.blockSignals(False)
+        self._refresh_scope_and_average()
         self._populate()
         self._update_confirm_state()
+
+    def _refresh_scope_and_average(self):
+        """Recompute scope line + suggested target width.
+
+        When the edges span multiple regions, we pick the region
+        currently under the user's selection (or the largest region
+        if no selection) and use its average as the target width.
+        That prevents the short corner edges from dragging the
+        average down for the main straight run.
+        """
+        n = len(self._edges)
+        n_bad = sum(1 for s in self._status if s != "ok")
+        n_regions = (max(self._components) + 1
+                      if self._components else 0)
+        if n_bad > 0 or n_regions > 1:
+            parts = []
+            if n_bad > 0:
+                parts.append(tr("es_scope_with_warn", count=n, warn=n_bad))
+            else:
+                parts.append(tr("es_scope", count=n))
+            if n_regions > 1:
+                parts.append(tr("es_scope_region_count",
+                                 regions=n_regions))
+            self._scope_lbl.setText(u"   |   ".join(parts))
+        else:
+            self._scope_lbl.setText(tr("es_scope", count=n))
+
+        # Compute "default target width" from the largest region.
+        target = self._largest_region_average()
+        if target is not None:
+            self._spin_uniform.blockSignals(True)
+            try:
+                self._spin_uniform.setValue(target)
+            finally:
+                self._spin_uniform.blockSignals(False)
+
+    def _largest_region_average(self):
+        if not self._edges:
+            return None
+        # Group lengths by component id.
+        by_comp = {}
+        for i, e in enumerate(self._edges):
+            cid = self._components[i] if i < len(self._components) else 0
+            by_comp.setdefault(cid, []).append(_es_edge_length(e))
+        if not by_comp:
+            return None
+        # Pick the component with the most edges (ties: highest total
+        # length) so short corner regions don't drive the default.
+        best_cid = max(by_comp.keys(),
+                       key=lambda c: (len(by_comp[c]), sum(by_comp[c])))
+        lens = by_comp[best_cid]
+        if not lens:
+            return None
+        return sum(lens) / float(len(lens))
 
     def _populate(self):
         self._table.blockSignals(True)
@@ -502,21 +711,45 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
                                        | QtCore.Qt.AlignVCenter)
                 self._table.setItem(r, 2, item)
 
-                # Col 3: bipartite status.
+                # Col 3: region id (1-based for display; colour-coded
+                # so different regions are easy to scan visually).
+                cid = self._components[r] if r < len(self._components) else 0
+                region_item = QtWidgets.QTableWidgetItem(
+                    u"#{0}".format(cid + 1))
+                region_item.setTextAlignment(QtCore.Qt.AlignCenter)
+                region_item.setForeground(
+                    QtGui.QColor(_ES_REGION_COLOURS[
+                        cid % len(_ES_REGION_COLOURS)]))
+                self._table.setItem(r, 3, region_item)
+
+                # Col 4: bipartite status.
                 st_txt = (tr("es_status_ok") if status == "ok"
                           else tr("es_status_fallback"))
                 item = QtWidgets.QTableWidgetItem(st_txt)
                 if status != "ok":
                     item.setForeground(QtGui.QColor("#FF9800"))
-                self._table.setItem(r, 3, item)
-
-                # Col 4: snap log.
-                item = QtWidgets.QTableWidgetItem(log)
                 self._table.setItem(r, 4, item)
+
+                # Col 5: snap log.
+                item = QtWidgets.QTableWidgetItem(log)
+                self._table.setItem(r, 5, item)
         finally:
             self._table.blockSignals(False)
 
     # -- Interaction --
+    def _on_corner_angle_changed(self, val):
+        self._corner_angle = float(val)
+        self._lbl_corner_val.setText(u"{0}\u00B0".format(int(val)))
+        if not self._edges:
+            return
+        # Recompute ring components with the new threshold and refresh
+        # target-width suggestion + table so the user can see which
+        # rows now sit in which region.
+        self._components = _es_compute_ring_components(
+            self._edges, self._corner_angle)
+        self._refresh_scope_and_average()
+        self._populate()
+
     def _on_selection_changed(self):
         if not MAYA_AVAILABLE:
             return
@@ -552,6 +785,11 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
             0 = keep A, move B   (Align-to-A)
             1 = keep B, move A   (Align-to-B)
             2 = keep midpoint    (Centre)
+
+        If the "per-region" checkbox is ticked, each edge uses the
+        average length of its own smooth-region (computed from the
+        corner-angle slider). Otherwise the spinbox value is used as
+        a single global target for every row.
         """
         if not MAYA_AVAILABLE:
             return
@@ -562,10 +800,26 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         if not rows:
             self.status_msg.emit(tr("es_status_no_sel"))
             return
-        target = float(self._spin_uniform.value())
-        if target <= 0:
+
+        per_region = (getattr(self, "_cb_per_region", None) is not None
+                      and self._cb_per_region.isChecked())
+
+        # Pre-compute per-region averages (once per call).
+        region_avg = {}
+        if per_region and self._components:
+            region_lens = {}
+            for i, e in enumerate(self._edges):
+                cid = self._components[i] if i < len(self._components) else 0
+                region_lens.setdefault(cid, []).append(_es_edge_length(e))
+            for cid, lens in region_lens.items():
+                if lens:
+                    region_avg[cid] = sum(lens) / float(len(lens))
+
+        global_target = float(self._spin_uniform.value())
+        if not per_region and global_target <= 0:
             self.status_msg.emit(tr("es_status_bad_length"))
             return
+
         self._ensure_undo_open()
         if anchor == 0:
             anchor_label = tr("es_log_align_a")
@@ -577,6 +831,14 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
             if r >= len(self._edges):
                 continue
             e = self._edges[r]
+            # Resolve this edge's target length.
+            if per_region:
+                cid = self._components[r] if r < len(self._components) else 0
+                target = region_avg.get(cid, global_target)
+            else:
+                target = global_target
+            if target <= 0:
+                continue
             _es_snap_edge_to_length(e, target, anchor)
             self._snap_log[e["edge"]] = tr(
                 "es_log_uniform_with_anchor",
@@ -644,6 +906,10 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         self.setWindowTitle(tr("es_result_title"))
         self._lbl_uniform.setText(tr("es_lbl_uniform"))
         self._lbl_uniform_hint.setText(tr("es_lbl_uniform_hint"))
+        self._cb_per_region.setText(tr("es_chk_per_region"))
+        self._cb_per_region.setToolTip(tr("es_chk_per_region_tip"))
+        self._lbl_corner.setText(tr("es_lbl_corner_angle"))
+        self._lbl_corner_hint.setText(tr("es_lbl_corner_hint"))
         self._btn_to_a.setText(tr("es_btn_align_a"))
         self._btn_to_b.setText(tr("es_btn_align_b"))
         self._btn_mid.setText(tr("es_btn_align_mid"))
