@@ -442,6 +442,7 @@ _STRINGS = {
                              "jp": u"\u30eb\u30fc\u30d7 \u2014 \u7e26\u65b9\u5411\uff08\u5782\u76f4\uff09"},
     "es_col_edge":          {"en": "Edge",                            "jp": u"\u30a8\u30c3\u30b8"},
     "es_col_length":        {"en": "Length",                          "jp": u"\u9577\u3055"},
+    "es_col_belt_width":    {"en": "Belt width",                      "jp": u"\u30d9\u30eb\u30c8\u5e45"},
     "es_col_region":        {"en": "Region",                          "jp": u"\u533a\u9593"},
     "es_col_status":        {"en": "A/B",                             "jp": u"A/B"},
     "es_col_log":           {"en": "Applied",                         "jp": u"\u9069\u7528\u6e08"},
