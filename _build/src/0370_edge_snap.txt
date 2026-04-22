@@ -226,25 +226,37 @@ def _es_bipartite_assign(edges):
     return status
 
 
-def _es_compute_ring_components(edges, corner_angle_deg):
-    """Group the selected edges into "smooth regions" of the ring,
-    splitting at corners sharper than `corner_angle_deg`.
+def _es_compute_adjacency_pairs(edges):
+    """Build the list of candidate adjacent edge pairs, each with the
+    bend angle (in degrees, 0 = perfectly smooth, 90 = perpendicular).
 
-    Two edges are ring-adjacent if they share at least one face on
-    the mesh (belt-style adjacency). For each pair of ring-adjacent
-    edges we compute the angle between their direction vectors
-    (A->B). If that angle exceeds the threshold, the adjacency is
-    "cut" and the two edges end up in different components.
+    Returns a list of (ei, ej, bend_angle_deg, kind):
+        kind = "face-opposite" for quad-opposite-edge adjacency
+               (ring-rung-style: two rungs bordering the same quad)
+        kind = "vertex-fan"    for adjacency via a shared vertex
+               (loop-along-belt-style: two edges meeting at a vertex)
 
-    The result is a list parallel to `edges` giving a component-id
-    integer per edge. Edges in the same component share the same id.
+    The angle semantic depends on the kind:
+        face-opposite → line angle between the two edges' direction
+                         vectors (using |dot|). For a smoothly curving
+                         belt this is near 0; at a corner it's larger.
+        vertex-fan    → bend angle at the shared vertex. Computed as
+                         (180° - angle between v→n1 and v→n2).
+                         For a straight run of edges, v→n1 and v→n2
+                         point in opposite directions → angle ≈ 180° →
+                         bend ≈ 0°. At a right-angle corner, bend = 90°.
+
+    We build a list rather than immediately deciding "cut or link" so
+    the same data can feed both the BFS and the histogram widget.
     """
+    import math as _m
     n = len(edges)
-    # Build edge -> neighbouring edges via shared faces.
-    # Each mesh edge can be fetched via polyListComponentConversion
-    # toFace — if two selected edges share any of those faces, they
-    # are ring-adjacent.
-    edge_faces = []    # list of sets, one per edge
+    if n == 0:
+        return []
+
+    # --- Shared-face (opposite-edge) adjacency ---------------------
+    # Map each edge to the set of faces it belongs to.
+    edge_faces = []
     for e in edges:
         faces = set()
         if MAYA_AVAILABLE:
@@ -258,25 +270,12 @@ def _es_compute_ring_components(edges, corner_angle_deg):
                 pass
         edge_faces.append(faces)
 
-    # Index faces → edges for O(N) adjacency build.
     face_to_edges = {}
     for ei, faces in enumerate(edge_faces):
         for f in faces:
             face_to_edges.setdefault(f, []).append(ei)
 
-    # Also index vertices → edges. In a "loop-along-belt" selection
-    # (an edge loop running along the belt's spine), consecutive
-    # edges share a vertex, not a face. Build a vertex graph too so
-    # both ring-rung and loop-along-belt selections are handled.
-    vert_to_edges = {}
-    for ei, e in enumerate(edges):
-        for vi in (e["v0_idx"], e["v1_idx"]):
-            key = (e["shape"], vi)
-            vert_to_edges.setdefault(key, []).append(ei)
-
-    # Build adjacency pairs and the angle between each pair.
-    adj = [set() for _ in range(n)]
-    # Edge direction vectors (A→B normalised).
+    # Direction vectors A→B normalised.
     dirs = []
     for e in edges:
         ax, ay, az = e["a_pos"]
@@ -288,49 +287,120 @@ def _es_compute_ring_components(edges, corner_angle_deg):
         else:
             dirs.append((dx / l, dy / l, dz / l))
 
-    # Walk unique ring-adjacent pairs.
-    import math as _m
-    # corner_angle_deg is the maximum BEND angle we still consider
-    # "smoothly continuous". Bend 0° = perfectly aligned (dot = 1).
-    # Bend 90° = perpendicular (dot = 0). So the condition is:
-    #    keep adjacency if |dot| >= cos(corner_angle_deg)
-    #    cut adjacency  if |dot| <  cos(corner_angle_deg)
-    aligned_cos_limit = _m.cos(_m.radians(
-        max(0.0, min(179.9, corner_angle_deg))))
+    # Vertex keys per edge for quick "do they share a vertex?" test.
+    vkeys = []
+    for e in edges:
+        vkeys.append({(e["shape"], e["v0_idx"]),
+                      (e["shape"], e["v1_idx"])})
 
-    def _maybe_link(a, b, seen_pairs):
-        key = (a, b) if a < b else (b, a)
-        if key in seen_pairs:
-            return
-        seen_pairs.add(key)
-        d1 = dirs[a]
-        d2 = dirs[b]
-        dot = d1[0] * d2[0] + d1[1] * d2[1] + d1[2] * d2[2]
-        # Use absolute dot so that A/B orientation flips between
-        # neighbours don't count as a bend.
-        dot_abs = abs(dot)
-        if dot_abs >= aligned_cos_limit:
-            adj[a].add(b)
-            adj[b].add(a)
+    pairs = []
+    seen = set()
 
-    pairs_seen = set()
-    # 1) Face-sharing (ring-rung style).
+    # 1) Shared-face adjacency — but ONLY for edge pairs that DON'T
+    # also share a vertex. A quad face has 4 edges; edges that share
+    # a vertex on that face are "adjacent edges of the quad" and the
+    # angle between their direction vectors is roughly 90° regardless
+    # of whether the belt is straight — that's geometric noise. We
+    # only want the "opposite" pairs (no shared vertex).
     for f, eis in face_to_edges.items():
         if len(eis) < 2:
             continue
         for i in range(len(eis)):
             for j in range(i + 1, len(eis)):
-                _maybe_link(eis[i], eis[j], pairs_seen)
+                a, b = eis[i], eis[j]
+                if vkeys[a] & vkeys[b]:
+                    # They share a vertex — that's handled by the
+                    # vertex-fan pass below, not as face-opposite.
+                    continue
+                key = (a, b) if a < b else (b, a)
+                if key in seen:
+                    continue
+                seen.add(key)
+                d1 = dirs[a]
+                d2 = dirs[b]
+                dot = d1[0] * d2[0] + d1[1] * d2[1] + d1[2] * d2[2]
+                dot_abs = max(-1.0, min(1.0, abs(dot)))
+                line_angle = _m.degrees(_m.acos(dot_abs))
+                pairs.append((a, b, line_angle, "face-opposite"))
 
-    # 2) Vertex-sharing (loop-along-belt style).
+    # 2) Vertex-fan adjacency — two edges meeting at a shared vertex.
+    # Compute the TRUE bend angle at that vertex (rather than the
+    # line angle between direction vectors A→B). The vectors go from
+    # the shared vertex outward to each edge's far end.
+    vert_to_edges = {}
+    for ei, e in enumerate(edges):
+        for vi in (e["v0_idx"], e["v1_idx"]):
+            key = (e["shape"], vi)
+            vert_to_edges.setdefault(key, []).append(ei)
+
     for vk, eis in vert_to_edges.items():
         if len(eis) < 2:
             continue
+        shape, vi = vk
+        # Position of the shared vertex is either a_pos or b_pos.
+        def _far_end(ei):
+            e = edges[ei]
+            if e["v0_idx"] == vi:
+                return e["p1"], e["p0"]    # far, near
+            return e["p0"], e["p1"]
         for i in range(len(eis)):
             for j in range(i + 1, len(eis)):
-                _maybe_link(eis[i], eis[j], pairs_seen)
+                a, b = eis[i], eis[j]
+                key = (a, b) if a < b else (b, a)
+                if key in seen:
+                    continue
+                seen.add(key)
+                fa, va = _far_end(a)
+                fb, _  = _far_end(b)
+                v1 = (fa[0] - va[0], fa[1] - va[1], fa[2] - va[2])
+                v2 = (fb[0] - va[0], fb[1] - va[1], fb[2] - va[2])
+                l1 = (v1[0]**2 + v1[1]**2 + v1[2]**2) ** 0.5
+                l2 = (v2[0]**2 + v2[1]**2 + v2[2]**2) ** 0.5
+                if l1 < 1.0e-9 or l2 < 1.0e-9:
+                    continue
+                v1 = (v1[0]/l1, v1[1]/l1, v1[2]/l1)
+                v2 = (v2[0]/l2, v2[1]/l2, v2[2]/l2)
+                dot = v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2]
+                dot = max(-1.0, min(1.0, dot))
+                # Angle between the two outgoing vectors: 0° = same
+                # direction (impossible for distinct edges meeting
+                # at a vertex on a sane mesh, really). 180° = they
+                # point exactly opposite — i.e. a straight line.
+                open_angle = _m.degrees(_m.acos(dot))
+                # Bend angle = how much the line bends at this
+                # vertex relative to straight.
+                #   straight (open_angle 180°) → bend 0°
+                #   right angle (open 90°)      → bend 90°
+                #   needle point (open 0°)      → bend 180°
+                # We cap bend at 90° (sharper than that is still
+                # "sharp" — all above 90 behave the same to us).
+                bend = 180.0 - open_angle
+                if bend > 90.0:
+                    bend = 90.0
+                pairs.append((a, b, bend, "vertex-fan"))
 
-    # BFS to assign component ids.
+    return pairs
+
+
+def _es_compute_ring_components(edges, corner_angle_deg):
+    """Group the selected edges into "smooth regions" of the ring,
+    splitting at corners sharper than `corner_angle_deg`.
+
+    Delegates adjacency/angle computation to
+    `_es_compute_adjacency_pairs`. Each pair whose bend angle exceeds
+    the threshold is skipped (treated as a cut); the rest are merged
+    into the same component via union-find.
+    """
+    n = len(edges)
+    if n == 0:
+        return []
+    pairs = _es_compute_adjacency_pairs(edges)
+    adj = [set() for _ in range(n)]
+    for a, b, angle, _kind in pairs:
+        if angle <= corner_angle_deg:
+            adj[a].add(b)
+            adj[b].add(a)
+
     comp = [-1] * n
     cid = 0
     for i in range(n):
@@ -930,6 +1000,112 @@ _ES_REGION_COLOURS = [
 
 
 # ---------------------------------------------------------------------------
+# Bend-angle histogram widget
+# ---------------------------------------------------------------------------
+
+class _EsAngleHistogram(QtWidgets.QWidget):
+    """Horizontal histogram showing the distribution of bend angles
+    between adjacent selected edges (0°..90°), overlaid with the
+    current corner-angle threshold.
+
+    Bars to the LEFT of the threshold are drawn in the "kept"
+    colour (green-ish) because their adjacency is preserved.
+    Bars to the RIGHT are drawn in the "cut" colour (red-ish),
+    highlighting which pairs the threshold will split on.
+    """
+
+    _N_BINS = 36   # 2.5° per bin across 0..90
+
+    def __init__(self, parent=None):
+        super(_EsAngleHistogram, self).__init__(parent)
+        self._angles = []            # list of bend angles in degrees
+        self._threshold = 60.0
+        self.setMinimumHeight(36)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding,
+                            QtWidgets.QSizePolicy.Fixed)
+
+    def set_angles(self, angles):
+        """Replace the dataset and repaint."""
+        self._angles = list(angles) if angles else []
+        self.update()
+
+    def set_threshold(self, threshold_deg):
+        self._threshold = float(threshold_deg)
+        self.update()
+
+    def paintEvent(self, _ev):
+        p = QtGui.QPainter(self)
+        p.setRenderHint(QtGui.QPainter.Antialiasing, False)
+
+        w = self.width()
+        h = self.height()
+        # Background.
+        p.fillRect(0, 0, w, h, QtGui.QColor("#1A1A1A"))
+        if w <= 4 or h <= 4:
+            p.end()
+            return
+
+        # Chart area leaves a tiny 2px margin.
+        pad = 2
+        chart_w = w - pad * 2
+        chart_h = h - pad * 2
+
+        # Bin the angles.
+        bins = [0] * self._N_BINS
+        for a in self._angles:
+            a = max(0.0, min(90.0, a))
+            b = int(a / 90.0 * self._N_BINS)
+            if b >= self._N_BINS:
+                b = self._N_BINS - 1
+            bins[b] += 1
+        max_count = max(bins) if bins else 0
+
+        # Threshold position in pixels.
+        t_frac = max(0.0, min(90.0, self._threshold)) / 90.0
+        t_px = pad + int(t_frac * chart_w)
+
+        # Draw bars.
+        bin_w = chart_w / float(self._N_BINS)
+        for i, c in enumerate(bins):
+            if c == 0:
+                continue
+            bar_h = int((c / float(max_count)) * chart_h) if max_count > 0 else 0
+            if bar_h < 1:
+                bar_h = 1
+            x0 = pad + int(i * bin_w)
+            x1 = pad + int((i + 1) * bin_w)
+            # Colour: left of threshold = kept (green), right = cut (red).
+            bin_centre = (i + 0.5) / self._N_BINS * 90.0
+            if bin_centre <= self._threshold:
+                col = QtGui.QColor("#4CAF50")
+            else:
+                col = QtGui.QColor("#E53935")
+            p.fillRect(x0, pad + chart_h - bar_h,
+                       max(1, x1 - x0 - 1), bar_h, col)
+
+        # Threshold line.
+        pen = QtGui.QPen(QtGui.QColor("#FF9800"), 2)
+        p.setPen(pen)
+        p.drawLine(t_px, pad, t_px, pad + chart_h)
+
+        # Baseline axis.
+        p.setPen(QtGui.QPen(QtGui.QColor("#444"), 1))
+        p.drawLine(pad, pad + chart_h, pad + chart_w, pad + chart_h)
+
+        # Tick labels at 0°, 30°, 60°, 90°.
+        p.setPen(QtGui.QPen(QtGui.QColor("#777"), 1))
+        f = p.font()
+        f.setPointSize(7)
+        p.setFont(f)
+        for deg in (0, 30, 60, 90):
+            x = pad + int((deg / 90.0) * chart_w)
+            p.drawText(x - 8, pad + chart_h - 2 + 10,
+                       u"{0}\u00B0".format(deg))
+
+        p.end()
+
+
+# ---------------------------------------------------------------------------
 # Edge Snap: result window
 # ---------------------------------------------------------------------------
 
@@ -1096,6 +1272,15 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         corner.addStretch()
         lo.addLayout(corner)
 
+        # Histogram of bend angles between adjacent edges. Updated
+        # live on set_data and when the user drags the corner slider
+        # so they can see exactly which pairs will be cut.
+        self._angle_histogram = _EsAngleHistogram()
+        self._angle_histogram.setFixedHeight(42)
+        self._angle_histogram.setStyleSheet(
+            "QWidget{background-color:#1A1A1A;border-radius:3px}")
+        lo.addWidget(self._angle_histogram)
+
         # Pair table.
         self._table = QtWidgets.QTableWidget(0, 6)
         self._update_headers()
@@ -1185,9 +1370,24 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         # new selection right away so the user sees correct values.
         if self._belt_mode:
             self._ensure_brim_data()
+        # Feed the histogram widget with the current angles.
+        self._update_histogram()
         self._refresh_scope_and_average()
         self._populate()
         self._update_confirm_state()
+
+    def _update_histogram(self):
+        """Recompute the bend-angle list for the current selection
+        and push it into the histogram widget."""
+        if not hasattr(self, "_angle_histogram"):
+            return
+        if not self._edges:
+            self._angle_histogram.set_angles([])
+            self._angle_histogram.set_threshold(self._corner_angle)
+            return
+        pairs = _es_compute_adjacency_pairs(self._edges)
+        self._angle_histogram.set_angles([p[2] for p in pairs])
+        self._angle_histogram.set_threshold(self._corner_angle)
 
     def _ensure_brim_data(self):
         """Compute brim polylines for the current selection if we
@@ -1515,6 +1715,10 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
     def _on_corner_angle_changed(self, val):
         self._corner_angle = float(val)
         self._lbl_corner_val.setText(u"{0}\u00B0".format(int(val)))
+        # Always update the histogram threshold — it's cheap and
+        # should reflect the slider even when there are no edges yet.
+        if hasattr(self, "_angle_histogram"):
+            self._angle_histogram.set_threshold(self._corner_angle)
         if not self._edges:
             return
         # Recompute ring components with the new threshold and refresh
