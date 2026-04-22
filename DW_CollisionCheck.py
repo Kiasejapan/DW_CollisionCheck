@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.22.1410"
+VERSION = "2026.04.22.1434"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -6008,6 +6008,16 @@ def _es_compute_ring_components(edges, corner_angle_deg):
         for f in faces:
             face_to_edges.setdefault(f, []).append(ei)
 
+    # Also index vertices → edges. In a "loop-along-belt" selection
+    # (an edge loop running along the belt's spine), consecutive
+    # edges share a vertex, not a face. Build a vertex graph too so
+    # both ring-rung and loop-along-belt selections are handled.
+    vert_to_edges = {}
+    for ei, e in enumerate(edges):
+        for vi in (e["v0_idx"], e["v1_idx"]):
+            key = (e["shape"], vi)
+            vert_to_edges.setdefault(key, []).append(ei)
+
     # Build adjacency pairs and the angle between each pair.
     adj = [set() for _ in range(n)]
     # Edge direction vectors (A→B normalised).
@@ -6024,45 +6034,45 @@ def _es_compute_ring_components(edges, corner_angle_deg):
 
     # Walk unique ring-adjacent pairs.
     import math as _m
-    cos_threshold = _m.cos(_m.radians(max(0.0, min(179.9,
-                                                    corner_angle_deg))))
+    # corner_angle_deg is the maximum BEND angle we still consider
+    # "smoothly continuous". Bend 0° = perfectly aligned (dot = 1).
+    # Bend 90° = perpendicular (dot = 0). So the condition is:
+    #    keep adjacency if |dot| >= cos(corner_angle_deg)
+    #    cut adjacency  if |dot| <  cos(corner_angle_deg)
+    aligned_cos_limit = _m.cos(_m.radians(
+        max(0.0, min(179.9, corner_angle_deg))))
+
+    def _maybe_link(a, b, seen_pairs):
+        key = (a, b) if a < b else (b, a)
+        if key in seen_pairs:
+            return
+        seen_pairs.add(key)
+        d1 = dirs[a]
+        d2 = dirs[b]
+        dot = d1[0] * d2[0] + d1[1] * d2[1] + d1[2] * d2[2]
+        # Use absolute dot so that A/B orientation flips between
+        # neighbours don't count as a bend.
+        dot_abs = abs(dot)
+        if dot_abs >= aligned_cos_limit:
+            adj[a].add(b)
+            adj[b].add(a)
+
     pairs_seen = set()
+    # 1) Face-sharing (ring-rung style).
     for f, eis in face_to_edges.items():
         if len(eis) < 2:
             continue
         for i in range(len(eis)):
             for j in range(i + 1, len(eis)):
-                a, b = eis[i], eis[j]
-                key = (a, b) if a < b else (b, a)
-                if key in pairs_seen:
-                    continue
-                pairs_seen.add(key)
-                # Angle between direction vectors, taking the
-                # smaller of the two possible directions (a→b could
-                # be flipped relative to its neighbour).
-                d1 = dirs[a]
-                d2 = dirs[b]
-                dot = d1[0] * d2[0] + d1[1] * d2[1] + d1[2] * d2[2]
-                # Account for direction flip: the belt can have
-                # neighbouring rungs with swapped A/B orientation
-                # relative to each other; use absolute dot product
-                # so we only measure the "unsigned" angle between
-                # the lines.
-                dot_abs = abs(dot)
-                # dot_abs == 1 => aligned (0°); dot_abs == 0 => 90°.
-                # "Bend" angle = 180° - aligned angle. We want to cut
-                # when the bend is BIGGER than the threshold, i.e.
-                # when the aligned-angle is smaller than
-                # (180 - threshold).
-                aligned_cos_limit = _m.cos(_m.radians(
-                    180.0 - max(0.0, min(179.9, corner_angle_deg))))
-                # If dot_abs >= aligned_cos_limit, the edges are
-                # considered "smoothly continuous". Otherwise, they
-                # are separated by a corner.
-                if dot_abs >= aligned_cos_limit:
-                    adj[a].add(b)
-                    adj[b].add(a)
-                # else: corner → don't add to adjacency.
+                _maybe_link(eis[i], eis[j], pairs_seen)
+
+    # 2) Vertex-sharing (loop-along-belt style).
+    for vk, eis in vert_to_edges.items():
+        if len(eis) < 2:
+            continue
+        for i in range(len(eis)):
+            for j in range(i + 1, len(eis)):
+                _maybe_link(eis[i], eis[j], pairs_seen)
 
     # BFS to assign component ids.
     comp = [-1] * n
@@ -6222,6 +6232,18 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         self._scope_lbl.setWordWrap(True)
         lo.addWidget(self._scope_lbl)
 
+        # Region chip strip (rich-text label). Shows one colour-coded
+        # chip per region with per-region edge-count + average width,
+        # so the user sees how the slider reshuffles the groupings.
+        self._region_chip_lbl = QtWidgets.QLabel(u"")
+        self._region_chip_lbl.setTextFormat(QtCore.Qt.RichText)
+        self._region_chip_lbl.setStyleSheet(
+            "background-color:#222;padding:4px 8px;border-radius:3px;"
+            "font-size:10px")
+        self._region_chip_lbl.setWordWrap(True)
+        self._region_chip_lbl.setVisible(False)
+        lo.addWidget(self._region_chip_lbl)
+
         # Uniform-length row: spinbox + apply button.
         uni = QtWidgets.QHBoxLayout()
         uni.setSpacing(6)
@@ -6261,7 +6283,7 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         self._lbl_corner.setStyleSheet("color:#AAA;font-size:10px")
         corner.addWidget(self._lbl_corner)
         self._slider_corner = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self._slider_corner.setRange(10, 120)
+        self._slider_corner.setRange(5, 89)
         self._slider_corner.setValue(60)
         self._slider_corner.setFixedWidth(140)
         self._slider_corner.setStyleSheet(
@@ -6385,18 +6407,23 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         n_bad = sum(1 for s in self._status if s != "ok")
         n_regions = (max(self._components) + 1
                       if self._components else 0)
-        if n_bad > 0 or n_regions > 1:
-            parts = []
-            if n_bad > 0:
-                parts.append(tr("es_scope_with_warn", count=n, warn=n_bad))
-            else:
-                parts.append(tr("es_scope", count=n))
-            if n_regions > 1:
-                parts.append(tr("es_scope_region_count",
-                                 regions=n_regions))
-            self._scope_lbl.setText(u"   |   ".join(parts))
+
+        # Build the text scope line.
+        parts = []
+        if n_bad > 0:
+            parts.append(tr("es_scope_with_warn", count=n, warn=n_bad))
         else:
-            self._scope_lbl.setText(tr("es_scope", count=n))
+            parts.append(tr("es_scope", count=n))
+        if n_regions > 1:
+            parts.append(tr("es_scope_region_count", regions=n_regions))
+        self._scope_lbl.setText(u"   |   ".join(parts))
+
+        # Build the colourful per-region breakdown (rich-text HTML in a
+        # separate label so it wraps cleanly under the scope line).
+        breakdown_html = self._build_region_breakdown_html()
+        if hasattr(self, "_region_chip_lbl"):
+            self._region_chip_lbl.setText(breakdown_html)
+            self._region_chip_lbl.setVisible(n_regions > 0)
 
         # Compute "default target width" from the largest region.
         target = self._largest_region_average()
@@ -6406,6 +6433,33 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
                 self._spin_uniform.setValue(target)
             finally:
                 self._spin_uniform.blockSignals(False)
+
+    def _build_region_breakdown_html(self):
+        """Return small inline HTML with one coloured chip per region:
+            #1 (15 edges, avg 0.58)   #2 (3 edges, avg 0.12)   ...
+        """
+        if not self._edges:
+            return u""
+        by_comp = {}
+        for i, e in enumerate(self._edges):
+            cid = self._components[i] if i < len(self._components) else 0
+            by_comp.setdefault(cid, []).append(_es_edge_length(e))
+        if not by_comp:
+            return u""
+        pieces = []
+        for cid in sorted(by_comp.keys()):
+            lens = by_comp[cid]
+            if not lens:
+                continue
+            avg = sum(lens) / float(len(lens))
+            col = _ES_REGION_COLOURS[cid % len(_ES_REGION_COLOURS)]
+            # Colour chip + text.
+            pieces.append(
+                u"<span style='color:{col};font-weight:bold'>#{cid}</span> "
+                u"<span style='color:#CCC'>({n} / avg {avg})</span>"
+                .format(col=col, cid=cid + 1, n=len(lens),
+                         avg=u"{0:.4f}".format(avg)))
+        return u"&nbsp;&nbsp;".join(pieces)
 
     def _largest_region_average(self):
         if not self._edges:
@@ -6433,6 +6487,14 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
             for r, e in enumerate(self._edges):
                 status = self._status[r]
                 log = self._snap_log.get(e["edge"], "")
+                cid = self._components[r] if r < len(self._components) else 0
+                col = _ES_REGION_COLOURS[cid % len(_ES_REGION_COLOURS)]
+                # Make a faint tinted background from the region colour
+                # so each region paints visibly as a horizontal band.
+                qcol = QtGui.QColor(col)
+                tinted = QtGui.QColor(qcol.red(), qcol.green(), qcol.blue(), 60)
+                bg_brush = QtGui.QBrush(tinted)
+                fg_qcol = QtGui.QColor(col)
 
                 # Col 0: snap mark (✓ if already snapped).
                 mark = u"\u2714" if log else u""
@@ -6440,11 +6502,13 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
                 item.setTextAlignment(QtCore.Qt.AlignCenter)
                 if log:
                     item.setForeground(QtGui.QColor("#4CAF50"))
+                item.setBackground(bg_brush)
                 self._table.setItem(r, 0, item)
 
                 # Col 1: short edge name.
                 short = e["edge"].split("|")[-1]
                 item = QtWidgets.QTableWidgetItem(short)
+                item.setBackground(bg_brush)
                 self._table.setItem(r, 1, item)
 
                 # Col 2: current length.
@@ -6453,17 +6517,19 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
                     u"{0:.4f}".format(cur_len))
                 item.setTextAlignment(QtCore.Qt.AlignRight
                                        | QtCore.Qt.AlignVCenter)
+                item.setBackground(bg_brush)
                 self._table.setItem(r, 2, item)
 
-                # Col 3: region id (1-based for display; colour-coded
-                # so different regions are easy to scan visually).
-                cid = self._components[r] if r < len(self._components) else 0
+                # Col 3: region id (1-based for display) with full-
+                # strength colour on the text for maximum scan-ability.
                 region_item = QtWidgets.QTableWidgetItem(
                     u"#{0}".format(cid + 1))
                 region_item.setTextAlignment(QtCore.Qt.AlignCenter)
-                region_item.setForeground(
-                    QtGui.QColor(_ES_REGION_COLOURS[
-                        cid % len(_ES_REGION_COLOURS)]))
+                region_item.setForeground(fg_qcol)
+                region_item.setBackground(bg_brush)
+                f = region_item.font()
+                f.setBold(True)
+                region_item.setFont(f)
                 self._table.setItem(r, 3, region_item)
 
                 # Col 4: bipartite status.
@@ -6472,10 +6538,12 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
                 item = QtWidgets.QTableWidgetItem(st_txt)
                 if status != "ok":
                     item.setForeground(QtGui.QColor("#FF9800"))
+                item.setBackground(bg_brush)
                 self._table.setItem(r, 4, item)
 
                 # Col 5: snap log.
                 item = QtWidgets.QTableWidgetItem(log)
+                item.setBackground(bg_brush)
                 self._table.setItem(r, 5, item)
         finally:
             self._table.blockSignals(False)
