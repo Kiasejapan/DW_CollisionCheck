@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.21.1843"
+VERSION = "2026.04.22.1233"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -388,7 +388,7 @@ _STRINGS = {
               u"\u30ec\u30a4\u304c B \u306b\u4e00\u3064\u3082\u5f53\u305f\u3089\u306a\u3044\u5834\u5408\u306f\u3001\u30ef\u30fc\u30eb\u30c9\u539f\u70b9\u5e73\u9762\uff08Y \u8ef8\u306a\u3089 Y=0\uff09\u307e\u3067\u843d\u3068\u3057\u307e\u3059\u3002</p>",
     },
     # ---- Vertex Snap (Snap tab) --------------------------------------
-    "tab_snap":             {"en": "Snap",                          "jp": u"\u30b9\u30ca\u30c3\u30d7"},
+    "tab_snap":             {"en": "Alignment",                     "jp": u"\u6574\u5217"},
     "vs_grp_title":         {"en": "Vertex Snap",                   "jp": u"\u30d0\u30fc\u30c6\u30c3\u30af\u30b9\u30ca\u30c3\u30d7"},
     "vs_grp_desc":          {"en": "Distance-based vertex snap. Select mesh(es) and launch.",
                              "jp": u"\u8ddd\u96e2\u30d9\u30fc\u30b9\u306e\u9802\u70b9\u30b9\u30ca\u30c3\u30d7\u3002\u30e1\u30c3\u30b7\u30e5\u3092\u9078\u629e\u3057\u3066\u8d77\u52d5\u3002"},
@@ -470,6 +470,90 @@ _STRINGS = {
                              "jp": u"\u5168\u3066\u306e\u30a8\u30c3\u30b8\u63c3\u3048\u3092\u5143\u306b\u623b\u3057\u307e\u3057\u305f\u3002"},
     "es_status_bad_length": {"en": "Target width must be greater than 0.",
                              "jp": u"\u76ee\u6a19\u5e45\u306f 0 \u3088\u308a\u5927\u304d\u3044\u5fc5\u8981\u304c\u3042\u308a\u307e\u3059\u3002"},
+
+    # ---- Vertex Align (Alignment tab) --------------------------------
+    "va_grp_title":         {"en": "Vertex Align",                    "jp": u"\u9802\u70b9\u6574\u5217"},
+    "va_grp_desc":          {"en": "Project selected vertices onto a line or plane.",
+                             "jp": u"\u9078\u629e\u3057\u305f\u9802\u70b9\u3092\u76f4\u7dda\u3084\u5e73\u9762\u306b\u6574\u5217\u3055\u305b\u307e\u3059\u3002"},
+    "va_btn_launch":        {"en": u"\u25B6 Launch",                   "jp": u"\u25B6 \u8d77\u52d5"},
+    "va_dlg_title":         {"en": "Vertex Align",                    "jp": u"\u9802\u70b9\u6574\u5217"},
+    "va_tab_linear3d":      {"en": "Linear 3D",                       "jp": u"\u76f4\u7dda\u5316 3D"},
+    "va_tab_linear2d":      {"en": "Linear 2D (view)",                "jp": u"\u76f4\u7dda\u5316 2D\uff08\u30d3\u30e5\u30fc\uff09"},
+    "va_tab_flatten":       {"en": "Flatten (3 points)",              "jp": u"\u5e73\u9762\u5316\uff083 \u9802\u70b9\uff09"},
+    "va_lbl_reference":     {"en": "Reference",                       "jp": u"\u57fa\u6e96"},
+    "va_lbl_view":          {"en": "View",                            "jp": u"\u30d3\u30e5\u30fc"},
+    "va_lbl_drop_mode":     {"en": "Projection",                      "jp": u"\u6295\u5f71\u65b9\u5411"},
+    "va_lbl_pos_empty":     {"en": "Pos{n}: (not set)",               "jp": u"Pos{n}\uff1a\u672a\u8a2d\u5b9a"},
+    "va_lbl_pos_value":     {"en": "Pos{n}: ({x}, {y}, {z})",          "jp": u"Pos{n}\uff1a\uff08{x}, {y}, {z}\uff09"},
+    "va_btn_set_pos":       {"en": "Set Pos{n}",                      "jp": u"Pos{n} \u53d6\u5f97"},
+    "va_btn_auto_view":     {"en": u"\u2190 Auto",                     "jp": u"\u2190 \u81ea\u52d5"},
+    "va_btn_preview":       {"en": u"\u25B6 Preview",                  "jp": u"\u25B6 \u30d7\u30ec\u30d3\u30e5\u30fc"},
+    "va_btn_confirm":       {"en": u"\u2714 Confirm",                  "jp": u"\u2714 \u78ba\u5b9a"},
+    "va_btn_revert":        {"en": u"\u21A9 Revert",                   "jp": u"\u21A9 \u5143\u306b\u623b\u3059"},
+
+    # Tab-specific labels.
+    "va_l3d_desc":          {"en": "Project every selected vertex onto the straight line between two reference points.",
+                             "jp": u"\u9078\u629e\u9802\u70b9\u3092 2 \u3064\u306e\u57fa\u6e96\u70b9\u3092\u7d50\u3076\u76f4\u7dda\u4e0a\u306b\u6295\u5f71\u3057\u307e\u3059\u3002"},
+    "va_l3d_auto":          {"en": "Auto (end-points from selection / edge chain)",
+                             "jp": u"\u81ea\u52d5\uff08\u9078\u629e\u306e\u7aef\u70b9 / \u30a8\u30c3\u30b8\u9023\u9396\uff09"},
+    "va_l3d_manual":        {"en": "Manual (capture Pos1 / Pos2)",
+                             "jp": u"\u624b\u52d5\uff08Pos1 / Pos2 \u3092\u6307\u5b9a\uff09"},
+    "va_l3d_chk_equal":     {"en": "Equidistant (edge chain only)",
+                             "jp": u"\u7b49\u9593\u9694\uff08\u30a8\u30c3\u30b8\u9023\u9396\u9078\u629e\u6642\u306e\u307f\uff09"},
+    "va_l3d_chk_equal_hint": {"en": "Select an ordered edge chain; vertices are redistributed evenly between the two endpoints.",
+                              "jp": u"\u6709\u5e8f\u306a\u30a8\u30c3\u30b8\u9023\u9396\u3092\u9078\u629e\u3059\u308b\u3068\u3001\u4e21\u7aef\u70b9\u306e\u9593\u306b\u7b49\u9593\u9694\u3067\u9802\u70b9\u3092\u518d\u914d\u7f6e\u3057\u307e\u3059\u3002"},
+
+    "va_l2d_desc":          {"en": "Flatten vertices onto a line in an orthographic view (the view-depth axis is preserved).",
+                             "jp": u"\u6b63\u6295\u5f71\u30d3\u30e5\u30fc\u4e0a\u306e\u76f4\u7dda\u306b\u9802\u70b9\u3092\u6574\u5217\u3057\u307e\u3059\uff08\u30d3\u30e5\u30fc\u5965\u884c\u304d\u306e\u8ef8\u306f\u7dad\u6301\uff09\u3002"},
+    "va_l2d_ref_hint":      {"en": "Reference line is taken automatically from the selection's extremes along the view's horizontal axis.",
+                             "jp": u"\u57fa\u6e96\u76f4\u7dda\u306f\u30d3\u30e5\u30fc\u306e\u6c34\u5e73\u8ef8\u306b\u6cbf\u3063\u305f\u9078\u629e\u306e\u7aef\u70b9\u304b\u3089\u81ea\u52d5\u3067\u53d6\u5f97\u3055\u308c\u307e\u3059\u3002"},
+    "va_view_top":          {"en": "Top",                             "jp": u"Top"},
+    "va_view_front":        {"en": "Front",                           "jp": u"Front"},
+    "va_view_side":         {"en": "Side",                            "jp": u"Side"},
+    "va_drop_shortest":     {"en": "Shortest",                        "jp": u"\u6700\u77ed"},
+    "va_drop_horizontal":   {"en": "Horizontal",                      "jp": u"\u6c34\u5e73"},
+    "va_drop_vertical":     {"en": "Vertical",                        "jp": u"\u5782\u76f4"},
+
+    "va_flat_desc":         {"en": "Project every selected vertex onto the plane defined by three reference points.",
+                             "jp": u"\u9078\u629e\u9802\u70b9\u3092 3 \u3064\u306e\u57fa\u6e96\u70b9\u3067\u5b9a\u307e\u308b\u5e73\u9762\u306b\u6295\u5f71\u3057\u307e\u3059\u3002"},
+    "va_flat_auto":         {"en": "Auto (best 3 points from selection)",
+                             "jp": u"\u81ea\u52d5\uff08\u9078\u629e\u304b\u3089 3 \u70b9\u3092\u81ea\u52d5\u62bd\u51fa\uff09"},
+    "va_flat_manual":       {"en": "Manual (capture Pos1 / Pos2 / Pos3)",
+                             "jp": u"\u624b\u52d5\uff08Pos1 / Pos2 / Pos3 \u3092\u6307\u5b9a\uff09"},
+    "va_flat_auto_hint":    {"en": "Auto mode needs at least 3 non-colinear vertices in the selection.",
+                             "jp": u"\u81ea\u52d5\u30e2\u30fc\u30c9\u306f\u9078\u629e\u5185\u306b 3 \u9802\u70b9\u4ee5\u4e0a\uff08\u540c\u4e00\u76f4\u7dda\u4e0a\u4ee5\u5916\uff09\u304c\u5fc5\u8981\u3067\u3059\u3002"},
+
+    # Statuses.
+    "va_status_ready":      {"en": "Ready. Select vertices and Preview.",
+                             "jp": u"\u6e96\u5099\u5b8c\u4e86\u3002\u9802\u70b9\u3092\u9078\u629e\u3057\u3066\u30d7\u30ec\u30d3\u30e5\u30fc\u3092\u3002"},
+    "va_status_no_selection": {"en": "Vertex Align: select at least one vertex.",
+                                "jp": u"\u9802\u70b9\u6574\u5217\uff1a\u9802\u70b9\u3092 1 \u3064\u4ee5\u4e0a\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044\u3002"},
+    "va_status_no_sel_for_pos": {"en": "Select the vertex/vertices to capture as Pos.",
+                                  "jp": u"Pos \u3068\u3057\u3066\u53d6\u5f97\u3059\u308b\u9802\u70b9\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044\u3002"},
+    "va_status_pos_captured": {"en": "Pos{n} captured.",
+                                "jp": u"Pos{n} \u3092\u53d6\u5f97\u3057\u307e\u3057\u305f\u3002"},
+    "va_status_manual_not_set": {"en": "Capture all reference positions first (Manual mode).",
+                                  "jp": u"\u624b\u52d5\u30e2\u30fc\u30c9\u306f\u307e\u305a\u3059\u3079\u3066\u306e\u57fa\u6e96\u70b9\u3092\u53d6\u5f97\u3057\u3066\u304f\u3060\u3055\u3044\u3002"},
+    "va_status_need_2_verts": {"en": "Need at least 2 vertices (or an edge) to define the line.",
+                                "jp": u"\u76f4\u7dda\u3092\u6c7a\u3081\u308b\u306b\u306f 2 \u9802\u70b9\u4ee5\u4e0a\uff08\u307e\u305f\u306f\u30a8\u30c3\u30b8\uff09\u304c\u5fc5\u8981\u3067\u3059\u3002"},
+    "va_status_flat_autofail": {"en": "Auto plane fit failed. Pick manual Pos1/Pos2/Pos3.",
+                                 "jp": u"\u81ea\u52d5\u5e73\u9762\u63a8\u5b9a\u304c\u5931\u6557\u3057\u307e\u3057\u305f\u3002\u624b\u52d5\u3067 Pos1/Pos2/Pos3 \u3092\u6307\u5b9a\u3057\u3066\u304f\u3060\u3055\u3044\u3002"},
+    "va_status_nothing_to_move": {"en": "No vertices to move.",
+                                   "jp": u"\u79fb\u52d5\u5bfe\u8c61\u306e\u9802\u70b9\u304c\u3042\u308a\u307e\u305b\u3093\u3002"},
+    "va_status_no_ortho_view": {"en": "Focus on a Top / Front / Side view to auto-detect.",
+                                 "jp": u"Top / Front / Side \u306e\u3044\u305a\u308c\u304b\u306b\u30d5\u30a9\u30fc\u30ab\u30b9\u3057\u3066\u304b\u3089\u81ea\u52d5\u691c\u77e5\u3092\u3054\u5229\u7528\u304f\u3060\u3055\u3044\u3002"},
+    "va_status_view_detected": {"en": "View detected: {view}.",
+                                 "jp": u"\u30d3\u30e5\u30fc\u3092\u691c\u77e5\u3057\u307e\u3057\u305f\uff1a{view}"},
+    "va_status_preview_linear_3d": {"en": "Preview: {count} vertex/vertices aligned on 3D line. Confirm or Revert.",
+                                      "jp": u"\u30d7\u30ec\u30d3\u30e5\u30fc\uff1a{count} \u9802\u70b9\u3092 3D \u76f4\u7dda\u306b\u6574\u5217\u3002\u78ba\u5b9a\u307e\u305f\u306f\u5143\u306b\u623b\u3059\u3002"},
+    "va_status_preview_linear_2d": {"en": "Preview: {count} vertex/vertices aligned ({view} view). Confirm or Revert.",
+                                      "jp": u"\u30d7\u30ec\u30d3\u30e5\u30fc\uff1a{count} \u9802\u70b9\u3092\u6574\u5217\uff08{view} \u30d3\u30e5\u30fc\uff09\u3002\u78ba\u5b9a\u307e\u305f\u306f\u5143\u306b\u623b\u3059\u3002"},
+    "va_status_preview_flatten": {"en": "Preview: {count} vertex/vertices flattened to plane. Confirm or Revert.",
+                                    "jp": u"\u30d7\u30ec\u30d3\u30e5\u30fc\uff1a{count} \u9802\u70b9\u3092\u5e73\u9762\u306b\u6295\u5f71\u3002\u78ba\u5b9a\u307e\u305f\u306f\u5143\u306b\u623b\u3059\u3002"},
+    "va_status_confirmed":  {"en": "Vertex Align confirmed.",
+                             "jp": u"\u9802\u70b9\u6574\u5217\u3092\u78ba\u5b9a\u3057\u307e\u3057\u305f\u3002"},
+    "va_status_reverted":   {"en": "Vertex Align reverted.",
+                             "jp": u"\u9802\u70b9\u6574\u5217\u3092\u5143\u306b\u623b\u3057\u307e\u3057\u305f\u3002"},
 }
 
 # Python 2/3 unicode type compatibility for tr()
@@ -6553,6 +6637,1084 @@ def _es_close_result_window(tool_window):
             w.close()
         except Exception:
             pass
+# -*- coding: utf-8 -*-
+# ============================================================================
+# 0380_vertex_align.txt
+# Vertex Align feature for DW_CollisionCheck "Alignment" tab.
+#
+# Ported/simplified from AriStraightVertex (MEL, by Ari / cgjishu.net).
+# Offers three modes:
+#   * Linear 3D  — project selected verts onto the straight line through
+#                  two reference points (auto-detected from selection
+#                  end-points, or taken from edge selection), with an
+#                  optional "equidistant" spacing for edge selections.
+#   * Linear 2D  — project selected verts onto a line in one of the
+#                  orthographic views (Top / Front / Side), preserving
+#                  the axis perpendicular to the view.
+#   * Flatten    — project selected verts onto the plane defined by
+#                  three reference points.
+#
+# Dialog is modeled on Face Snap: preview → confirm / revert, all
+# wrapped in a single undo chunk so the user can iterate safely.
+#
+# Depends on (defined earlier in the concatenated build):
+#   VERSION, PY2, MAYA_AVAILABLE, cmds,
+#   QtCore, QtGui, QtWidgets,
+#   tr(), _STRINGS,
+#   _mkbtn()
+# ============================================================================
+
+
+import math as _va_math
+
+
+# ---------------------------------------------------------------------------
+# Vertex Align: math helpers
+# ---------------------------------------------------------------------------
+
+def _va_project_point_on_line(a1, a2, p):
+    """Foot of perpendicular from p onto the infinite line through a1-a2."""
+    ax = a2[0] - a1[0]; ay = a2[1] - a1[1]; az = a2[2] - a1[2]
+    denom = ax * ax + ay * ay + az * az
+    if denom < 1.0e-18:
+        return (a1[0], a1[1], a1[2])
+    t = ((p[0] - a1[0]) * ax
+         + (p[1] - a1[1]) * ay
+         + (p[2] - a1[2]) * az) / denom
+    return (a1[0] + ax * t,
+            a1[1] + ay * t,
+            a1[2] + az * t)
+
+
+def _va_project_point_on_plane(a, b, c, p):
+    """Orthogonal projection of p onto the plane through a, b, c."""
+    ab = (b[0] - a[0], b[1] - a[1], b[2] - a[2])
+    ac = (c[0] - a[0], c[1] - a[1], c[2] - a[2])
+    nm = (ab[1] * ac[2] - ab[2] * ac[1],
+          ab[2] * ac[0] - ab[0] * ac[2],
+          ab[0] * ac[1] - ab[1] * ac[0])
+    nl2 = nm[0] * nm[0] + nm[1] * nm[1] + nm[2] * nm[2]
+    if nl2 < 1.0e-18:
+        return (p[0], p[1], p[2])
+    ap = (p[0] - a[0], p[1] - a[1], p[2] - a[2])
+    d  = (ap[0] * nm[0] + ap[1] * nm[1] + ap[2] * nm[2]) / nl2
+    return (p[0] - nm[0] * d,
+            p[1] - nm[1] * d,
+            p[2] - nm[2] * d)
+
+
+def _va_lerp(a, b, t):
+    return (a[0] + (b[0] - a[0]) * t,
+            a[1] + (b[1] - a[1]) * t,
+            a[2] + (b[2] - a[2]) * t)
+
+
+def _va_project_line_2d(a1, a2, p, view_mode, drop_mode):
+    """2-D projection helpers for the "Linear 2D" mode.
+
+    view_mode: "top" | "front" | "side"
+        Top   : work in the X/Z plane; Y stays put.
+        Front : work in the X/Y plane; Z stays put.
+        Side  : work in the Z/Y plane; X stays put.
+
+    drop_mode: "shortest" | "horizontal" | "vertical"
+        shortest  — drop perpendicular from p onto the 2-D line.
+        horizontal — keep the view's vertical coordinate; find the
+                     matching horizontal coordinate on the line.
+        vertical  — keep the view's horizontal coordinate; find the
+                     matching vertical coordinate on the line.
+
+    Returns a new (x, y, z) for p.
+    """
+    if view_mode == "top":
+        xi, yi = 0, 2           # horizontal = X, vertical = Z
+        keep = 1                 # keep Y
+    elif view_mode == "side":
+        xi, yi = 2, 1
+        keep = 0
+    else:                          # "front"
+        xi, yi = 0, 1
+        keep = 2
+
+    x1 = a1[xi]; y1 = a1[yi]
+    x2 = a2[xi]; y2 = a2[yi]
+    px = p[xi];  py = p[yi]
+
+    dx = x2 - x1
+    dy = y2 - y1
+    vertical_line = abs(dx) < 1.0e-9     # line is pure x = const
+    if not vertical_line:
+        slope = dy / dx
+        intercept = y2 - slope * x2
+    else:
+        slope = None
+        intercept = None
+
+    if drop_mode == "vertical":
+        # Keep horizontal (x) coordinate of p. Find y on the line.
+        if vertical_line:
+            # Line has no y=f(x), but the user wants to move p
+            # vertically — just snap x to the line's fixed x.
+            new_x = x1
+            new_y = py
+        else:
+            new_x = px
+            new_y = slope * px + intercept
+    elif drop_mode == "horizontal":
+        # Keep vertical (y) coordinate of p. Find x on the line.
+        if vertical_line:
+            new_x = x1
+            new_y = py
+        else:
+            if abs(slope) < 1.0e-12:
+                new_x = px
+                new_y = intercept    # horizontal line
+            else:
+                new_x = (py - intercept) / slope
+                new_y = py
+    else:  # shortest
+        if vertical_line:
+            new_x = x1
+            new_y = py
+        else:
+            # Foot of perpendicular in 2-D.
+            s2 = 1.0 + slope * slope
+            new_x = (px + slope * py - slope * intercept) / s2
+            new_y = slope * new_x + intercept
+
+    out = [0.0, 0.0, 0.0]
+    out[xi] = new_x
+    out[yi] = new_y
+    out[keep] = p[keep]
+    return (out[0], out[1], out[2])
+
+
+# ---------------------------------------------------------------------------
+# Vertex Align: selection / scene helpers
+# ---------------------------------------------------------------------------
+
+def _va_selected_verts():
+    """Return a list of long-path vertex names for the current selection.
+
+    Expands edge / face selections to their vertices and dedupes.
+    Returns [] if Maya unavailable or nothing mesh-component selected.
+    """
+    if not MAYA_AVAILABLE:
+        return []
+    sel = cmds.ls(sl=True, fl=True, long=True) or []
+    if not sel:
+        return []
+    try:
+        verts = cmds.polyListComponentConversion(sel, toVertex=True) or []
+        verts = cmds.ls(verts, fl=True, long=True) or []
+    except Exception:
+        verts = []
+    seen = set()
+    out = []
+    for v in verts:
+        if u".vtx[" not in v:
+            continue
+        if v in seen:
+            continue
+        seen.add(v)
+        out.append(v)
+    return out
+
+
+def _va_selected_edges_raw():
+    """Return list of currently selected edges (long paths)."""
+    if not MAYA_AVAILABLE:
+        return []
+    sel = cmds.ls(sl=True, fl=True, long=True) or []
+    return [s for s in sel if u".e[" in s]
+
+
+def _va_vtx_pos(vtx):
+    try:
+        p = cmds.pointPosition(vtx, w=True)
+        return (p[0], p[1], p[2])
+    except Exception:
+        return None
+
+
+def _va_sort_edge_chain(edges):
+    """Sort a set of selected edges into a chain of ordered vertices.
+
+    Returns a list of vertex long-path names in traversal order, or
+    None if the edges don't form a single open/closed chain.
+
+    Strategy: build a vertex→incident-edge graph. A valid chain has
+    exactly two endpoint vertices (degree 1) for an open chain, or
+    zero for a closed loop. Walk from an endpoint picking the
+    unvisited neighbour each step.
+    """
+    if not edges:
+        return None
+    # Build adjacency.
+    adj = {}
+    edge_to_verts = {}
+    for e in edges:
+        try:
+            vs = cmds.polyListComponentConversion(
+                e, fromEdge=True, toVertex=True) or []
+            vs = cmds.ls(vs, fl=True, long=True) or []
+        except Exception:
+            return None
+        if len(vs) < 2:
+            return None
+        v0, v1 = vs[0], vs[1]
+        edge_to_verts[e] = (v0, v1)
+        adj.setdefault(v0, set()).add(v1)
+        adj.setdefault(v1, set()).add(v0)
+
+    # Must be connected — do a BFS and ensure we hit every vertex.
+    if not adj:
+        return None
+    start = next(iter(adj))
+    visited = set([start])
+    queue = [start]
+    while queue:
+        v = queue.pop(0)
+        for n in adj.get(v, ()):
+            if n not in visited:
+                visited.add(n)
+                queue.append(n)
+    if len(visited) != len(adj):
+        return None
+
+    # Find endpoints (degree 1). If none, treat as a loop and start
+    # anywhere.
+    endpoints = [v for v, nbrs in adj.items() if len(nbrs) == 1]
+    if len(endpoints) not in (0, 2):
+        return None      # branches or non-manifold-ish — can't chain
+    start = endpoints[0] if endpoints else next(iter(adj))
+
+    chain = [start]
+    prev = None
+    cur = start
+    while True:
+        nxt = None
+        for n in adj[cur]:
+            if n == prev:
+                continue
+            nxt = n
+            break
+        if nxt is None:
+            break
+        chain.append(nxt)
+        prev = cur
+        cur = nxt
+        if cur == start:    # closed loop — stop
+            break
+    if len(chain) != len(adj):
+        return None         # couldn't traverse everything
+    return chain
+
+
+def _va_autopair_from_verts(vert_names):
+    """Pick the most distant pair of verts as auto-Pos1/Pos2.
+
+    Returns (p1, p2, idx1, idx2) or (None, None, -1, -1) if <2 verts.
+    Uses the AABB diagonal — fast and matches what the user would
+    visually pick as "endpoints".
+    """
+    if len(vert_names) < 2:
+        return None, None, -1, -1
+    positions = [_va_vtx_pos(v) for v in vert_names]
+    positions = [p for p in positions if p is not None]
+    if len(positions) < 2:
+        return None, None, -1, -1
+    # Find the pair with maximum distance (brute force for N small;
+    # N is in vertex counts so usually <10000 — still quadratic can
+    # hurt, so use AABB diagonal instead).
+    bb_min = [positions[0][0], positions[0][1], positions[0][2]]
+    bb_max = [positions[0][0], positions[0][1], positions[0][2]]
+    for p in positions[1:]:
+        for i in range(3):
+            if p[i] < bb_min[i]:
+                bb_min[i] = p[i]
+            if p[i] > bb_max[i]:
+                bb_max[i] = p[i]
+    # Longest axis.
+    dims = [bb_max[i] - bb_min[i] for i in range(3)]
+    axis = max(range(3), key=lambda i: dims[i])
+    # The two verts with extreme value on that axis.
+    i_min = 0; i_max = 0
+    v_min = positions[0][axis]; v_max = positions[0][axis]
+    for i, p in enumerate(positions):
+        if p[axis] < v_min:
+            v_min = p[axis]; i_min = i
+        if p[axis] > v_max:
+            v_max = p[axis]; i_max = i
+    return positions[i_min], positions[i_max], i_min, i_max
+
+
+def _va_autopair_plane_from_verts(vert_names):
+    """Pick 3 non-colinear verts from the selection for plane fit.
+
+    Greedy strategy: first point at min-extreme along the dominant
+    axis, second at max-extreme along that axis, third = point that
+    maximises distance from the line p1-p2.
+    Returns (p1, p2, p3) or (None, None, None) if < 3 usable verts.
+    """
+    if len(vert_names) < 3:
+        return None, None, None
+    positions = [_va_vtx_pos(v) for v in vert_names]
+    positions = [p for p in positions if p is not None]
+    if len(positions) < 3:
+        return None, None, None
+    p1, p2, _, _ = _va_autopair_from_verts(vert_names)
+    if p1 is None or p2 is None:
+        return None, None, None
+    # Find point maximising perpendicular distance from p1-p2.
+    best = None
+    best_d2 = -1.0
+    for p in positions:
+        proj = _va_project_point_on_line(p1, p2, p)
+        dx = p[0] - proj[0]; dy = p[1] - proj[1]; dz = p[2] - proj[2]
+        d2 = dx * dx + dy * dy + dz * dz
+        if d2 > best_d2:
+            best_d2 = d2
+            best = p
+    if best is None or best_d2 < 1.0e-12:
+        return None, None, None
+    return p1, p2, best
+
+
+def _va_detect_view_from_panel():
+    """Return 'top' / 'front' / 'side' based on the focus model panel's
+    camera. If the focus panel is persp or unknown, returns None.
+    """
+    if not MAYA_AVAILABLE:
+        return None
+    try:
+        panel = cmds.getPanel(withFocus=True)
+        if not panel or cmds.getPanel(typeOf=panel) != "modelPanel":
+            return None
+        cam = cmds.modelPanel(panel, query=True, camera=True)
+        if not cam:
+            return None
+        # Normalise — may be a transform or shape name.
+        if cmds.nodeType(cam) == "transform":
+            cam_xf = cam
+        else:
+            parents = cmds.listRelatives(cam, parent=True, fullPath=True) or []
+            cam_xf = parents[0] if parents else cam
+        short = cam_xf.split("|")[-1].lower()
+        if short in ("top", "topshape"):
+            return "top"
+        if short in ("front", "frontshape"):
+            return "front"
+        if short in ("side", "sideshape"):
+            return "side"
+        return None
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Vertex Align: dialog
+# ---------------------------------------------------------------------------
+
+class VertexAlignDialog(QtWidgets.QDialog):
+    """Three-mode vertex-align tool with Face-Snap-style preview flow."""
+
+    status_msg = QtCore.Signal(str)
+
+    def __init__(self, parent=None):
+        super(VertexAlignDialog, self).__init__(parent)
+        self.setObjectName("DW_VertexAlign_Dialog")
+        self.setWindowTitle(tr("va_dlg_title"))
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose, False)
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
+        self.setMinimumSize(460, 520)
+        self.setStyleSheet(
+            "QDialog{background-color:#333;color:#EEE}"
+            "QLabel{color:#EEE}")
+        # Preview state.
+        self._snapshot = None        # dict {vtx: (x,y,z)}
+        self._preview_active = False
+        self._undo_open = False
+        # Manual reference points, per mode.
+        self._pos_3d_1 = None        # (x,y,z) | None
+        self._pos_3d_2 = None
+        self._pos_2d_1 = None
+        self._pos_2d_2 = None
+        self._pos_flat_1 = None
+        self._pos_flat_2 = None
+        self._pos_flat_3 = None
+        self._build()
+
+    # -- UI construction -------------------------------------------------
+    def _build(self):
+        lo = QtWidgets.QVBoxLayout(self)
+        lo.setContentsMargins(8, 8, 8, 8)
+        lo.setSpacing(6)
+
+        self._tabs = QtWidgets.QTabWidget()
+        self._tabs.setStyleSheet(
+            "QTabWidget::pane{border:1px solid #444;background:#2B2B2B;"
+            "border-radius:4px;top:-1px}"
+            "QTabBar::tab{background:#3C3C3C;color:#BBB;padding:6px 14px;"
+            "border:1px solid #444;border-bottom:none;margin-right:1px;"
+            "font-size:11px}"
+            "QTabBar::tab:selected{background:#2B2B2B;color:#EEE;"
+            "font-weight:bold}")
+        self._tabs.addTab(self._build_tab_linear_3d(), tr("va_tab_linear3d"))
+        self._tabs.addTab(self._build_tab_linear_2d(), tr("va_tab_linear2d"))
+        self._tabs.addTab(self._build_tab_flatten(),   tr("va_tab_flatten"))
+        self._tabs.currentChanged.connect(self._on_tab_changed)
+        lo.addWidget(self._tabs, 1)
+
+        # Preview status line.
+        self._preview_lbl = QtWidgets.QLabel(tr("va_status_ready"))
+        self._preview_lbl.setWordWrap(True)
+        self._preview_lbl.setStyleSheet(
+            "color:#8BC34A;background-color:#2B2B2B;"
+            "padding:3px 8px;border-radius:3px;font-size:10px")
+        lo.addWidget(self._preview_lbl)
+
+        # Preview/confirm/revert row.
+        pr = QtWidgets.QHBoxLayout()
+        pr.setSpacing(4)
+        self._btn_preview = _mkbtn(tr("va_btn_preview"), 28,
+                                    "#2196F3", "#1976D2", fs=11)
+        self._btn_preview.clicked.connect(self._on_preview)
+        pr.addWidget(self._btn_preview, 1)
+        self._btn_confirm = _mkbtn(tr("va_btn_confirm"), 28,
+                                    "#4CAF50", "#388E3C", fs=11)
+        self._btn_confirm.clicked.connect(self._on_confirm)
+        self._btn_confirm.setEnabled(False)
+        pr.addWidget(self._btn_confirm)
+        self._btn_revert = _mkbtn(tr("va_btn_revert"), 28,
+                                   "#F44336", "#D32F2F", fs=11)
+        self._btn_revert.clicked.connect(self._on_revert)
+        self._btn_revert.setEnabled(False)
+        pr.addWidget(self._btn_revert)
+        self._btn_close = _mkbtn(tr("btn_close"), 28, "#555", "#444", fs=11)
+        self._btn_close.clicked.connect(self.close)
+        pr.addWidget(self._btn_close)
+        lo.addLayout(pr)
+
+    def _build_tab_linear_3d(self):
+        w = QtWidgets.QWidget()
+        lo = QtWidgets.QVBoxLayout(w)
+        lo.setContentsMargins(8, 10, 8, 8)
+        lo.setSpacing(8)
+
+        desc = QtWidgets.QLabel(tr("va_l3d_desc"))
+        desc.setWordWrap(True)
+        desc.setStyleSheet("color:#BBB;font-size:10px")
+        lo.addWidget(desc)
+
+        # Reference-point source group.
+        grp_src = QtWidgets.QGroupBox()
+        grp_src.setStyleSheet(_VA_GRP_SS)
+        grp_src_lo = QtWidgets.QVBoxLayout(grp_src)
+        grp_src_lo.setContentsMargins(6, 10, 6, 6)
+        grp_src_lo.setSpacing(4)
+        src_hdr = QtWidgets.QLabel(
+            u"\u25A0 " + tr("va_lbl_reference"))
+        src_hdr.setStyleSheet("color:#2196F3;font-size:11px;font-weight:bold")
+        grp_src_lo.addWidget(src_hdr)
+
+        self._l3d_rb_auto = QtWidgets.QRadioButton(tr("va_l3d_auto"))
+        self._l3d_rb_auto.setStyleSheet(_VA_RB_SS)
+        self._l3d_rb_auto.setChecked(True)
+        grp_src_lo.addWidget(self._l3d_rb_auto)
+        self._l3d_rb_manual = QtWidgets.QRadioButton(tr("va_l3d_manual"))
+        self._l3d_rb_manual.setStyleSheet(_VA_RB_SS)
+        grp_src_lo.addWidget(self._l3d_rb_manual)
+
+        # Manual Pos1 / Pos2 capture rows.
+        self._l3d_pos1_lbl = QtWidgets.QLabel(tr("va_lbl_pos_empty", n=1))
+        self._l3d_pos2_lbl = QtWidgets.QLabel(tr("va_lbl_pos_empty", n=2))
+        for l in (self._l3d_pos1_lbl, self._l3d_pos2_lbl):
+            l.setStyleSheet(
+                "color:#888;background-color:#2B2B2B;"
+                "padding:3px 8px;border-radius:3px;"
+                "font-size:10px;font-family:monospace")
+        self._l3d_btn_pos1 = _mkbtn(tr("va_btn_set_pos", n=1), 22,
+                                     "#607D8B", "#455A64", fs=10)
+        self._l3d_btn_pos1.clicked.connect(
+            lambda: self._capture_pos("3d", 1))
+        self._l3d_btn_pos2 = _mkbtn(tr("va_btn_set_pos", n=2), 22,
+                                     "#607D8B", "#455A64", fs=10)
+        self._l3d_btn_pos2.clicked.connect(
+            lambda: self._capture_pos("3d", 2))
+
+        row1 = QtWidgets.QHBoxLayout()
+        row1.setSpacing(6)
+        row1.addWidget(self._l3d_btn_pos1)
+        row1.addWidget(self._l3d_pos1_lbl, 1)
+        grp_src_lo.addLayout(row1)
+        row2 = QtWidgets.QHBoxLayout()
+        row2.setSpacing(6)
+        row2.addWidget(self._l3d_btn_pos2)
+        row2.addWidget(self._l3d_pos2_lbl, 1)
+        grp_src_lo.addLayout(row2)
+
+        lo.addWidget(grp_src)
+
+        # Options group (equidistant).
+        self._l3d_cb_equal = QtWidgets.QCheckBox(tr("va_l3d_chk_equal"))
+        self._l3d_cb_equal.setStyleSheet(
+            "QCheckBox{color:#DDD;font-size:10px}"
+            "QCheckBox::indicator{width:12px;height:12px}")
+        lo.addWidget(self._l3d_cb_equal)
+
+        hint = QtWidgets.QLabel(tr("va_l3d_chk_equal_hint"))
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color:#888;font-size:9px;padding:0 18px")
+        lo.addWidget(hint)
+
+        lo.addStretch()
+        return w
+
+    def _build_tab_linear_2d(self):
+        w = QtWidgets.QWidget()
+        lo = QtWidgets.QVBoxLayout(w)
+        lo.setContentsMargins(8, 10, 8, 8)
+        lo.setSpacing(8)
+
+        desc = QtWidgets.QLabel(tr("va_l2d_desc"))
+        desc.setWordWrap(True)
+        desc.setStyleSheet("color:#BBB;font-size:10px")
+        lo.addWidget(desc)
+
+        # View group.
+        grp_view = QtWidgets.QGroupBox()
+        grp_view.setStyleSheet(_VA_GRP_SS)
+        grp_view_lo = QtWidgets.QVBoxLayout(grp_view)
+        grp_view_lo.setContentsMargins(6, 10, 6, 6)
+        grp_view_lo.setSpacing(4)
+        view_hdr = QtWidgets.QLabel(
+            u"\u25A0 " + tr("va_lbl_view"))
+        view_hdr.setStyleSheet(
+            "color:#2196F3;font-size:11px;font-weight:bold")
+        grp_view_lo.addWidget(view_hdr)
+        view_row = QtWidgets.QHBoxLayout()
+        view_row.setSpacing(8)
+        self._l2d_rb_top = QtWidgets.QRadioButton(tr("va_view_top"))
+        self._l2d_rb_top.setStyleSheet(_VA_RB_SS)
+        self._l2d_rb_top.setChecked(True)
+        view_row.addWidget(self._l2d_rb_top)
+        self._l2d_rb_front = QtWidgets.QRadioButton(tr("va_view_front"))
+        self._l2d_rb_front.setStyleSheet(_VA_RB_SS)
+        view_row.addWidget(self._l2d_rb_front)
+        self._l2d_rb_side = QtWidgets.QRadioButton(tr("va_view_side"))
+        self._l2d_rb_side.setStyleSheet(_VA_RB_SS)
+        view_row.addWidget(self._l2d_rb_side)
+        view_row.addStretch()
+        self._l2d_btn_auto_view = _mkbtn(
+            tr("va_btn_auto_view"), 22, "#607D8B", "#455A64", fs=10)
+        self._l2d_btn_auto_view.clicked.connect(self._auto_detect_view)
+        view_row.addWidget(self._l2d_btn_auto_view)
+        grp_view_lo.addLayout(view_row)
+        lo.addWidget(grp_view)
+
+        # Drop-direction group.
+        grp_drop = QtWidgets.QGroupBox()
+        grp_drop.setStyleSheet(_VA_GRP_SS)
+        grp_drop_lo = QtWidgets.QVBoxLayout(grp_drop)
+        grp_drop_lo.setContentsMargins(6, 10, 6, 6)
+        grp_drop_lo.setSpacing(4)
+        drop_hdr = QtWidgets.QLabel(
+            u"\u25A0 " + tr("va_lbl_drop_mode"))
+        drop_hdr.setStyleSheet(
+            "color:#2196F3;font-size:11px;font-weight:bold")
+        grp_drop_lo.addWidget(drop_hdr)
+        drop_row = QtWidgets.QHBoxLayout()
+        drop_row.setSpacing(8)
+        self._l2d_rb_short = QtWidgets.QRadioButton(tr("va_drop_shortest"))
+        self._l2d_rb_short.setStyleSheet(_VA_RB_SS)
+        self._l2d_rb_short.setChecked(True)
+        drop_row.addWidget(self._l2d_rb_short)
+        self._l2d_rb_horiz = QtWidgets.QRadioButton(tr("va_drop_horizontal"))
+        self._l2d_rb_horiz.setStyleSheet(_VA_RB_SS)
+        drop_row.addWidget(self._l2d_rb_horiz)
+        self._l2d_rb_vert = QtWidgets.QRadioButton(tr("va_drop_vertical"))
+        self._l2d_rb_vert.setStyleSheet(_VA_RB_SS)
+        drop_row.addWidget(self._l2d_rb_vert)
+        drop_row.addStretch()
+        grp_drop_lo.addLayout(drop_row)
+        lo.addWidget(grp_drop)
+
+        hint = QtWidgets.QLabel(tr("va_l2d_ref_hint"))
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color:#888;font-size:9px;padding:0 4px")
+        lo.addWidget(hint)
+
+        lo.addStretch()
+        return w
+
+    def _build_tab_flatten(self):
+        w = QtWidgets.QWidget()
+        lo = QtWidgets.QVBoxLayout(w)
+        lo.setContentsMargins(8, 10, 8, 8)
+        lo.setSpacing(8)
+
+        desc = QtWidgets.QLabel(tr("va_flat_desc"))
+        desc.setWordWrap(True)
+        desc.setStyleSheet("color:#BBB;font-size:10px")
+        lo.addWidget(desc)
+
+        grp = QtWidgets.QGroupBox()
+        grp.setStyleSheet(_VA_GRP_SS)
+        grp_lo = QtWidgets.QVBoxLayout(grp)
+        grp_lo.setContentsMargins(6, 10, 6, 6)
+        grp_lo.setSpacing(4)
+        hdr = QtWidgets.QLabel(u"\u25A0 " + tr("va_lbl_reference"))
+        hdr.setStyleSheet(
+            "color:#2196F3;font-size:11px;font-weight:bold")
+        grp_lo.addWidget(hdr)
+
+        self._flat_rb_auto = QtWidgets.QRadioButton(tr("va_flat_auto"))
+        self._flat_rb_auto.setStyleSheet(_VA_RB_SS)
+        self._flat_rb_auto.setChecked(True)
+        grp_lo.addWidget(self._flat_rb_auto)
+        self._flat_rb_manual = QtWidgets.QRadioButton(tr("va_flat_manual"))
+        self._flat_rb_manual.setStyleSheet(_VA_RB_SS)
+        grp_lo.addWidget(self._flat_rb_manual)
+
+        self._flat_pos_lbls = []
+        self._flat_pos_btns = []
+        for i in (1, 2, 3):
+            lbl = QtWidgets.QLabel(tr("va_lbl_pos_empty", n=i))
+            lbl.setStyleSheet(
+                "color:#888;background-color:#2B2B2B;"
+                "padding:3px 8px;border-radius:3px;"
+                "font-size:10px;font-family:monospace")
+            btn = _mkbtn(tr("va_btn_set_pos", n=i), 22,
+                         "#607D8B", "#455A64", fs=10)
+            btn.clicked.connect(lambda _=False, n=i: self._capture_pos("flat", n))
+            row = QtWidgets.QHBoxLayout()
+            row.setSpacing(6)
+            row.addWidget(btn)
+            row.addWidget(lbl, 1)
+            grp_lo.addLayout(row)
+            self._flat_pos_lbls.append(lbl)
+            self._flat_pos_btns.append(btn)
+        lo.addWidget(grp)
+
+        hint = QtWidgets.QLabel(tr("va_flat_auto_hint"))
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color:#888;font-size:9px;padding:0 4px")
+        lo.addWidget(hint)
+
+        lo.addStretch()
+        return w
+
+    # -- Mode / reference capture ---------------------------------------
+    def _on_tab_changed(self, _idx):
+        # If there's a pending preview, auto-revert before switching
+        # mode so we don't leave half-applied edits around.
+        if self._preview_active:
+            self._on_revert()
+
+    def _capture_pos(self, mode, n):
+        """Capture the current selection's centroid as Pos N for the
+        indicated mode ("3d", "2d", or "flat")."""
+        if not MAYA_AVAILABLE:
+            return
+        verts = _va_selected_verts()
+        if not verts:
+            self._set_status(tr("va_status_no_sel_for_pos"), warn=True)
+            return
+        # Use centroid of the selection for robustness when user picks
+        # multiple vertices.
+        positions = [_va_vtx_pos(v) for v in verts]
+        positions = [p for p in positions if p is not None]
+        if not positions:
+            self._set_status(tr("va_status_no_sel_for_pos"), warn=True)
+            return
+        cx = sum(p[0] for p in positions) / len(positions)
+        cy = sum(p[1] for p in positions) / len(positions)
+        cz = sum(p[2] for p in positions) / len(positions)
+        pos = (cx, cy, cz)
+        label_text = tr("va_lbl_pos_value", n=n,
+                         x=u"{0:.3f}".format(pos[0]),
+                         y=u"{0:.3f}".format(pos[1]),
+                         z=u"{0:.3f}".format(pos[2]))
+        if mode == "3d":
+            if n == 1:
+                self._pos_3d_1 = pos
+                self._l3d_pos1_lbl.setText(label_text)
+                self._l3d_pos1_lbl.setStyleSheet(_VA_POS_LBL_SS_SET)
+            else:
+                self._pos_3d_2 = pos
+                self._l3d_pos2_lbl.setText(label_text)
+                self._l3d_pos2_lbl.setStyleSheet(_VA_POS_LBL_SS_SET)
+            self._l3d_rb_manual.setChecked(True)
+        elif mode == "flat":
+            if n == 1:
+                self._pos_flat_1 = pos
+            elif n == 2:
+                self._pos_flat_2 = pos
+            else:
+                self._pos_flat_3 = pos
+            lbl = self._flat_pos_lbls[n - 1]
+            lbl.setText(label_text)
+            lbl.setStyleSheet(_VA_POS_LBL_SS_SET)
+            self._flat_rb_manual.setChecked(True)
+        self._set_status(tr("va_status_pos_captured", n=n), warn=False)
+
+    def _auto_detect_view(self):
+        view = _va_detect_view_from_panel()
+        if view == "top":
+            self._l2d_rb_top.setChecked(True)
+        elif view == "front":
+            self._l2d_rb_front.setChecked(True)
+        elif view == "side":
+            self._l2d_rb_side.setChecked(True)
+        else:
+            self._set_status(tr("va_status_no_ortho_view"), warn=True)
+            return
+        self._set_status(tr("va_status_view_detected",
+                             view=tr(u"va_view_" + view)),
+                          warn=False)
+
+    # -- Preview / confirm / revert -------------------------------------
+    def _set_status(self, msg, warn):
+        self._preview_lbl.setText(msg)
+        colour = "#FF9800" if warn else "#8BC34A"
+        self._preview_lbl.setStyleSheet(
+            "color:%s;background-color:#2B2B2B;"
+            "padding:3px 8px;border-radius:3px;font-size:10px" % colour)
+        self.status_msg.emit(msg)
+
+    def _on_preview(self):
+        if not MAYA_AVAILABLE:
+            return
+        # If a preview is already active, revert first so the new
+        # preview starts from the ORIGINAL geometry.
+        if self._preview_active:
+            self._revert_only()
+
+        verts = _va_selected_verts()
+        if not verts:
+            self._set_status(tr("va_status_no_selection"), warn=True)
+            return
+
+        mode_idx = self._tabs.currentIndex()
+        try:
+            if mode_idx == 0:
+                self._preview_linear_3d(verts)
+            elif mode_idx == 1:
+                self._preview_linear_2d(verts)
+            else:
+                self._preview_flatten(verts)
+        except _VertexAlignError as err:
+            self._set_status(str(err), warn=True)
+
+    def _begin_undo(self):
+        cmds.undoInfo(openChunk=True, chunkName="DW_VertexAlign")
+        self._undo_open = True
+
+    def _close_undo(self):
+        if self._undo_open:
+            try:
+                cmds.undoInfo(closeChunk=True)
+            except Exception:
+                pass
+            self._undo_open = False
+
+    def _capture_snapshot(self, verts):
+        snap = {}
+        for v in verts:
+            p = _va_vtx_pos(v)
+            if p is not None:
+                snap[v] = p
+        return snap
+
+    def _apply_new_positions(self, new_positions):
+        """Apply {vtx: (x,y,z)} to the scene."""
+        for v, pos in new_positions.items():
+            try:
+                cmds.xform(v, ws=True, t=(pos[0], pos[1], pos[2]))
+            except Exception:
+                pass
+
+    # -- Mode 1: Linear 3D ----------------------------------------------
+    def _preview_linear_3d(self, verts):
+        # Resolve reference line.
+        p1, p2 = self._resolve_3d_reference(verts)
+        # Determine vertex traversal order for equidistant mode.
+        ordered = None
+        want_equal = self._l3d_cb_equal.isChecked()
+        if want_equal:
+            edges = _va_selected_edges_raw()
+            if edges:
+                chain = _va_sort_edge_chain(edges)
+                if chain is not None and len(chain) >= 2:
+                    ordered = chain
+        # Compute new positions.
+        new_positions = {}
+        source_verts = ordered if ordered else verts
+        n = len(source_verts)
+        if want_equal and ordered is not None and n >= 2:
+            # Re-anchor p1/p2 to the chain endpoints so endpoints stay
+            # in place (they're what defines the line to distribute on).
+            ep1 = _va_vtx_pos(ordered[0])
+            ep2 = _va_vtx_pos(ordered[-1])
+            if ep1 and ep2:
+                p1, p2 = ep1, ep2
+            for i, v in enumerate(ordered):
+                t = float(i) / float(n - 1)
+                new_positions[v] = _va_lerp(p1, p2, t)
+        else:
+            for v in source_verts:
+                p = _va_vtx_pos(v)
+                if p is None:
+                    continue
+                new_positions[v] = _va_project_point_on_line(p1, p2, p)
+
+        self._commit_preview(new_positions, n_verts=len(new_positions),
+                              label_key="va_status_preview_linear_3d")
+
+    def _resolve_3d_reference(self, verts):
+        if self._l3d_rb_manual.isChecked():
+            if self._pos_3d_1 is None or self._pos_3d_2 is None:
+                raise _VertexAlignError(tr("va_status_manual_not_set"))
+            return self._pos_3d_1, self._pos_3d_2
+        # Auto: prefer edge-chain endpoints, else AABB diagonal.
+        edges = _va_selected_edges_raw()
+        if edges:
+            chain = _va_sort_edge_chain(edges)
+            if chain is not None and len(chain) >= 2:
+                p1 = _va_vtx_pos(chain[0])
+                p2 = _va_vtx_pos(chain[-1])
+                if p1 is not None and p2 is not None:
+                    return p1, p2
+        p1, p2, _, _ = _va_autopair_from_verts(verts)
+        if p1 is None or p2 is None:
+            raise _VertexAlignError(tr("va_status_need_2_verts"))
+        return p1, p2
+
+    # -- Mode 2: Linear 2D ----------------------------------------------
+    def _preview_linear_2d(self, verts):
+        view = "top"
+        if self._l2d_rb_front.isChecked():
+            view = "front"
+        elif self._l2d_rb_side.isChecked():
+            view = "side"
+        drop = "shortest"
+        if self._l2d_rb_horiz.isChecked():
+            drop = "horizontal"
+        elif self._l2d_rb_vert.isChecked():
+            drop = "vertical"
+        # Reference line = AABB extremes along the view's horizontal axis.
+        p1, p2 = self._resolve_2d_reference(verts, view)
+        new_positions = {}
+        for v in verts:
+            p = _va_vtx_pos(v)
+            if p is None:
+                continue
+            new_positions[v] = _va_project_line_2d(p1, p2, p, view, drop)
+        self._commit_preview(
+            new_positions,
+            n_verts=len(new_positions),
+            label_key="va_status_preview_linear_2d",
+            view=tr(u"va_view_" + view))
+
+    def _resolve_2d_reference(self, verts, view):
+        # The "reference line" in 2D mode is derived automatically from
+        # the selection extremes along the view's horizontal axis.
+        positions = [_va_vtx_pos(v) for v in verts]
+        positions = [p for p in positions if p is not None]
+        if len(positions) < 2:
+            raise _VertexAlignError(tr("va_status_need_2_verts"))
+        # Horizontal-axis index per view.
+        if view == "top":
+            hi = 0         # X
+        elif view == "side":
+            hi = 2         # Z
+        else:              # front
+            hi = 0
+        i_min = 0; i_max = 0
+        v_min = positions[0][hi]; v_max = positions[0][hi]
+        for i, p in enumerate(positions):
+            if p[hi] < v_min:
+                v_min = p[hi]; i_min = i
+            if p[hi] > v_max:
+                v_max = p[hi]; i_max = i
+        return positions[i_min], positions[i_max]
+
+    # -- Mode 3: Flatten -------------------------------------------------
+    def _preview_flatten(self, verts):
+        p1, p2, p3 = self._resolve_flat_reference(verts)
+        new_positions = {}
+        for v in verts:
+            p = _va_vtx_pos(v)
+            if p is None:
+                continue
+            new_positions[v] = _va_project_point_on_plane(p1, p2, p3, p)
+        self._commit_preview(new_positions,
+                              n_verts=len(new_positions),
+                              label_key="va_status_preview_flatten")
+
+    def _resolve_flat_reference(self, verts):
+        if self._flat_rb_manual.isChecked():
+            if (self._pos_flat_1 is None or self._pos_flat_2 is None
+                    or self._pos_flat_3 is None):
+                raise _VertexAlignError(tr("va_status_manual_not_set"))
+            return self._pos_flat_1, self._pos_flat_2, self._pos_flat_3
+        p1, p2, p3 = _va_autopair_plane_from_verts(verts)
+        if p1 is None or p2 is None or p3 is None:
+            raise _VertexAlignError(tr("va_status_flat_autofail"))
+        return p1, p2, p3
+
+    # -- Commit helpers --------------------------------------------------
+    def _commit_preview(self, new_positions, n_verts, label_key, **kw):
+        if not new_positions:
+            self._set_status(tr("va_status_nothing_to_move"), warn=True)
+            return
+        self._snapshot = self._capture_snapshot(new_positions.keys())
+        self._begin_undo()
+        self._apply_new_positions(new_positions)
+        self._preview_active = True
+        self._btn_confirm.setEnabled(True)
+        self._btn_revert.setEnabled(True)
+        self._set_status(tr(label_key, count=n_verts, **kw), warn=False)
+
+    def _on_confirm(self):
+        self._close_undo()
+        self._preview_active = False
+        self._snapshot = None
+        self._btn_confirm.setEnabled(False)
+        self._btn_revert.setEnabled(False)
+        self._set_status(tr("va_status_confirmed"), warn=False)
+
+    def _on_revert(self):
+        self._revert_only()
+        self._set_status(tr("va_status_reverted"), warn=False)
+
+    def _revert_only(self):
+        self._close_undo()
+        if MAYA_AVAILABLE:
+            try:
+                cmds.undo()
+            except Exception:
+                pass
+        self._preview_active = False
+        self._snapshot = None
+        self._btn_confirm.setEnabled(False)
+        self._btn_revert.setEnabled(False)
+
+    # -- Labels ----------------------------------------------------------
+    def refresh_labels(self):
+        self.setWindowTitle(tr("va_dlg_title"))
+        self._tabs.setTabText(0, tr("va_tab_linear3d"))
+        self._tabs.setTabText(1, tr("va_tab_linear2d"))
+        self._tabs.setTabText(2, tr("va_tab_flatten"))
+        self._btn_preview.setText(tr("va_btn_preview"))
+        self._btn_confirm.setText(tr("va_btn_confirm"))
+        self._btn_revert.setText(tr("va_btn_revert"))
+        self._btn_close.setText(tr("btn_close"))
+
+    def closeEvent(self, event):
+        # Auto-revert unconfirmed preview on close.
+        if self._preview_active:
+            self._revert_only()
+        super(VertexAlignDialog, self).closeEvent(event)
+
+
+class _VertexAlignError(Exception):
+    """Internal exception for short-circuiting preview with a status msg."""
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Vertex Align: stylesheet scraps
+# ---------------------------------------------------------------------------
+
+_VA_GRP_SS = (
+    "QGroupBox{border:1px solid #555;border-radius:5px;"
+    "background-color:#2B2B2B;margin-top:4px}")
+
+_VA_RB_SS = (
+    "QRadioButton{color:#DDD;font-size:10px}"
+    "QRadioButton::indicator{width:11px;height:11px}")
+
+_VA_POS_LBL_SS_SET = (
+    "color:#8BC34A;background-color:#2B2B2B;"
+    "padding:3px 8px;border-radius:3px;"
+    "font-size:10px;font-family:monospace")
+
+
+# ---------------------------------------------------------------------------
+# Vertex Align: tab-side launcher + plumbing
+# ---------------------------------------------------------------------------
+
+def _build_vertex_align_group(tool_window, parent_layout):
+    """Build the Vertex Align group for the Alignment tab."""
+    grp = QtWidgets.QGroupBox()
+    grp.setStyleSheet(
+        "QGroupBox{border:1px solid #9C27B0;border-radius:6px;"
+        "background-color:#2E2E2E;margin-top:6px}"
+        "QGroupBox::title{subcontrol-origin:margin;left:10px;"
+        "color:#EEE;font-size:11px;font-weight:bold}")
+    lo = QtWidgets.QVBoxLayout(grp)
+    lo.setContentsMargins(6, 10, 6, 6)
+    lo.setSpacing(4)
+
+    hdr = QtWidgets.QHBoxLayout()
+    tool_window._va_grp_lbl = QtWidgets.QLabel(
+        u"\u25A0 " + tr("va_grp_title"))
+    tool_window._va_grp_lbl.setStyleSheet(
+        "color:#9C27B0;font-size:11px;font-weight:bold")
+    hdr.addWidget(tool_window._va_grp_lbl)
+    hdr.addStretch()
+    tool_window._va_btn_launch = _mkbtn(
+        tr("va_btn_launch"), 24, "#9C27B0", "#7B1FA2", fs=10)
+    tool_window._va_btn_launch.clicked.connect(
+        lambda: _va_launch(tool_window))
+    hdr.addWidget(tool_window._va_btn_launch)
+    lo.addLayout(hdr)
+
+    tool_window._va_desc_lbl = QtWidgets.QLabel(tr("va_grp_desc"))
+    tool_window._va_desc_lbl.setStyleSheet(
+        "color:#AAA;font-size:10px;padding:2px 4px")
+    tool_window._va_desc_lbl.setWordWrap(True)
+    lo.addWidget(tool_window._va_desc_lbl)
+
+    tool_window._va_dialog = None
+    parent_layout.addWidget(grp)
+    return grp
+
+
+def _va_launch(tool_window):
+    """Open/raise the Vertex Align dialog."""
+    if tool_window._va_dialog is None:
+        tool_window._va_dialog = VertexAlignDialog(parent=tool_window)
+        tool_window._va_dialog.status_msg.connect(
+            lambda t: tool_window._status_bar.setText(t)
+            if hasattr(tool_window, "_status_bar") else None)
+    tool_window._va_dialog.show()
+    tool_window._va_dialog.raise_()
+    tool_window._va_dialog.activateWindow()
+
+
+def _va_refresh_labels(tool_window):
+    """Called from CollisionCheckToolWindow._refresh_labels()."""
+    if hasattr(tool_window, "_va_grp_lbl"):
+        tool_window._va_grp_lbl.setText(u"\u25A0 " + tr("va_grp_title"))
+    if hasattr(tool_window, "_va_btn_launch"):
+        tool_window._va_btn_launch.setText(tr("va_btn_launch"))
+    if hasattr(tool_window, "_va_desc_lbl"):
+        tool_window._va_desc_lbl.setText(tr("va_grp_desc"))
+    w = getattr(tool_window, "_va_dialog", None)
+    if w is not None:
+        w.refresh_labels()
+
+
+def _va_close_dialog(tool_window):
+    w = getattr(tool_window, "_va_dialog", None)
+    if w is not None:
+        try:
+            w.close()
+        except Exception:
+            pass
 # ---------------------------------------------------------------------------
 # CollisionCheckToolWindow  (Main UI — reference architecture compliant)
 # ---------------------------------------------------------------------------
@@ -6952,7 +8114,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         check_tab_lo.addWidget(check_scroll)
         self._tabs.addTab(check_tab, tr("tab_check"))
 
-        # ---- Snap tab (vertex snap + face snap) ----
+        # ---- Alignment tab (vertex snap + edge width + face snap + vertex align) ----
         snap_tab = QtWidgets.QWidget()
         snap_tab_lo = QtWidgets.QVBoxLayout(snap_tab)
         snap_tab_lo.setContentsMargins(0, 0, 0, 0)
@@ -6967,6 +8129,7 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         _build_vertex_snap_group(self, snap_scroll_lo)
         _build_edge_snap_group(self, snap_scroll_lo)
         _build_mesh_landing_group(self, snap_scroll_lo)
+        _build_vertex_align_group(self, snap_scroll_lo)
         snap_scroll_lo.addStretch()
         snap_scroll.setWidget(snap_scroll_w)
         snap_tab_lo.addWidget(snap_scroll)
@@ -7254,6 +8417,8 @@ class CollisionCheckToolWindow(QtWidgets.QDialog):
         _vs_refresh_labels(self)
         # Edge Snap labels
         _es_refresh_labels(self)
+        # Vertex Align labels
+        _va_refresh_labels(self)
         self._cb_use_timeline.setText(tr("chk_use_timeline"))
         self._lbl_fr.setText(tr("lbl_frame_range"))
         self._lbl_step.setText(tr("lbl_frame_step"))
