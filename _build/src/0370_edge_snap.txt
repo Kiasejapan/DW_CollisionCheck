@@ -508,180 +508,178 @@ def _es_snap_edge_to_length(e, target_length, anchor):
 # that the selected rungs connect, and snap endpoints *along* them.
 # ---------------------------------------------------------------------------
 
-def _es_expand_brim_from_vertex(shape, vert_idx, forbidden_edge_set):
+def _es_expand_brim_from_vertex(shape, vert_idx, forbidden_edge_set,
+                                  rung_verts_set):
     """Given a shape and a seed vertex index, find the edge loop that
-    contains an edge incident to this vertex AND is NOT one of the
-    selected rungs.
+    runs along the belt's brim on this side — i.e. the chain of
+    edges that:
+      * starts at `vert_idx`,
+      * uses edges that are NOT in `forbidden_edge_set` (rung edges),
+      * stays on the "brim" by preferring edges whose far endpoint is
+        another rung endpoint on the same side (i.e. in rung_verts_set).
 
-    Strategy: pick one incident edge that isn't in the forbidden set,
-    then use `polySelect -edgeLoop` to grow that edge's loop.
+    Returns a list of world-space positions along the brim in order,
+    or [] if no suitable brim could be traced.
 
-    Returns a list of (edge_index, v0_idx, v1_idx) tuples describing
-    the loop, in traversal order starting from the seed vertex, or
-    [] if no suitable edge loop could be found.
+    This avoids messing with Maya's selection (the previous
+    `polySelect -edgeLoop`-based approach disturbed the current
+    selection and sometimes returned the rungs themselves).
     """
     if not MAYA_AVAILABLE:
         return []
-    vtx = u"{0}.vtx[{1}]".format(shape, vert_idx)
-    # Find edges incident to this vertex.
-    try:
-        incident = cmds.polyListComponentConversion(
-            vtx, fromVertex=True, toEdge=True) or []
-        incident = cmds.ls(incident, fl=True, long=True) or []
-    except Exception:
-        return []
-    # Pick a candidate edge not in the forbidden set (i.e. not a rung).
-    seed_edge = None
-    seed_idx = None
-    for e in incident:
-        if e in forbidden_edge_set:
-            continue
+
+    # Build a small helper that walks vertex-by-vertex, picking at each
+    # step a neighbour that (a) is reached by a non-rung edge, (b) is
+    # preferably a rung endpoint on this side, (c) hasn't been visited.
+    def _neighbours(v_idx):
+        """Return list of (neighbour_v_idx, edge_str, edge_idx) tuples
+        for the given vertex, excluding forbidden (rung) edges."""
+        vtx = u"{0}.vtx[{1}]".format(shape, v_idx)
         try:
-            ei = int(e.split(u"[")[-1].rstrip(u"]"))
+            inc = cmds.polyListComponentConversion(
+                vtx, fromVertex=True, toEdge=True) or []
+            inc = cmds.ls(inc, fl=True, long=True) or []
         except Exception:
-            continue
-        seed_edge = e
-        seed_idx = ei
-        break
-    if seed_edge is None:
-        return []
-    # Expand via polySelect -edgeLoop.
-    saved_sel = cmds.ls(sl=True, fl=True, long=True) or []
-    try:
-        cmds.select(clear=True)
-        try:
-            cmds.polySelect(shape, edgeLoop=seed_idx, asSelectString=False)
-        except Exception:
+            return []
+        out = []
+        for e in inc:
+            if e in forbidden_edge_set:
+                continue
             try:
-                cmds.select(seed_edge, r=True)
+                ei = int(e.split(u"[")[-1].rstrip(u"]"))
+                verts = cmds.polyListComponentConversion(
+                    e, fromEdge=True, toVertex=True) or []
+                verts = cmds.ls(verts, fl=True, long=True) or []
+                vids = []
+                for x in verts:
+                    try:
+                        vids.append(int(x.split(u"[")[-1].rstrip(u"]")))
+                    except Exception:
+                        pass
+                if len(vids) != 2:
+                    continue
+                other = vids[0] if vids[1] == v_idx else vids[1]
+                out.append((other, e, ei))
             except Exception:
-                return []
-        loop_edges = cmds.ls(sl=True, fl=True, long=True) or []
-        loop_edges = [x for x in loop_edges if u".e[" in x]
-    finally:
+                continue
+        return out
+
+    def _get_pos(vi):
         try:
-            cmds.select(saved_sel, r=True) if saved_sel else cmds.select(clear=True)
+            p = cmds.pointPosition(
+                u"{0}.vtx[{1}]".format(shape, vi), w=True)
+            return (p[0], p[1], p[2])
         except Exception:
-            pass
-    # Build ordered list: sequence of (edge_idx, v0, v1).
-    ordered = []
-    for e in loop_edges:
-        try:
-            ei = int(e.split(u"[")[-1].rstrip(u"]"))
-            verts = cmds.polyListComponentConversion(
-                e, fromEdge=True, toVertex=True) or []
-            verts = cmds.ls(verts, fl=True, long=True) or []
-            vids = []
-            for v in verts:
-                try:
-                    vids.append(int(v.split(u"[")[-1].rstrip(u"]")))
-                except Exception:
-                    pass
-            if len(vids) == 2:
-                ordered.append((ei, vids[0], vids[1]))
-        except Exception:
-            continue
-    return ordered
+            return None
+
+    # Walk in two directions from the seed vertex, preferring rung-
+    # endpoint neighbours (brim connects rung-endpoints to each other).
+    def _walk(start):
+        visited = {start}
+        seq = [start]
+        cur = start
+        # Iterate forward as far as possible.
+        while True:
+            nbrs = _neighbours(cur)
+            # Prefer neighbours that are themselves rung endpoints (on
+            # this side), not yet visited.
+            best = None
+            for other, _estr, _ei in nbrs:
+                if other in visited:
+                    continue
+                if other in rung_verts_set:
+                    best = other
+                    break
+            if best is None:
+                # No rung-endpoint neighbour — fall back to any unvisited
+                # neighbour so we still trace *some* polyline.
+                for other, _estr, _ei in nbrs:
+                    if other not in visited:
+                        best = other
+                        break
+            if best is None:
+                break
+            seq.append(best)
+            visited.add(best)
+            cur = best
+            if len(seq) > 10000:
+                break
+        return seq
+
+    forward = _walk(vert_idx)
+    # Now walk backward from the seed vertex.
+    visited_fwd = set(forward)
+    back = [vert_idx]
+    cur = vert_idx
+    while True:
+        nbrs = _neighbours(cur)
+        best = None
+        for other, _estr, _ei in nbrs:
+            if other in visited_fwd or other in back:
+                continue
+            if other in rung_verts_set:
+                best = other
+                break
+        if best is None:
+            for other, _estr, _ei in nbrs:
+                if other in visited_fwd or other in back:
+                    continue
+                best = other
+                break
+        if best is None:
+            break
+        back.append(best)
+        cur = best
+        if len(back) > 10000:
+            break
+
+    # Combine back (reversed, minus duplicated seed) + forward.
+    ordered_verts = list(reversed(back[1:])) + forward
+    positions = []
+    for vi in ordered_verts:
+        p = _get_pos(vi)
+        if p is not None:
+            positions.append(p)
+    return positions
 
 
 def _es_detect_belt_brims(edges):
-    """For each rung edge in `edges`, detect the two brim edge loops
-    (one touching side A, one touching side B) that the rung connects.
+    """For each rung edge in `edges`, detect the two brim polylines
+    (one on side A, one on side B) that the rung connects.
 
     Returns a dict:
         {
-            "rung_to_brim_a": {rung_ei -> list of (edge_idx, v0, v1)},
-            "rung_to_brim_b": {rung_ei -> list of (edge_idx, v0, v1)},
-            "brim_a_verts":   ordered vertex positions for brim A per rung,
-            "brim_b_verts":   ordered vertex positions for brim B per rung,
+            "brim_a_verts":   {rung_ei -> [(x,y,z), (x,y,z), ...]},
+            "brim_b_verts":   {rung_ei -> [(x,y,z), (x,y,z), ...]},
         }
 
-    If any rung fails brim detection, its entry is None. Detection is
-    per-rung because a selection may span multiple disconnected
-    belts.
+    The polylines are expressed as ordered world-space positions so
+    downstream code can project points onto them. Empty list means
+    brim detection failed for that rung (e.g. isolated rung — we fall
+    back to simple length snap in that case).
     """
     if not MAYA_AVAILABLE:
-        return {"rung_to_brim_a": {},
-                "rung_to_brim_b": {},
-                "brim_a_verts":   {},
-                "brim_b_verts":   {}}
+        return {"brim_a_verts": {}, "brim_b_verts": {}}
     rung_edge_set = set(e["edge"] for e in edges)
+    # All A-side vertices and all B-side vertices across the rung
+    # selection — used to help the brim walker stay on the correct
+    # side of the belt.
+    side_a_verts = set()
+    side_b_verts = set()
+    for e in edges:
+        side_a_verts.add(e["a_idx"])
+        side_b_verts.add(e["b_idx"])
 
-    def _collect_verts_in_order(shape, ordered_edges):
-        """Chain together ordered (edge, v0, v1) tuples into a sequence
-        of connected vertex positions. Returns list of (x,y,z) or []
-        on failure."""
-        if not ordered_edges:
-            return []
-        if len(ordered_edges) == 1:
-            _, v0, v1 = ordered_edges[0]
-            try:
-                p0 = cmds.pointPosition(
-                    u"{0}.vtx[{1}]".format(shape, v0), w=True)
-                p1 = cmds.pointPosition(
-                    u"{0}.vtx[{1}]".format(shape, v1), w=True)
-                return [(p0[0], p0[1], p0[2]),
-                        (p1[0], p1[1], p1[2])]
-            except Exception:
-                return []
-        # Build vertex adjacency from the edges.
-        adj = {}
-        for _, v0, v1 in ordered_edges:
-            adj.setdefault(v0, set()).add(v1)
-            adj.setdefault(v1, set()).add(v0)
-        # Find endpoints (deg 1) — open loop; else closed.
-        endpoints = [v for v, nbs in adj.items() if len(nbs) == 1]
-        if len(endpoints) == 2:
-            start = endpoints[0]
-        elif len(endpoints) == 0:
-            start = next(iter(adj))
-        else:
-            # Branching — can't linearize cleanly; bail.
-            return []
-        seq = [start]
-        prev = None
-        cur = start
-        while True:
-            nxt = None
-            for n in adj[cur]:
-                if n != prev:
-                    nxt = n
-                    break
-            if nxt is None:
-                break
-            seq.append(nxt)
-            prev = cur
-            cur = nxt
-            if cur == start:
-                break
-        positions = []
-        for vi in seq:
-            try:
-                p = cmds.pointPosition(
-                    u"{0}.vtx[{1}]".format(shape, vi), w=True)
-                positions.append((p[0], p[1], p[2]))
-            except Exception:
-                return []
-        return positions
-
-    rung_to_brim_a = {}
-    rung_to_brim_b = {}
     brim_a_verts = {}
     brim_b_verts = {}
     for ei, e in enumerate(edges):
         shape = e["shape"]
-        brim_a_raw = _es_expand_brim_from_vertex(
-            shape, e["a_idx"], rung_edge_set)
-        brim_b_raw = _es_expand_brim_from_vertex(
-            shape, e["b_idx"], rung_edge_set)
-        rung_to_brim_a[ei] = brim_a_raw
-        rung_to_brim_b[ei] = brim_b_raw
-        brim_a_verts[ei] = _collect_verts_in_order(shape, brim_a_raw)
-        brim_b_verts[ei] = _collect_verts_in_order(shape, brim_b_raw)
-    return {"rung_to_brim_a": rung_to_brim_a,
-            "rung_to_brim_b": rung_to_brim_b,
-            "brim_a_verts":   brim_a_verts,
-            "brim_b_verts":   brim_b_verts}
+        brim_a_verts[ei] = _es_expand_brim_from_vertex(
+            shape, e["a_idx"], rung_edge_set, side_a_verts)
+        brim_b_verts[ei] = _es_expand_brim_from_vertex(
+            shape, e["b_idx"], rung_edge_set, side_b_verts)
+    return {"brim_a_verts": brim_a_verts,
+            "brim_b_verts": brim_b_verts}
 
 
 def _es_project_point_onto_polyline(point, polyline):
@@ -1005,24 +1003,38 @@ _ES_REGION_COLOURS = [
 
 class _EsAngleHistogram(QtWidgets.QWidget):
     """Horizontal histogram showing the distribution of bend angles
-    between adjacent selected edges (0°..90°), overlaid with the
-    current corner-angle threshold.
+    between adjacent selected edges (0°..90°), overlaid with an
+    interactive threshold marker.
 
     Bars to the LEFT of the threshold are drawn in the "kept"
     colour (green-ish) because their adjacency is preserved.
     Bars to the RIGHT are drawn in the "cut" colour (red-ish),
     highlighting which pairs the threshold will split on.
+
+    The user drags the vertical orange marker left/right (or clicks
+    anywhere on the chart) to change the threshold. A `threshold_changed`
+    signal fires with the new value in degrees.
     """
 
     _N_BINS = 36   # 2.5° per bin across 0..90
+    _MIN_DEG = 5.0
+    _MAX_DEG = 89.0
+    _PAD = 4
+
+    threshold_changed = QtCore.Signal(float)
 
     def __init__(self, parent=None):
         super(_EsAngleHistogram, self).__init__(parent)
         self._angles = []            # list of bend angles in degrees
         self._threshold = 60.0
-        self.setMinimumHeight(36)
+        self._dragging = False
+        self.setMinimumHeight(48)
         self.setSizePolicy(QtWidgets.QSizePolicy.Expanding,
                             QtWidgets.QSizePolicy.Fixed)
+        self.setCursor(QtCore.Qt.PointingHandCursor)
+        # We want mouse-move events even when no button is held, so
+        # the cursor can change near the marker.
+        self.setMouseTracking(True)
 
     def set_angles(self, angles):
         """Replace the dataset and repaint."""
@@ -1030,8 +1042,44 @@ class _EsAngleHistogram(QtWidgets.QWidget):
         self.update()
 
     def set_threshold(self, threshold_deg):
-        self._threshold = float(threshold_deg)
+        v = max(self._MIN_DEG,
+                min(self._MAX_DEG, float(threshold_deg)))
+        if abs(v - self._threshold) < 1.0e-6:
+            return
+        self._threshold = v
         self.update()
+
+    def _x_to_deg(self, x):
+        pad = self._PAD
+        chart_w = max(1, self.width() - pad * 2)
+        frac = (x - pad) / float(chart_w)
+        return max(self._MIN_DEG,
+                    min(self._MAX_DEG, frac * 90.0))
+
+    def _deg_to_x(self, deg):
+        pad = self._PAD
+        chart_w = max(1, self.width() - pad * 2)
+        return pad + int((deg / 90.0) * chart_w)
+
+    def mousePressEvent(self, ev):
+        if ev.button() == QtCore.Qt.LeftButton:
+            self._dragging = True
+            new_deg = self._x_to_deg(ev.pos().x())
+            self.set_threshold(new_deg)
+            self.threshold_changed.emit(self._threshold)
+            ev.accept()
+
+    def mouseMoveEvent(self, ev):
+        if self._dragging:
+            new_deg = self._x_to_deg(ev.pos().x())
+            self.set_threshold(new_deg)
+            self.threshold_changed.emit(self._threshold)
+            ev.accept()
+
+    def mouseReleaseEvent(self, ev):
+        if ev.button() == QtCore.Qt.LeftButton and self._dragging:
+            self._dragging = False
+            ev.accept()
 
     def paintEvent(self, _ev):
         p = QtGui.QPainter(self)
@@ -1045,13 +1093,16 @@ class _EsAngleHistogram(QtWidgets.QWidget):
             p.end()
             return
 
-        # Chart area leaves a tiny 2px margin.
-        pad = 2
+        pad = self._PAD
         chart_w = w - pad * 2
         chart_h = h - pad * 2
 
         # Bin the angles.
         bins = [0] * self._N_BINS
+        # Leave room at the bottom for tick labels.
+        label_h = 12
+        bar_area_h = max(1, chart_h - label_h)
+
         for a in self._angles:
             a = max(0.0, min(90.0, a))
             b = int(a / 90.0 * self._N_BINS)
@@ -1063,13 +1114,14 @@ class _EsAngleHistogram(QtWidgets.QWidget):
         # Threshold position in pixels.
         t_frac = max(0.0, min(90.0, self._threshold)) / 90.0
         t_px = pad + int(t_frac * chart_w)
+        bar_bottom = pad + bar_area_h
 
         # Draw bars.
         bin_w = chart_w / float(self._N_BINS)
         for i, c in enumerate(bins):
             if c == 0:
                 continue
-            bar_h = int((c / float(max_count)) * chart_h) if max_count > 0 else 0
+            bar_h = int((c / float(max_count)) * bar_area_h) if max_count > 0 else 0
             if bar_h < 1:
                 bar_h = 1
             x0 = pad + int(i * bin_w)
@@ -1080,27 +1132,38 @@ class _EsAngleHistogram(QtWidgets.QWidget):
                 col = QtGui.QColor("#4CAF50")
             else:
                 col = QtGui.QColor("#E53935")
-            p.fillRect(x0, pad + chart_h - bar_h,
+            p.fillRect(x0, bar_bottom - bar_h,
                        max(1, x1 - x0 - 1), bar_h, col)
-
-        # Threshold line.
-        pen = QtGui.QPen(QtGui.QColor("#FF9800"), 2)
-        p.setPen(pen)
-        p.drawLine(t_px, pad, t_px, pad + chart_h)
 
         # Baseline axis.
         p.setPen(QtGui.QPen(QtGui.QColor("#444"), 1))
-        p.drawLine(pad, pad + chart_h, pad + chart_w, pad + chart_h)
+        p.drawLine(pad, bar_bottom, pad + chart_w, bar_bottom)
 
         # Tick labels at 0°, 30°, 60°, 90°.
-        p.setPen(QtGui.QPen(QtGui.QColor("#777"), 1))
+        p.setPen(QtGui.QPen(QtGui.QColor("#888"), 1))
         f = p.font()
         f.setPointSize(7)
         p.setFont(f)
         for deg in (0, 30, 60, 90):
             x = pad + int((deg / 90.0) * chart_w)
-            p.drawText(x - 8, pad + chart_h - 2 + 10,
+            # Tick.
+            p.drawLine(x, bar_bottom, x, bar_bottom + 3)
+            p.drawText(x - 9, bar_bottom + label_h,
                        u"{0}\u00B0".format(deg))
+
+        # Threshold line + triangular drag handle at the top.
+        pen = QtGui.QPen(QtGui.QColor("#FF9800"), 2)
+        p.setPen(pen)
+        p.drawLine(t_px, pad, t_px, bar_bottom)
+        # Triangle handle pointing down at the top of the line.
+        tri = QtGui.QPolygon([
+            QtCore.QPoint(t_px - 5, pad),
+            QtCore.QPoint(t_px + 5, pad),
+            QtCore.QPoint(t_px, pad + 6),
+        ])
+        p.setBrush(QtGui.QColor("#FF9800"))
+        p.setPen(QtGui.QPen(QtGui.QColor("#E65100"), 1))
+        p.drawPolygon(tri)
 
         p.end()
 
@@ -1239,30 +1302,18 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         uni.addStretch()
         lo.addLayout(uni)
 
-        # Corner-angle slider row. When consecutive ring-adjacent edges
-        # bend more than this angle, they are treated as belonging to
-        # separate "regions" so the target-width spin can be set per
-        # region instead of being polluted by short corner edges.
+        # Corner-angle control row: a compact label + live value +
+        # hint, followed below by the interactive histogram. The
+        # histogram itself IS the slider — the user drags its vertical
+        # marker to set the threshold.
         corner = QtWidgets.QHBoxLayout()
         corner.setSpacing(6)
         self._lbl_corner = QtWidgets.QLabel(tr("es_lbl_corner_angle"))
         self._lbl_corner.setStyleSheet("color:#AAA;font-size:10px")
         corner.addWidget(self._lbl_corner)
-        self._slider_corner = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self._slider_corner.setRange(5, 89)
-        self._slider_corner.setValue(60)
-        self._slider_corner.setFixedWidth(140)
-        self._slider_corner.setStyleSheet(
-            "QSlider::groove:horizontal{height:6px;background:#222;"
-            "border-radius:3px}"
-            "QSlider::handle:horizontal{background:#FF9800;"
-            "border:1px solid #F57C00;width:14px;margin:-4px 0;"
-            "border-radius:7px}")
-        self._slider_corner.valueChanged.connect(self._on_corner_angle_changed)
-        corner.addWidget(self._slider_corner)
         self._lbl_corner_val = QtWidgets.QLabel(u"60\u00B0")
         self._lbl_corner_val.setStyleSheet(
-            "color:#FF9800;font-size:10px;font-weight:bold;min-width:30px")
+            "color:#FF9800;font-size:11px;font-weight:bold;min-width:36px")
         corner.addWidget(self._lbl_corner_val)
         self._lbl_corner_hint = QtWidgets.QLabel(tr("es_lbl_corner_hint"))
         self._lbl_corner_hint.setStyleSheet(
@@ -1272,13 +1323,15 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         corner.addStretch()
         lo.addLayout(corner)
 
-        # Histogram of bend angles between adjacent edges. Updated
-        # live on set_data and when the user drags the corner slider
-        # so they can see exactly which pairs will be cut.
+        # Interactive histogram of bend angles. Drag the orange marker
+        # horizontally to change the threshold; clicking anywhere on
+        # the chart jumps the marker there.
         self._angle_histogram = _EsAngleHistogram()
-        self._angle_histogram.setFixedHeight(42)
+        self._angle_histogram.setFixedHeight(54)
         self._angle_histogram.setStyleSheet(
             "QWidget{background-color:#1A1A1A;border-radius:3px}")
+        self._angle_histogram.threshold_changed.connect(
+            self._on_histogram_threshold_changed)
         lo.addWidget(self._angle_histogram)
 
         # Pair table.
@@ -1395,10 +1448,8 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         if self._brim_data is not None:
             return
         if not self._edges:
-            self._brim_data = {"rung_to_brim_a": {},
-                                "rung_to_brim_b": {},
-                                "brim_a_verts":   {},
-                                "brim_b_verts":   {}}
+            self._brim_data = {"brim_a_verts": {},
+                                "brim_b_verts": {}}
             return
         self._brim_data = _es_detect_belt_brims(self._edges)
 
@@ -1712,22 +1763,31 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
             self._table.blockSignals(False)
 
     # -- Interaction --
-    def _on_corner_angle_changed(self, val):
-        self._corner_angle = float(val)
-        self._lbl_corner_val.setText(u"{0}\u00B0".format(int(val)))
-        # Always update the histogram threshold — it's cheap and
-        # should reflect the slider even when there are no edges yet.
-        if hasattr(self, "_angle_histogram"):
-            self._angle_histogram.set_threshold(self._corner_angle)
+    def _on_histogram_threshold_changed(self, val):
+        """Fired while the user drags the histogram marker."""
+        # Round to the nearest integer degree for stability of the
+        # displayed value and to avoid spamming recomputations.
+        new_deg = round(float(val))
+        if abs(new_deg - self._corner_angle) < 0.5:
+            # Still update the live label so drag feels responsive.
+            self._lbl_corner_val.setText(
+                u"{0}\u00B0".format(int(round(self._corner_angle))))
+            return
+        self._corner_angle = float(new_deg)
+        self._lbl_corner_val.setText(
+            u"{0}\u00B0".format(int(new_deg)))
         if not self._edges:
             return
         # Recompute ring components with the new threshold and refresh
-        # target-width suggestion + table so the user can see which
-        # rows now sit in which region.
+        # table + chips so the user sees which rows moved.
         self._components = _es_compute_ring_components(
             self._edges, self._corner_angle)
         self._refresh_scope_and_average()
         self._populate()
+
+    # Backwards compatibility in case anything else still calls this.
+    def _on_corner_angle_changed(self, val):
+        self._on_histogram_threshold_changed(val)
 
     def _on_selection_changed(self):
         if not MAYA_AVAILABLE:
