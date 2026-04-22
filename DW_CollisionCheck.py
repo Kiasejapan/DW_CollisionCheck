@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.22.1442"
+VERSION = "2026.04.22.1509"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -479,6 +479,12 @@ _STRINGS = {
                              "jp": u"\u5168\u3066\u306e\u30a8\u30c3\u30b8\u63c3\u3048\u3092\u5143\u306b\u623b\u3057\u307e\u3057\u305f\u3002"},
     "es_status_bad_length": {"en": "Target width must be greater than 0.",
                              "jp": u"\u76ee\u6a19\u5e45\u306f 0 \u3088\u308a\u5927\u304d\u3044\u5fc5\u8981\u304c\u3042\u308a\u307e\u3059\u3002"},
+    "es_chip_header":       {"en": "Region:",                          "jp": u"\u533a\u9593\uff1a"},
+    "es_chip_label":        {"en": u"#{cid}  ({n} / {avg})",
+                             "jp": u"#{cid}\u3000({n} / {avg})"},
+    "es_btn_select_all":    {"en": "Select all",                       "jp": u"\u5168\u9078\u629e"},
+    "es_status_region_selected": {"en": "Region #{cid} selected: {count} edge(s), avg {avg}.",
+                                   "jp": u"\u533a\u9593 #{cid} \u3092\u9078\u629e\uff1a{count} \u672c\u3001\u5e73\u5747 {avg}"},
 
     # ---- Vertex Align (Alignment tab) --------------------------------
     "va_grp_title":         {"en": "Vertex Align",                    "jp": u"\u9802\u70b9\u6574\u5217"},
@@ -6099,6 +6105,23 @@ def _es_edge_length(e):
     return (dx * dx + dy * dy + dz * dz) ** 0.5
 
 
+def _es_darken(hex_colour, factor=0.8):
+    """Return a darker variant of a #RRGGBB hex colour (for hover)."""
+    h = hex_colour.lstrip("#")
+    if len(h) != 6:
+        return hex_colour
+    try:
+        r = int(h[0:2], 16)
+        g = int(h[2:4], 16)
+        b = int(h[4:6], 16)
+    except ValueError:
+        return hex_colour
+    r = max(0, min(255, int(r * factor)))
+    g = max(0, min(255, int(g * factor)))
+    b = max(0, min(255, int(b * factor)))
+    return "#{0:02X}{1:02X}{2:02X}".format(r, g, b)
+
+
 def _es_set_vtx_pos(shape, vi, pos):
     """Set a vertex's world-space position via cmds.xform."""
     try:
@@ -6232,17 +6255,34 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         self._scope_lbl.setWordWrap(True)
         lo.addWidget(self._scope_lbl)
 
-        # Region chip strip (rich-text label). Shows one colour-coded
-        # chip per region with per-region edge-count + average width,
-        # so the user sees how the slider reshuffles the groupings.
-        self._region_chip_lbl = QtWidgets.QLabel(u"")
-        self._region_chip_lbl.setTextFormat(QtCore.Qt.RichText)
-        self._region_chip_lbl.setStyleSheet(
-            "background-color:#222;padding:4px 8px;border-radius:3px;"
-            "font-size:10px")
-        self._region_chip_lbl.setWordWrap(True)
-        self._region_chip_lbl.setVisible(False)
-        lo.addWidget(self._region_chip_lbl)
+        # Region chip strip — one clickable button per region, with
+        # per-region edge count + average width. Clicking a chip
+        # selects just that region's rows in the table (so the
+        # direction buttons operate on a single region) and loads its
+        # average into the target-width spin.
+        self._region_chip_wrapper = QtWidgets.QFrame()
+        self._region_chip_wrapper.setStyleSheet(
+            "QFrame{background-color:#222;border-radius:3px}")
+        chip_lo = QtWidgets.QHBoxLayout(self._region_chip_wrapper)
+        chip_lo.setContentsMargins(6, 4, 6, 4)
+        chip_lo.setSpacing(6)
+        self._region_chip_layout = chip_lo
+        # Persistent "Select all" button on the right so the user can
+        # revert to working with every row at once.
+        self._region_chip_placeholder = QtWidgets.QLabel(u"")
+        self._region_chip_placeholder.setStyleSheet(
+            "color:#777;font-size:10px")
+        chip_lo.addWidget(self._region_chip_placeholder)
+        chip_lo.addStretch()
+        self._btn_select_all = _mkbtn(tr("es_btn_select_all"), 22,
+                                       "#607D8B", "#455A64", fs=10)
+        self._btn_select_all.clicked.connect(self._on_select_all_rows)
+        chip_lo.addWidget(self._btn_select_all)
+        self._region_chip_wrapper.setVisible(False)
+        lo.addWidget(self._region_chip_wrapper)
+        # List of dynamically-added chip buttons so we can delete them
+        # between refreshes.
+        self._region_chip_buttons = []
 
         # Uniform-length row: spinbox + apply button.
         uni = QtWidgets.QHBoxLayout()
@@ -6395,13 +6435,11 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         self._update_confirm_state()
 
     def _refresh_scope_and_average(self):
-        """Recompute scope line + suggested target width.
+        """Recompute scope line + suggested target width + region chips.
 
-        When the edges span multiple regions, we pick the region
-        currently under the user's selection (or the largest region
-        if no selection) and use its average as the target width.
-        That prevents the short corner edges from dragging the
-        average down for the main straight run.
+        When the edges span multiple regions, we pick the largest
+        region and use its average as the target width. Short corner
+        regions therefore don't drag the default down.
         """
         n = len(self._edges)
         n_bad = sum(1 for s in self._status if s != "ok")
@@ -6418,12 +6456,10 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
             parts.append(tr("es_scope_region_count", regions=n_regions))
         self._scope_lbl.setText(u"   |   ".join(parts))
 
-        # Build the colourful per-region breakdown (rich-text HTML in a
-        # separate label so it wraps cleanly under the scope line).
-        breakdown_html = self._build_region_breakdown_html()
-        if hasattr(self, "_region_chip_lbl"):
-            self._region_chip_lbl.setText(breakdown_html)
-            self._region_chip_lbl.setVisible(n_regions > 0)
+        # Rebuild the clickable region chip strip.
+        self._rebuild_region_chips()
+        if hasattr(self, "_region_chip_wrapper"):
+            self._region_chip_wrapper.setVisible(n_regions > 0)
 
         # Compute "default target width" from the largest region.
         target = self._largest_region_average()
@@ -6434,32 +6470,140 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
             finally:
                 self._spin_uniform.blockSignals(False)
 
-    def _build_region_breakdown_html(self):
-        """Return small inline HTML with one coloured chip per region:
-            #1 (15 edges, avg 0.58)   #2 (3 edges, avg 0.12)   ...
+    def _rebuild_region_chips(self):
+        """Populate the region chip strip with one clickable QPushButton
+        per region. Clicking a chip selects that region's rows in the
+        table and loads its average into the target-width spinbox.
         """
+        if not hasattr(self, "_region_chip_layout"):
+            return
+        # Remove any existing chip buttons first.
+        for btn in self._region_chip_buttons:
+            try:
+                self._region_chip_layout.removeWidget(btn)
+                btn.setParent(None)
+                btn.deleteLater()
+            except Exception:
+                pass
+        self._region_chip_buttons = []
+
         if not self._edges:
-            return u""
+            self._region_chip_placeholder.setText(u"")
+            return
+
         by_comp = {}
         for i, e in enumerate(self._edges):
             cid = self._components[i] if i < len(self._components) else 0
-            by_comp.setdefault(cid, []).append(_es_edge_length(e))
+            by_comp.setdefault(cid, []).append((i, _es_edge_length(e)))
         if not by_comp:
-            return u""
-        pieces = []
+            self._region_chip_placeholder.setText(u"")
+            return
+
+        # Placeholder text acts as a compact header ("Region:").
+        self._region_chip_placeholder.setText(tr("es_chip_header"))
+
+        # Each chip goes before the trailing stretch + select-all button,
+        # so we insert at index 1 (just after the placeholder label) for
+        # each new chip in order.
+        insert_at = 1
         for cid in sorted(by_comp.keys()):
-            lens = by_comp[cid]
-            if not lens:
+            rows_lens = by_comp[cid]
+            if not rows_lens:
                 continue
+            lens = [ln for _, ln in rows_lens]
             avg = sum(lens) / float(len(lens))
             col = _ES_REGION_COLOURS[cid % len(_ES_REGION_COLOURS)]
-            # Colour chip + text.
-            pieces.append(
-                u"<span style='color:{col};font-weight:bold'>#{cid}</span> "
-                u"<span style='color:#CCC'>({n} / avg {avg})</span>"
-                .format(col=col, cid=cid + 1, n=len(lens),
-                         avg=u"{0:.4f}".format(avg)))
-        return u"&nbsp;&nbsp;".join(pieces)
+            text = tr("es_chip_label",
+                      cid=cid + 1, n=len(lens),
+                      avg=u"{0:.4f}".format(avg))
+            btn = QtWidgets.QPushButton(text)
+            btn.setCursor(QtCore.Qt.PointingHandCursor)
+            btn.setStyleSheet(
+                "QPushButton{{"
+                "background-color:{bg};color:#222;"
+                "padding:2px 8px;border:1px solid {brd};"
+                "border-radius:10px;font-size:10px;font-weight:bold}}"
+                "QPushButton:hover{{background-color:{hov}}}"
+                .format(bg=col, brd=col, hov=_es_darken(col)))
+            # Capture cid in default-arg so the lambda closes over the
+            # current value (Python late-binding guard).
+            btn.clicked.connect(
+                lambda _chk=False, c=cid: self._on_region_chip_clicked(c))
+            self._region_chip_layout.insertWidget(insert_at, btn)
+            insert_at += 1
+            self._region_chip_buttons.append(btn)
+
+    def _on_region_chip_clicked(self, cid):
+        """Select only the rows belonging to region `cid` and load that
+        region's average width into the target-width spinbox."""
+        rows_in_region = [i for i, c in enumerate(self._components)
+                           if c == cid]
+        if not rows_in_region:
+            return
+        # Select those rows in the table.
+        self._table.blockSignals(True)
+        try:
+            self._table.clearSelection()
+            sel_model = self._table.selectionModel()
+            mode = (QtCore.QItemSelectionModel.Select
+                    | QtCore.QItemSelectionModel.Rows)
+            for r in rows_in_region:
+                idx = self._table.model().index(r, 0)
+                sel_model.select(idx, mode)
+        finally:
+            self._table.blockSignals(False)
+        # Sync Maya selection to match.
+        if MAYA_AVAILABLE:
+            try:
+                comps = [self._edges[r]["edge"] for r in rows_in_region]
+                cmds.select(comps, r=True)
+            except Exception:
+                pass
+        # Load that region's average width into the spin.
+        lens = [_es_edge_length(self._edges[r]) for r in rows_in_region]
+        if lens:
+            avg = sum(lens) / float(len(lens))
+            self._spin_uniform.blockSignals(True)
+            try:
+                self._spin_uniform.setValue(avg)
+            finally:
+                self._spin_uniform.blockSignals(False)
+        self.status_msg.emit(
+            tr("es_status_region_selected",
+                cid=cid + 1, count=len(rows_in_region),
+                avg=u"{0:.4f}".format(
+                    sum(lens) / float(len(lens)) if lens else 0.0)))
+
+    def _on_select_all_rows(self):
+        """Select every row in the table so direction buttons operate
+        on the entire selection again."""
+        if not self._edges:
+            return
+        self._table.blockSignals(True)
+        try:
+            self._table.clearSelection()
+            sel_model = self._table.selectionModel()
+            mode = (QtCore.QItemSelectionModel.Select
+                    | QtCore.QItemSelectionModel.Rows)
+            for r in range(len(self._edges)):
+                idx = self._table.model().index(r, 0)
+                sel_model.select(idx, mode)
+        finally:
+            self._table.blockSignals(False)
+        if MAYA_AVAILABLE:
+            try:
+                comps = [e["edge"] for e in self._edges]
+                cmds.select(comps, r=True)
+            except Exception:
+                pass
+        # Restore target width to the largest region's average.
+        target = self._largest_region_average()
+        if target is not None:
+            self._spin_uniform.blockSignals(True)
+            try:
+                self._spin_uniform.setValue(target)
+            finally:
+                self._spin_uniform.blockSignals(False)
 
     def _largest_region_average(self):
         if not self._edges:
@@ -6728,7 +6872,11 @@ class EdgeSnapResultWindow(QtWidgets.QDialog):
         self._btn_confirm.setText(tr("es_btn_confirm"))
         self._btn_revert.setText(tr("es_btn_revert"))
         self._btn_close.setText(tr("btn_close"))
+        if hasattr(self, "_btn_select_all"):
+            self._btn_select_all.setText(tr("es_btn_select_all"))
         self._update_headers()
+        # Rebuild chip labels to pick up the new language.
+        self._rebuild_region_chips()
 
     def closeEvent(self, event):
         # Auto-revert uncommitted snaps when the dialog closes.
