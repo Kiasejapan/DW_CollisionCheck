@@ -13,7 +13,7 @@ import csv
 
 # Version is rewritten by build.bat at every build
 # Format: YYYY.MM.DD.HHMM
-VERSION = "2026.04.22.1952"
+VERSION = "2026.04.22.1956"
 
 # GitHub raw file URL for auto-update
 _GITHUB_RAW_URL = "https://raw.githubusercontent.com/Kiasejapan/DW_CollisionCheck/main/DW_CollisionCheck.py"
@@ -123,8 +123,8 @@ _STRINGS = {
 
     # ---- Mesh Landing (Other tab) ------------------------------------
     "ml_grp_title":         {"en": "Face Snap",                     "jp": u"\u30d5\u30a7\u30fc\u30b9\u30b9\u30ca\u30c3\u30d7"},
-    "ml_grp_desc":          {"en": "Click Launch to open the Face Snap dialog.",
-                             "jp": u"\u300c\u8d77\u52d5\u300d\u3067\u30d5\u30a7\u30fc\u30b9\u30b9\u30ca\u30c3\u30d7\u30c0\u30a4\u30a2\u30ed\u30b0\u3092\u958b\u304d\u307e\u3059\u3002"},
+    "ml_grp_desc":          {"en": "Snap one mesh (A) onto another (B) by raycasting downward until they touch. Useful for settling props on a floor / terrain without overlaps.",
+                             "jp": u"\u30e1\u30c3\u30b7\u30e5 A \u3092\u4e0b\u65b9\u306b\u5411\u3051\u3066\u30ec\u30a4\u30ad\u30e3\u30b9\u30c8\u3057\u3001\u30e1\u30c3\u30b7\u30e5 B \u306b\u89e6\u308c\u308b\u307e\u3067\u5bc4\u305b\u307e\u3059\u3002\u5c0f\u7269\u3092\u5e8a\u30fb\u5730\u9762\u306b\u4ea4\u5dee\u306a\u304f\u7740\u5730\u3055\u305b\u308b\u306e\u306b\u4fbf\u5229\u3002"},
     "ml_btn_launch":        {"en": u"\u25B6 Launch",                "jp": u"\u25B6 \u8d77\u52d5"},
     "ml_dlg_title":         {"en": "Face Snap",                     "jp": u"\u30d5\u30a7\u30fc\u30b9\u30b9\u30ca\u30c3\u30d7"},
     "ml_lbl_mesh_a":        {"en": "Mesh A (moves):",               "jp": u"\u30e1\u30c3\u30b7\u30e5 A (\u79fb\u52d5\u5074):"},
@@ -4862,6 +4862,152 @@ def ml_compute_landing(source_shapes, target_shapes, axis, sign, offset,
 # Mesh Landing: tab-side launcher group
 # ---------------------------------------------------------------------------
 
+class _MlLandingDiagram(QtWidgets.QWidget):
+    """Small animated diagram that illustrates Face Snap visually.
+
+    Shows two shapes:
+      * Mesh A — a small square that floats above Mesh B, then drops
+                 down and lands on Mesh B's top edge, briefly squashes
+                 on contact (for feedback), then resets and loops.
+      * Mesh B — a wider rectangle that acts as the ground.
+
+    A dashed downward arrow between A and B hints at the raycast
+    direction. The animation runs at ~30 FPS and pauses when the
+    widget is hidden.
+    """
+
+    _FPS = 30
+    _FRAMES_PER_CYCLE = 90   # ~3 seconds per cycle
+
+    def __init__(self, parent=None):
+        super(_MlLandingDiagram, self).__init__(parent)
+        self.setFixedHeight(70)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding,
+                            QtWidgets.QSizePolicy.Fixed)
+        self._frame = 0
+        self._timer = QtCore.QTimer(self)
+        self._timer.setInterval(int(1000.0 / self._FPS))
+        self._timer.timeout.connect(self._tick)
+
+    def showEvent(self, ev):
+        super(_MlLandingDiagram, self).showEvent(ev)
+        self._timer.start()
+
+    def hideEvent(self, ev):
+        super(_MlLandingDiagram, self).hideEvent(ev)
+        self._timer.stop()
+
+    def _tick(self):
+        self._frame = (self._frame + 1) % self._FRAMES_PER_CYCLE
+        self.update()
+
+    def paintEvent(self, _ev):
+        p = QtGui.QPainter(self)
+        p.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        w = self.width()
+        h = self.height()
+
+        # Transparent background (host supplies the card colour).
+        # Normalised animation time t in [0,1].
+        t = self._frame / float(self._FRAMES_PER_CYCLE)
+
+        # Phase breakdown:
+        #   0.00 - 0.45 : fall from top to B's surface (ease-in)
+        #   0.45 - 0.55 : squash briefly on contact
+        #   0.55 - 0.70 : hold (landed)
+        #   0.70 - 1.00 : fade up to starting position (reset)
+        square_size = 22
+        cx = w * 0.5
+        # Mesh B (the ground rectangle).
+        b_h = 12
+        b_w = min(w * 0.55, 180)
+        b_x = cx - b_w * 0.5
+        b_y = h - b_h - 6
+        # Top-of-B Y (where A lands).
+        top_of_b = b_y
+
+        # Start / end positions for A's y (top-left corner of the square).
+        y_start = 4
+        y_end = top_of_b - square_size
+
+        # Compute A's y and vertical squash factor based on phase.
+        if t < 0.45:
+            # Fall with ease-in (t^2).
+            k = t / 0.45
+            k2 = k * k
+            a_y = y_start + (y_end - y_start) * k2
+            squash = 1.0
+        elif t < 0.55:
+            # Squash on contact: scale from 1.0 to 0.75 and back.
+            k = (t - 0.45) / 0.10
+            # Triangle 0 -> 1 -> 0 across this sub-interval.
+            tri = 1.0 - abs(2.0 * k - 1.0)
+            squash = 1.0 - 0.25 * tri
+            a_y = y_end + (1.0 - squash) * square_size
+        elif t < 0.70:
+            # Hold on the ground.
+            a_y = y_end
+            squash = 1.0
+        else:
+            # Fade up and reset — A floats back up with decreasing
+            # opacity so the loop isn't jarring.
+            k = (t - 0.70) / 0.30
+            a_y = y_end + (y_start - y_end) * k
+            squash = 1.0
+
+        # Draw raycast arrow — dashed vertical line from a point above
+        # the square down to B, with an arrowhead at the bottom. Fade
+        # it out as A approaches B so the arrow doesn't overlap with
+        # the squash moment.
+        arrow_alpha = max(0, int(180 * (1.0 - max(0.0, (t - 0.25) / 0.20))))
+        if arrow_alpha > 5:
+            pen = QtGui.QPen(QtGui.QColor(255, 167, 38, arrow_alpha))
+            pen.setStyle(QtCore.Qt.DashLine)
+            pen.setWidth(1)
+            p.setPen(pen)
+            ar_x = cx + square_size * 0.5 + 14
+            ar_top_y = y_start + square_size * 0.5
+            ar_bot_y = top_of_b - 2
+            p.drawLine(int(ar_x), int(ar_top_y),
+                       int(ar_x), int(ar_bot_y))
+            # Arrowhead.
+            p.setPen(QtGui.QPen(QtGui.QColor(255, 167, 38, arrow_alpha), 1))
+            p.setBrush(QtGui.QColor(255, 167, 38, arrow_alpha))
+            head = QtGui.QPolygon([
+                QtCore.QPoint(int(ar_x), int(ar_bot_y + 4)),
+                QtCore.QPoint(int(ar_x - 4), int(ar_bot_y - 3)),
+                QtCore.QPoint(int(ar_x + 4), int(ar_bot_y - 3)),
+            ])
+            p.drawPolygon(head)
+
+        # Mesh B (ground).
+        p.setPen(QtGui.QPen(QtGui.QColor("#388E3C"), 1.5))
+        p.setBrush(QtGui.QColor("#4CAF50"))
+        p.drawRect(QtCore.QRectF(b_x, b_y, b_w, b_h))
+        # Small label "B".
+        p.setPen(QtGui.QPen(QtGui.QColor("#1B5E20"), 1))
+        f = p.font()
+        f.setPointSize(7)
+        f.setBold(True)
+        p.setFont(f)
+        p.drawText(QtCore.QRectF(b_x, b_y, b_w, b_h),
+                   QtCore.Qt.AlignCenter, "B")
+
+        # Mesh A (the moving square), with vertical squash if on contact.
+        a_x = cx - square_size * 0.5
+        draw_h = square_size * squash
+        # Anchor the squash at the bottom (so it flattens onto B).
+        draw_y = a_y + (square_size - draw_h)
+        p.setPen(QtGui.QPen(QtGui.QColor("#1976D2"), 1.5))
+        p.setBrush(QtGui.QColor("#2196F3"))
+        p.drawRect(QtCore.QRectF(a_x, draw_y, square_size, draw_h))
+        p.setPen(QtGui.QPen(QtGui.QColor("#0D47A1"), 1))
+        p.drawText(QtCore.QRectF(a_x, draw_y, square_size, draw_h),
+                   QtCore.Qt.AlignCenter, "A")
+
+        p.end()
+
+
 def _build_mesh_landing_group(tool_window, parent_layout):
     """Compact launcher. Matches the header+desc+launch layout of the
     Vertex Snap and Edge Width Alignment groups so all three buttons
@@ -4896,6 +5042,10 @@ def _build_mesh_landing_group(tool_window, parent_layout):
         "color:#AAA;font-size:10px;padding:2px 4px")
     tool_window._ml_desc_lbl.setWordWrap(True)
     glo.addWidget(tool_window._ml_desc_lbl)
+
+    # Animated illustration: square A drops down and lands on slab B.
+    tool_window._ml_diagram = _MlLandingDiagram()
+    glo.addWidget(tool_window._ml_diagram)
 
     # State — initialised on launch
     tool_window._ml_result_window = None
